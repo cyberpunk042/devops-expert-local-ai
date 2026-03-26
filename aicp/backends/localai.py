@@ -92,17 +92,23 @@ class LocalAIBackend(Backend):
                     "The model may still be loading — try again in a moment."
                 )
 
-        data = response.json()
+        try:
+            data = response.json()
+        except Exception:
+            return response.text
 
         # Capture usage metadata for observability
-        usage = data.get("usage", {})
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
         self.last_usage = {
-            "model": data.get("model", self.model),
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
         }
 
-        return data["choices"][0]["message"]["content"]
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
 
     def _system_prompt(self, mode: Mode, project_path: Path) -> str:
         parts = []

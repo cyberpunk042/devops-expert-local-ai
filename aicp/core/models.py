@@ -193,10 +193,14 @@ def benchmark_model(
     elapsed = time.time() - start
     response.raise_for_status()
 
-    data = response.json()
-    usage = data.get("usage", {})
-    pt = usage.get("prompt_tokens", 0)
-    ct = usage.get("completion_tokens", 0)
+    try:
+        data = response.json()
+        usage = data.get("usage", {})
+        pt = usage.get("prompt_tokens", 0)
+        ct = usage.get("completion_tokens", 0)
+        preview = data["choices"][0]["message"]["content"][:100]
+    except (KeyError, IndexError, TypeError, ValueError):
+        pt, ct, preview = 0, 0, response.text[:100]
 
     return {
         "model": name,
@@ -204,5 +208,5 @@ def benchmark_model(
         "prompt_tokens": pt,
         "completion_tokens": ct,
         "tokens_per_second": round(ct / elapsed, 1) if elapsed > 0 else 0,
-        "response_preview": data["choices"][0]["message"]["content"][:100],
+        "response_preview": preview,
     }

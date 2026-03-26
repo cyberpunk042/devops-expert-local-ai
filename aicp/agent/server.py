@@ -76,10 +76,16 @@ class AgentHandler(BaseHTTPRequestHandler):
                 self._respond_json(400, {"error": "missing prompt"})
                 return
 
+            try:
+                mode = Mode(mode_str)
+            except ValueError:
+                self._respond_json(400, {"error": f"invalid mode: {mode_str}"})
+                return
+
             controller = self.server.controller  # type: ignore
             task = Task(
                 prompt=prompt,
-                mode=Mode(mode_str),
+                mode=mode,
                 project_path=Path(project).resolve(),
                 backend_name=backend_name,
             )

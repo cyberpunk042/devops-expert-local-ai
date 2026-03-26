@@ -1,0 +1,21 @@
+budget:
+  max_cost_usd: 0.50
+  max_duration_seconds: 120
+  max_steps: 5
+
+agents:
+  analyst:
+    system_prompt: "You are a code analyst. Be concise and specific."
+  advisor:
+    system_prompt: "You are a senior DevOps advisor. Give actionable recommendations."
+
+steps:
+  - prompt: "List the main Python modules in this project and what each one does. Be brief."
+    mode: think
+    backend: local
+    agent: analyst
+
+  - prompt: "Based on this analysis:\n{step_0}\n\nWhat are the top 3 improvements to make?"
+    mode: think
+    backend: local
+    agent: advisor

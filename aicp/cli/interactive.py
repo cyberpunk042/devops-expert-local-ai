@@ -56,8 +56,13 @@ def run_interactive(
                 messages.pop()  # remove failed user message
                 continue
 
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            try:
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError, ValueError):
+                print(f"[error] Unexpected response: {response.text[:200]}", file=sys.stderr)
+                messages.pop()
+                continue
             messages.append({"role": "assistant", "content": content})
             print(f"\nai> {content}\n")
 
