@@ -597,17 +597,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.pipeline:
         from aicp.core.pipeline import load_pipeline, run_pipeline
         try:
-            steps = load_pipeline(args.pipeline)
+            pipeline_data = load_pipeline(args.pipeline)
         except (FileNotFoundError, ValueError) as e:
             print_error(str(e))
             return 1
-        results = run_pipeline(steps, backends, args.project.resolve(), config)
+        results = run_pipeline(pipeline_data, backends, args.project.resolve(), config)
         for r in results:
-            status = "[green]OK[/]" if not r["error"] else "[red]ERR[/]"
-            console.print(f"  {status} Step {r['step_index'] + 1}: {r['mode']}/{r['backend']}")
-            if r["error"]:
+            status = "[green]OK[/]" if not r.get("error") else "[red]ERR[/]"
+            agent_tag = f" [{r['agent']}]" if r.get("agent") else ""
+            console.print(f"  {status} Step {r['step_index'] + 1}: {r['mode']}/{r['backend']}{agent_tag}")
+            if r.get("error"):
                 print_error(r["error"])
-            elif r["result"]:
+            elif r.get("result"):
                 print_response(r["result"])
         return 0 if all(not r["error"] for r in results) else 1
 
