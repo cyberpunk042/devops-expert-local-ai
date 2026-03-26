@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
 from aicp.core.modes import Mode
 from aicp.backends.base import Backend
+
+logger = logging.getLogger("aicp")
 
 
 @dataclass
@@ -32,4 +37,26 @@ class Controller:
         if backend is None:
             raise ValueError(f"Unknown backend: {task.backend_name}")
 
-        return backend.execute(task.prompt, task.mode, task.project_path)
+        start = datetime.utcnow()
+
+        logger.info(json.dumps({
+            "event": "task_start",
+            "mode": task.mode.value,
+            "backend": task.backend_name,
+            "project": str(task.project_path),
+            "timestamp": start.isoformat(),
+        }))
+
+        result = backend.execute(task.prompt, task.mode, task.project_path)
+
+        elapsed = (datetime.utcnow() - start).total_seconds()
+        logger.info(json.dumps({
+            "event": "task_complete",
+            "mode": task.mode.value,
+            "backend": task.backend_name,
+            "duration_seconds": elapsed,
+            "response_length": len(result),
+            "timestamp": datetime.utcnow().isoformat(),
+        }))
+
+        return result

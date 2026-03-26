@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from aicp import __version__
+from aicp.config.loader import load_config, get_backend_config
 from aicp.core.modes import Mode
 from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
@@ -38,6 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path.cwd(),
         help="Project directory (default: current directory)",
     )
+    parser.add_argument(
+        "--config", "-c",
+        type=Path,
+        default=None,
+        help="Config file path (default: config/default.yaml)",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -50,9 +57,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.print_help()
         return 1
 
+    config = load_config(args.config) if args.config else load_config()
+
+    local_cfg = get_backend_config(config, "local")
+    claude_cfg = get_backend_config(config, "claude")
+
     backends = {
-        "local": LocalAIBackend(),
-        "claude": ClaudeCodeBackend(),
+        "local": LocalAIBackend(
+            base_url=local_cfg.get("base_url", "http://localhost:8080"),
+            model=local_cfg.get("model", "default"),
+        ),
+        "claude": ClaudeCodeBackend(
+            model=claude_cfg.get("model", "opus"),
+        ),
     }
 
     controller = Controller(backends)
