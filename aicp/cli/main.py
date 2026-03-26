@@ -761,8 +761,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         project_name = None if args.control == "overview" else args.control
         return run_control(project_name)
 
-    # --project-cmd (no config needed for register/list/status)
-    if args.project_cmd:
+    # --project-cmd (register/list/status don't need config)
+    if args.project_cmd and args.project_cmd not in ("create", "plan", "assess"):
         return _run_project_cmd(
             args.project_cmd, args.project.resolve(),
             name=args.project_name, desc=args.project_desc,
