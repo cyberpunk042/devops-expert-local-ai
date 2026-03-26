@@ -128,6 +128,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON Schema file for structured output (Claude Code only)",
     )
     parser.add_argument(
+        "--agent",
+        nargs="?",
+        const="9100",
+        metavar="PORT",
+        help="Start AICP agent daemon (default port: 9100)",
+    )
+    parser.add_argument(
+        "--agent-token",
+        metavar="TOKEN",
+        help="Auth token for agent daemon",
+    )
+    parser.add_argument(
         "--approval",
         action="store_true",
         help="Semi-auto: generate plan first, execute on approval",
@@ -199,11 +211,29 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         if not ok:
             all_ok = False
 
+    # Cluster nodes
+    from aicp.core.cluster import load_cluster_config, check_cluster
+    nodes = load_cluster_config(config)
+    if nodes:
+        console.print()
+        console.print("  [bold]Cluster nodes:[/]")
+        check_cluster(nodes)
+        for n in nodes:
+            status = "[green]ONLINE[/]" if n.online else "[red]OFFLINE[/]"
+            gpu_info = ""
+            if n.gpus:
+                total_free = sum(g.get("vram_free_mb", 0) for g in n.gpus)
+                gpu_info = f", {len(n.gpus)} GPUs, {total_free} MiB free"
+            model_names = ", ".join(m.get("name", "?") for m in n.models) if n.models else "none"
+            console.print(f"    {status} {n.name} ({n.host}:{n.port}{gpu_info}, models: {model_names})")
+            if not n.online:
+                all_ok = False
+
     console.print()
     if all_ok:
         console.print("  [bold green]All systems ready.[/]")
     else:
-        console.print("  [yellow]Some backends are unavailable.[/]")
+        console.print("  [yellow]Some backends or nodes are unavailable.[/]")
 
     return 0
 
@@ -480,6 +510,12 @@ def _run_replay(record_id: str) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # --agent mode (start daemon, no config needed beyond default)
+    if args.agent is not None:
+        from aicp.agent.server import run_agent
+        run_agent(port=int(args.agent), token=args.agent_token or "")
+        return 0
 
     # --auto-config (no config needed)
     if args.auto_config:

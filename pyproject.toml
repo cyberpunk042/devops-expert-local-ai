@@ -21,6 +21,7 @@ dev = [
 
 [project.scripts]
 aicp = "aicp.cli.main:main"
+aicp-agent = "aicp.agent.server:_cli_main"
 
 [tool.setuptools.packages.find]
 include = ["aicp*"]
