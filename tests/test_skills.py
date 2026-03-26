@@ -40,13 +40,13 @@ def test_discover_project_skills(tmp_path):
     assert any(s.name == "proj-skill" and s.source == "project" for s in skills)
 
 
-def test_discover_claude_commands(tmp_path):
-    cmd_dir = tmp_path / ".claude" / "commands"
-    cmd_dir.mkdir(parents=True)
-    (cmd_dir / "my-cmd.md").write_text("# /my-cmd\nDoes stuff.")
+def test_discover_claude_skills(tmp_path):
+    skill_dir = tmp_path / ".claude" / "skills" / "my-cmd"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: my-cmd\ndescription: Does stuff\n---\n\nDo stuff.")
 
     skills = discover_skills(tmp_path)
-    assert any(s.name == "my-cmd" and s.source == "claude-command" for s in skills)
+    assert any(s.name == "my-cmd" and s.source == "claude-project" for s in skills)
 
 
 def test_get_skill(tmp_path, monkeypatch):
@@ -110,16 +110,17 @@ def test_create_skill(tmp_path):
     assert len(data["steps"]) == 1
 
 
-def test_generate_claude_command(tmp_path):
+def test_generate_claude_skill(tmp_path):
+    from aicp.core.skills import generate_claude_skill
     skill = Skill(
         name="test-cmd", description="A test command", source="project",
         path=Path("."),
         parameters=[SkillParam(name="target", description="What to target")],
         steps=[{"prompt": "Do {target}", "mode": "think"}],
     )
-    path = generate_claude_command(skill, tmp_path)
+    path = generate_claude_skill(skill, tmp_path)
     assert path.exists()
     content = path.read_text()
-    assert "/test-cmd" in content
+    assert "test-cmd" in content
     assert "target" in content
-    assert (tmp_path / ".claude" / "commands" / "test-cmd.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "test-cmd" / "SKILL.md").exists()

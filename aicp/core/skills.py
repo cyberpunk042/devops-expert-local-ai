@@ -46,42 +46,71 @@ def _project_skills_dir(project_path: Path) -> Path:
     return project_path / ".aicp" / "skills"
 
 
-def _claude_commands_dir(project_path: Path) -> Path:
-    return project_path / ".claude" / "commands"
+def _claude_skills_dir(project_path: Path) -> Path:
+    return project_path / ".claude" / "skills"
+
+
+def _global_claude_skills_dir() -> Path:
+    return Path.home() / ".claude" / "skills"
 
 
 def discover_skills(project_path: Optional[Path] = None) -> List[Skill]:
-    """Discover skills from all three layers."""
-    skills = []
+    """Discover skills from all layers.
 
-    # Layer 1: Global
+    Discovery order (later overrides earlier):
+    1. AICP global skills (~/.aicp/skills/*.yaml)
+    2. AICP project skills (<project>/.aicp/skills/*.yaml)
+    3. Claude Code global skills (~/.claude/skills/*/SKILL.md)
+    4. Claude Code project skills (<project>/.claude/skills/*/SKILL.md)
+    """
+    skills = []
+    seen = set()  # type: set
+
+    # Layer 1: AICP global YAML skills
     gdir = _global_skills_dir()
     if gdir.exists():
         for f in sorted(gdir.glob("*.yaml")):
-            skill = _load_skill(f, "global")
-            if skill:
+            skill = _load_skill_yaml(f, "global")
+            if skill and skill.name not in seen:
                 skills.append(skill)
+                seen.add(skill.name)
 
-    # Layer 2: Project
+    # Layer 2: AICP project YAML skills
     if project_path:
         pdir = _project_skills_dir(project_path)
         if pdir.exists():
             for f in sorted(pdir.glob("*.yaml")):
-                skill = _load_skill(f, "project")
+                skill = _load_skill_yaml(f, "project")
                 if skill:
+                    # Override global if same name
+                    skills = [s for s in skills if s.name != skill.name]
+                    seen.discard(skill.name)
                     skills.append(skill)
+                    seen.add(skill.name)
 
-    # Layer 3: Claude Code commands (read-only discovery)
+    # Layer 3: Claude Code global SKILL.md skills
+    gcdir = _global_claude_skills_dir()
+    if gcdir.exists():
+        for skill_dir in sorted(gcdir.iterdir()):
+            skill_md = skill_dir / "SKILL.md"
+            if skill_md.exists():
+                skill = _load_skill_md(skill_md, "claude-global")
+                if skill and skill.name not in seen:
+                    skills.append(skill)
+                    seen.add(skill.name)
+
+    # Layer 4: Claude Code project SKILL.md skills
     if project_path:
-        cdir = _claude_commands_dir(project_path)
+        cdir = _claude_skills_dir(project_path)
         if cdir.exists():
-            for f in sorted(cdir.glob("*.md")):
-                skills.append(Skill(
-                    name=f.stem,
-                    description=f"Claude Code command: /{f.stem}",
-                    source="claude-command",
-                    path=f,
-                ))
+            for skill_dir in sorted(cdir.iterdir()):
+                skill_md = skill_dir / "SKILL.md"
+                if skill_md.exists():
+                    skill = _load_skill_md(skill_md, "claude-project")
+                    if skill:
+                        skills = [s for s in skills if s.name != skill.name]
+                        skills.append(skill)
+                        seen.add(skill.name)
 
     return skills
 
@@ -144,45 +173,64 @@ def create_skill(
     return path
 
 
-def generate_claude_command(skill: Skill, project_path: Path) -> Path:
-    """Generate a Claude Code slash command (.md) from an AICP skill.
+def generate_claude_skill(skill: Skill, project_path: Path) -> Path:
+    """Generate a Claude Code SKILL.md from an AICP skill.
 
-    Claude Code commands are markdown files in .claude/commands/ that
-    describe what the command does. Claude Code reads them as custom
-    slash commands.
+    Creates .claude/skills/<name>/SKILL.md in the proper Claude Code format.
     """
-    cdir = _claude_commands_dir(project_path)
-    cdir.mkdir(parents=True, exist_ok=True)
+    skill_dir = _claude_skills_dir(project_path) / skill.name
+    skill_dir.mkdir(parents=True, exist_ok=True)
 
-    params_doc = ""
+    # Build argument hint from parameters
+    arg_hint = ""
     if skill.parameters:
-        params_doc = "\n\nParameters:\n"
+        hints = []
+        for p in skill.parameters:
+            if p.required:
+                hints.append(f"<{p.name}>")
+            else:
+                hints.append(f"[{p.name}]")
+        arg_hint = " ".join(hints)
+
+    # Build frontmatter
+    frontmatter = f"""---
+name: {skill.name}
+description: {skill.description}"""
+    if arg_hint:
+        frontmatter += f"\nargument-hint: {arg_hint}"
+    frontmatter += """
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+effort: medium
+---"""
+
+    # Build body
+    body = f"\n\n# {skill.name}\n\n{skill.description}\n"
+
+    if skill.parameters:
+        body += "\n## Parameters\n\n"
         for p in skill.parameters:
             req = "(required)" if p.required else f"(default: {p.default})"
-            params_doc += f"- {p.name}: {p.description or p.name} {req}\n"
+            body += f"- **{p.name}**: {p.description or p.name} {req}\n"
 
-    steps_doc = "\n\nSteps:\n"
-    for i, step in enumerate(skill.steps):
-        steps_doc += f"{i + 1}. [{step.get('mode', 'think')}] {step.get('prompt', '')[:100]}\n"
+    if skill.steps:
+        body += "\n## Steps\n\n"
+        for i, step in enumerate(skill.steps):
+            body += f"{i + 1}. [{step.get('mode', 'think')}] {step.get('prompt', '')}\n"
 
-    content = f"""# /{skill.name}
+    body += f"\n---\nGenerated from AICP skill. Run via: `aicp --skill run --skill-name {skill.name}`\n"
 
-{skill.description}
-{params_doc}{steps_doc}
----
-This command was generated from AICP skill: {skill.name}
-Run via AICP: `aicp skill run {skill.name}`
-"""
-
-    path = cdir / f"{skill.name}.md"
+    path = skill_dir / "SKILL.md"
     with open(path, "w") as f:
-        f.write(content)
+        f.write(frontmatter + body)
 
     return path
 
+# Backward compat
+generate_claude_command = generate_claude_skill
 
-def _load_skill(path: Path, source: str) -> Optional[Skill]:
-    """Load a skill from a YAML file."""
+
+def _load_skill_yaml(path: Path, source: str) -> Optional[Skill]:
+    """Load a skill from a YAML file (AICP format)."""
     try:
         with open(path) as f:
             data = yaml.safe_load(f)
@@ -206,6 +254,65 @@ def _load_skill(path: Path, source: str) -> Optional[Skill]:
             path=path,
             parameters=params,
             steps=data.get("steps", []),
+        )
+    except (yaml.YAMLError, OSError):
+        return None
+
+# Keep backward compat alias
+_load_skill = _load_skill_yaml
+
+
+def _load_skill_md(path: Path, source: str) -> Optional[Skill]:
+    """Load a skill from a SKILL.md file (Claude Code format).
+
+    Parses YAML frontmatter between --- delimiters.
+    """
+    try:
+        content = path.read_text(errors="replace")
+
+        # Parse frontmatter
+        if not content.startswith("---"):
+            return None
+
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            return None
+
+        frontmatter = yaml.safe_load(parts[1])
+        if not isinstance(frontmatter, dict):
+            return None
+
+        name = frontmatter.get("name", path.parent.name)
+        description = frontmatter.get("description", "")
+        argument_hint = frontmatter.get("argument-hint", "")
+        if not isinstance(argument_hint, str):
+            argument_hint = str(argument_hint) if argument_hint else ""
+
+        # Parse argument hints as parameters (best effort)
+        params = []
+        if argument_hint:
+            import re
+            # Parse patterns like <required> [optional] [optional: default]
+            for match in re.finditer(r"[<\[]([^>\]]+)[>\]]", argument_hint):
+                param_text = match.group(1)
+                required = match.group(0).startswith("<")
+                param_parts = param_text.split(":", 1)
+                param_name = param_parts[0].strip()
+                default = param_parts[1].strip() if len(param_parts) > 1 else ""
+                params.append(SkillParam(
+                    name=param_name,
+                    required=required,
+                    default=default,
+                ))
+
+        return Skill(
+            name=name,
+            description=description,
+            source=source,
+            path=path,
+            parameters=params,
+            # SKILL.md skills don't have pipeline steps — they're instructions for Claude
+            steps=[],
         )
     except (yaml.YAMLError, OSError):
         return None
