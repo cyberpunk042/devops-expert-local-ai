@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from aicp.backends.base import Backend
+from aicp.core.context import build_project_context
 from aicp.core.modes import Mode
 
 
@@ -111,6 +112,11 @@ class ClaudeCodeBackend(Backend):
         # Name the session for later resume via `claude -r`
         if session_name:
             cmd.extend(["--name", session_name])
+
+        # Inject project context so Claude knows about the project
+        context = build_project_context(project_path, max_chars=2000)
+        if context:
+            cmd.extend(["--append-system-prompt", f"Project context:\n{context}"])
 
         # Map AICP modes to Claude Code permission modes and tool restrictions
         if mode == Mode.THINK:

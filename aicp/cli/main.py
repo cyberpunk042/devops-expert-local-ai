@@ -65,6 +65,16 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="Replay full output from a previous task by ID",
     )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Start interactive chat session (LocalAI only)",
+    )
+    parser.add_argument(
+        "--continue-session", "-c",
+        action="store_true",
+        help="Continue most recent Claude Code session in this directory",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -192,6 +202,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --check mode
     if args.check:
         return _run_check(config, backends)
+
+    # --interactive mode (LocalAI REPL)
+    if args.interactive:
+        from aicp.cli.interactive import run_interactive
+        local_cfg = get_backend_config(config, "local")
+        return run_interactive(
+            base_url=local_cfg.get("base_url", "http://localhost:8090"),
+            model=local_cfg.get("model", "default"),
+            mode=Mode(args.mode),
+            project_path=args.project.resolve(),
+        )
+
+    # --continue-session (resume Claude Code session)
+    if args.continue_session:
+        import subprocess
+        cmd = ["claude", "-c"]
+        if args.prompt:
+            cmd.extend(["-p", args.prompt])
+        try:
+            result = subprocess.run(cmd, cwd=str(args.project.resolve()))
+            return result.returncode
+        except FileNotFoundError:
+            print("Error: claude CLI not found on PATH.", file=sys.stderr)
+            return 1
 
     # Normal mode: need a prompt
     if not args.prompt:
