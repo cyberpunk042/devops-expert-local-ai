@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from aicp import __version__
 from aicp.backends.base import Backend
+from aicp.cli.display import (
+    console, print_check_header, print_error, print_history_entry,
+    print_response, print_status, print_warning, spinner,
+)
 from aicp.config.loader import load_config, validate_config, get_backend_config
 from aicp.core.history import list_tasks, get_task
 from aicp.core.modes import Mode
@@ -26,20 +31,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", "-m",
         choices=["think", "edit", "act"],
-        default="think",
-        help="Permission mode (default: think)",
+        default=os.environ.get("AICP_DEFAULT_MODE", "think"),
+        help="Permission mode (default: think, env: AICP_DEFAULT_MODE)",
     )
     parser.add_argument(
         "--backend", "-b",
         choices=["local", "claude"],
-        default="local",
-        help="AI backend (default: local)",
+        default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
+        help="AI backend (default: local, env: AICP_DEFAULT_BACKEND)",
     )
     parser.add_argument(
         "--project", "-d",
         type=Path,
-        default=Path.cwd(),
-        help="Project directory (default: current directory)",
+        default=Path(os.environ.get("AICP_PROJECT_PATH", ".")),
+        help="Project directory (default: cwd, env: AICP_PROJECT_PATH)",
     )
     parser.add_argument(
         "--config",
@@ -99,32 +104,31 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
 
 def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     """Validate config and check backend availability."""
-    print(f"AICP v{__version__} — system check\n")
+    print_check_header()
 
     errors = validate_config(config)
     if errors:
-        print("Config: INVALID")
+        console.print("  Config: [bold red]INVALID[/]")
         for err in errors:
-            print(f"  - {err}")
+            console.print(f"    - {err}")
         return 1
     else:
-        print("Config: OK")
+        console.print("  Config: [bold green]OK[/]")
 
-    print()
+    console.print()
     all_ok = True
     for name, backend in backends.items():
         detail = backend.status_detail()
         ok = backend.is_available()
-        status = "OK" if ok else "FAIL"
-        print(f"[{status}] {name}: {detail}")
+        print_status(name, detail, ok)
         if not ok:
             all_ok = False
 
-    print()
+    console.print()
     if all_ok:
-        print("All systems ready.")
+        console.print("  [bold green]All systems ready.[/]")
     else:
-        print("Some backends are unavailable. AICP will work with the available ones.")
+        console.print("  [yellow]Some backends are unavailable.[/]")
 
     return 0
 
@@ -133,22 +137,19 @@ def _run_history(count: int) -> int:
     """Show recent task history."""
     records = list_tasks(count)
     if not records:
-        print("No history yet.")
+        console.print("[dim]No history yet.[/]")
         return 0
 
     for r in records:
-        ts = r.get("timestamp", "?")[:19]
-        mode = r.get("mode", "?")
-        backend = r.get("backend", "?")
-        prompt = r.get("prompt", "")
-        error = r.get("error")
-        duration = r.get("duration_seconds", 0)
-        rid = r.get("id", "?")
-
-        prompt_preview = prompt[:60] + "..." if len(prompt) > 60 else prompt
-        status = "ERR" if error else "OK"
-        print(f"[{status}] {ts}  {mode:5s}  {backend:6s}  {duration:5.1f}s  {prompt_preview}")
-        print(f"       ID: {rid}")
+        print_history_entry(
+            status="ERR" if r.get("error") else "OK",
+            timestamp=r.get("timestamp", "?")[:19],
+            mode=r.get("mode", "?"),
+            backend=r.get("backend", "?"),
+            duration=r.get("duration_seconds", 0),
+            prompt=r.get("prompt", ""),
+            record_id=r.get("id", "?"),
+        )
 
     return 0
 
@@ -157,23 +158,23 @@ def _run_replay(record_id: str) -> int:
     """Replay a previous task's full output."""
     record = get_task(record_id)
     if record is None:
-        print(f"Task not found: {record_id}", file=sys.stderr)
+        print_error(f"Task not found: {record_id}")
         return 1
 
-    print(f"--- Task: {record.get('id', '?')} ---")
-    print(f"Time:    {record.get('timestamp', '?')}")
-    print(f"Mode:    {record.get('mode', '?')}")
-    print(f"Backend: {record.get('backend', '?')}")
-    print(f"Project: {record.get('project', '?')}")
-    print(f"Duration: {record.get('duration_seconds', 0):.1f}s")
-    print(f"Prompt:  {record.get('prompt', '')}")
-    print()
+    console.print(f"[bold]--- Task: {record.get('id', '?')} ---[/]")
+    console.print(f"  Time:     {record.get('timestamp', '?')}")
+    console.print(f"  Mode:     [cyan]{record.get('mode', '?')}[/]")
+    console.print(f"  Backend:  [magenta]{record.get('backend', '?')}[/]")
+    console.print(f"  Project:  {record.get('project', '?')}")
+    console.print(f"  Duration: {record.get('duration_seconds', 0):.1f}s")
+    console.print(f"  Prompt:   {record.get('prompt', '')}")
+    console.print()
 
     error = record.get("error")
     if error:
-        print(f"Error: {error}")
+        print_error(error)
     else:
-        print(record.get("response", ""))
+        print_response(record.get("response", ""))
 
     return 0
 
@@ -194,7 +195,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         config = load_config(args.config) if args.config else load_config()
     except (FileNotFoundError, ValueError) as e:
-        print(f"Config error: {e}", file=sys.stderr)
+        print_error(f"Config: {e}")
         return 1
 
     backends = _build_backends(config)
@@ -224,7 +225,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             result = subprocess.run(cmd, cwd=str(args.project.resolve()))
             return result.returncode
         except FileNotFoundError:
-            print("Error: claude CLI not found on PATH.", file=sys.stderr)
+            print_error("claude CLI not found on PATH.")
             return 1
 
     # Normal mode: need a prompt
@@ -241,11 +242,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     try:
-        result = controller.run(task)
-        print(result)
+        with spinner(f"Asking {args.backend}..."):
+            result = controller.run(task)
+        print_response(result)
         return 0
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        error_msg = str(e)
+        print_error(error_msg)
+        # Suggest alternative backend on failure
+        alt = "claude" if args.backend == "local" else "local"
+        alt_backend = backends.get(alt)
+        if alt_backend and alt_backend.is_available():
+            print_warning(f"Try with --backend {alt} instead?")
         return 1
 
 
