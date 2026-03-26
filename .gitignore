@@ -36,5 +36,3 @@ Thumbs.db
 models/
 /backends/
 
-# Claude Code
-.claude/
