@@ -12,6 +12,7 @@ from typing import Any, Dict
 
 from aicp.core.modes import Mode
 from aicp.backends.base import Backend
+from aicp.core.history import save_task
 from aicp.guardrails.checks import run_preflight_checks
 
 logger = logging.getLogger("aicp")
@@ -68,16 +69,31 @@ class Controller:
             "timestamp": start.isoformat(),
         }))
 
-        result = backend.execute(task.prompt, task.mode, task.project_path)
-
-        elapsed = (datetime.utcnow() - start).total_seconds()
-        logger.info(json.dumps({
-            "event": "task_complete",
-            "mode": task.mode.value,
-            "backend": task.backend_name,
-            "duration_seconds": elapsed,
-            "response_length": len(result),
-            "timestamp": datetime.utcnow().isoformat(),
-        }))
+        error = None
+        result = ""
+        try:
+            result = backend.execute(task.prompt, task.mode, task.project_path)
+        except Exception as e:
+            error = str(e)
+            raise
+        finally:
+            elapsed = (datetime.utcnow() - start).total_seconds()
+            logger.info(json.dumps({
+                "event": "task_complete",
+                "mode": task.mode.value,
+                "backend": task.backend_name,
+                "duration_seconds": elapsed,
+                "response_length": len(result),
+                "timestamp": datetime.utcnow().isoformat(),
+            }))
+            save_task(
+                prompt=task.prompt,
+                mode=task.mode.value,
+                backend=task.backend_name,
+                project=str(task.project_path),
+                response=result,
+                duration_seconds=elapsed,
+                error=error,
+            )
 
         return result

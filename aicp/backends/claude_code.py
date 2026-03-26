@@ -94,7 +94,9 @@ class ClaudeCodeBackend(Backend):
 
         return result.stdout
 
-    def _build_command(self, prompt: str, mode: Mode, project_path: Path) -> List[str]:
+    def _build_command(
+        self, prompt: str, mode: Mode, project_path: Path, session_name: Optional[str] = None,
+    ) -> List[str]:
         cmd = ["claude", "-p", "--output-format", "text"]
 
         if self.model:
@@ -106,15 +108,16 @@ class ClaudeCodeBackend(Backend):
         if self.max_budget_usd:
             cmd.extend(["--max-budget-usd", str(self.max_budget_usd)])
 
+        # Name the session for later resume via `claude -r`
+        if session_name:
+            cmd.extend(["--name", session_name])
+
         # Map AICP modes to Claude Code permission modes and tool restrictions
         if mode == Mode.THINK:
-            # Plan mode = read-only, no edits, no commands
             cmd.extend(["--permission-mode", "plan"])
         elif mode == Mode.EDIT:
-            # Allow file operations but no shell commands
             cmd.extend(["--allowedTools", "Read", "Edit", "Write", "Glob", "Grep"])
             cmd.extend(["--disallowedTools", "Bash"])
-        # ACT mode: no extra restrictions — full power
 
         cmd.append(prompt)
         return cmd

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from aicp import __version__
 from aicp.backends.base import Backend
 from aicp.config.loader import load_config, validate_config, get_backend_config
+from aicp.core.history import list_tasks, get_task
 from aicp.core.modes import Mode
 from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
@@ -51,6 +52,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Check config validity and backend availability, then exit",
     )
+    parser.add_argument(
+        "--history",
+        nargs="?",
+        const=20,
+        type=int,
+        metavar="N",
+        help="Show recent task history (default: last 20)",
+    )
+    parser.add_argument(
+        "--replay",
+        metavar="ID",
+        help="Replay full output from a previous task by ID",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -61,7 +75,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
     claude_cfg = get_backend_config(config, "claude")
     return {
         "local": LocalAIBackend(
-            base_url=local_cfg.get("base_url", "http://localhost:8080"),
+            base_url=local_cfg.get("base_url", "http://localhost:8090"),
             model=local_cfg.get("model", "default"),
         ),
         "claude": ClaudeCodeBackend(
@@ -77,7 +91,6 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     """Validate config and check backend availability."""
     print(f"AICP v{__version__} — system check\n")
 
-    # Config validation
     errors = validate_config(config)
     if errors:
         print("Config: INVALID")
@@ -87,7 +100,6 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     else:
         print("Config: OK")
 
-    # Backend checks
     print()
     all_ok = True
     for name, backend in backends.items():
@@ -107,9 +119,66 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     return 0
 
 
+def _run_history(count: int) -> int:
+    """Show recent task history."""
+    records = list_tasks(count)
+    if not records:
+        print("No history yet.")
+        return 0
+
+    for r in records:
+        ts = r.get("timestamp", "?")[:19]
+        mode = r.get("mode", "?")
+        backend = r.get("backend", "?")
+        prompt = r.get("prompt", "")
+        error = r.get("error")
+        duration = r.get("duration_seconds", 0)
+        rid = r.get("id", "?")
+
+        prompt_preview = prompt[:60] + "..." if len(prompt) > 60 else prompt
+        status = "ERR" if error else "OK"
+        print(f"[{status}] {ts}  {mode:5s}  {backend:6s}  {duration:5.1f}s  {prompt_preview}")
+        print(f"       ID: {rid}")
+
+    return 0
+
+
+def _run_replay(record_id: str) -> int:
+    """Replay a previous task's full output."""
+    record = get_task(record_id)
+    if record is None:
+        print(f"Task not found: {record_id}", file=sys.stderr)
+        return 1
+
+    print(f"--- Task: {record.get('id', '?')} ---")
+    print(f"Time:    {record.get('timestamp', '?')}")
+    print(f"Mode:    {record.get('mode', '?')}")
+    print(f"Backend: {record.get('backend', '?')}")
+    print(f"Project: {record.get('project', '?')}")
+    print(f"Duration: {record.get('duration_seconds', 0):.1f}s")
+    print(f"Prompt:  {record.get('prompt', '')}")
+    print()
+
+    error = record.get("error")
+    if error:
+        print(f"Error: {error}")
+    else:
+        print(record.get("response", ""))
+
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # --history mode (no config needed)
+    if args.history is not None:
+        return _run_history(args.history)
+
+    # --replay mode (no config needed)
+    if args.replay:
+        return _run_replay(args.replay)
 
     # Load config
     try:
