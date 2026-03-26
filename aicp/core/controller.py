@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict
 
 from aicp.core.modes import Mode
 from aicp.backends.base import Backend
@@ -22,7 +23,7 @@ class Task:
 class Controller:
     """Orchestrates backend selection, mode enforcement, and task execution."""
 
-    def __init__(self, backends: dict[str, Backend]) -> None:
+    def __init__(self, backends: Dict[str, Backend]) -> None:
         self.backends = backends
 
     def run(self, task: Task) -> str:
