@@ -30,6 +30,39 @@ class ClaudeCodeBackend(Backend):
     def name(self) -> str:
         return "claude"
 
+    def is_available(self) -> bool:
+        if not shutil.which("claude"):
+            return False
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+
+    def status_detail(self) -> str:
+        if not shutil.which("claude"):
+            return "UNAVAILABLE: 'claude' not found on PATH"
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                return f"OK (version {version}, model: {self.model})"
+            return f"ERROR: claude --version exited with code {result.returncode}"
+        except subprocess.TimeoutExpired:
+            return "UNAVAILABLE: claude --version timed out"
+        except OSError as e:
+            return f"UNAVAILABLE: {e}"
+
     def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
         if not shutil.which("claude"):
             raise RuntimeError(

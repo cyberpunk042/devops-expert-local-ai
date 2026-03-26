@@ -22,3 +22,11 @@ class Backend(ABC):
 
         Returns the backend's response as text.
         """
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Check if this backend is reachable and ready."""
+
+    @abstractmethod
+    def status_detail(self) -> str:
+        """Return a human-readable status string for --check output."""

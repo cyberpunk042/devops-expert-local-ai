@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from aicp import __version__
-from aicp.config.loader import load_config, get_backend_config
+from aicp.backends.base import Backend
+from aicp.config.loader import load_config, validate_config, get_backend_config
 from aicp.core.modes import Mode
 from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
@@ -40,29 +41,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project directory (default: current directory)",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
         type=Path,
         default=None,
         help="Config file path (default: config/default.yaml)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Check config validity and backend availability, then exit",
     )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if not args.prompt:
-        parser.print_help()
-        return 1
-
-    config = load_config(args.config) if args.config else load_config()
-
+def _build_backends(config: Dict) -> Dict[str, Backend]:
+    """Instantiate backends from config."""
     local_cfg = get_backend_config(config, "local")
     claude_cfg = get_backend_config(config, "claude")
-
-    backends = {
+    return {
         "local": LocalAIBackend(
             base_url=local_cfg.get("base_url", "http://localhost:8080"),
             model=local_cfg.get("model", "default"),
@@ -74,6 +71,63 @@ def main(argv: Optional[List[str]] = None) -> int:
             timeout=claude_cfg.get("timeout", 300),
         ),
     }
+
+
+def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
+    """Validate config and check backend availability."""
+    print(f"AICP v{__version__} — system check\n")
+
+    # Config validation
+    errors = validate_config(config)
+    if errors:
+        print("Config: INVALID")
+        for err in errors:
+            print(f"  - {err}")
+        return 1
+    else:
+        print("Config: OK")
+
+    # Backend checks
+    print()
+    all_ok = True
+    for name, backend in backends.items():
+        detail = backend.status_detail()
+        ok = backend.is_available()
+        status = "OK" if ok else "FAIL"
+        print(f"[{status}] {name}: {detail}")
+        if not ok:
+            all_ok = False
+
+    print()
+    if all_ok:
+        print("All systems ready.")
+    else:
+        print("Some backends are unavailable. AICP will work with the available ones.")
+
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    # Load config
+    try:
+        config = load_config(args.config) if args.config else load_config()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        return 1
+
+    backends = _build_backends(config)
+
+    # --check mode
+    if args.check:
+        return _run_check(config, backends)
+
+    # Normal mode: need a prompt
+    if not args.prompt:
+        parser.print_help()
+        return 1
 
     controller = Controller(backends)
     task = Task(
