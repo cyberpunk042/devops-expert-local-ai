@@ -1,0 +1,21 @@
+# AICP default configuration
+
+defaults:
+  mode: think
+  backend: local
+
+backends:
+  local:
+    base_url: "http://localhost:8080"
+    model: "default"
+  claude:
+    model: "opus"
+
+guardrails:
+  forbidden_patterns:
+    - ".env"
+    - ".env.*"
+    - "*.key"
+    - "*.pem"
+    - "*credentials*"
+    - "*secret*"
