@@ -81,6 +81,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Live dashboard: GPU status, LocalAI, metrics (Ctrl+C to exit)",
     )
     parser.add_argument(
+        "--auto-config",
+        action="store_true",
+        help="Auto-detect GPUs and generate optimal model configs",
+    )
+    parser.add_argument(
+        "--models",
+        nargs="?",
+        const="list",
+        metavar="COMMAND",
+        help="Model management: list (default), info <name>",
+    )
+    parser.add_argument(
+        "--models-arg",
+        metavar="NAME",
+        help="Model name for --models info",
+    )
+    parser.add_argument(
         "--interactive", "-i",
         action="store_true",
         help="Start interactive chat session (LocalAI only)",
@@ -114,6 +131,8 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
 
 def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     """Validate config and check backend availability."""
+    from aicp.core.gpu import detect_gpus
+
     print_check_header()
 
     errors = validate_config(config)
@@ -124,6 +143,21 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         return 1
     else:
         console.print("  Config: [bold green]OK[/]")
+
+    # GPU status
+    gpus = detect_gpus()
+    console.print()
+    if gpus:
+        for g in gpus:
+            pct = g.vram_used_mb / g.vram_total_mb * 100 if g.vram_total_mb > 0 else 0
+            color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
+            console.print(
+                f"  [bold]GPU {g.index}[/] {g.name}: "
+                f"[{color}]{g.vram_free_mb}/{g.vram_total_mb} MiB free[/] "
+                f"(driver {g.driver_version})"
+            )
+    else:
+        console.print("  [yellow]No GPUs detected[/]")
 
     console.print()
     all_ok = True
@@ -184,6 +218,131 @@ def _run_stats() -> int:
     return 0
 
 
+def _run_auto_config() -> int:
+    """Auto-detect GPUs and generate optimal model configs."""
+    from aicp.core.gpu import detect_gpus, calculate_optimal_config, estimate_model_vram_mb
+    from aicp.core.models import list_models, MODELS_DIR
+    from rich.table import Table
+
+    gpus = detect_gpus()
+    if not gpus:
+        console.print("[yellow]No NVIDIA GPUs detected. Models will run on CPU.[/]")
+    else:
+        table = Table(title="Detected GPUs", show_header=True)
+        table.add_column("GPU")
+        table.add_column("VRAM Total", justify="right")
+        table.add_column("VRAM Free", justify="right")
+        table.add_column("Driver")
+        for g in gpus:
+            table.add_row(
+                f"[bold]{g.index}[/] {g.name}",
+                f"{g.vram_total_mb} MiB",
+                f"[green]{g.vram_free_mb} MiB[/]",
+                g.driver_version,
+            )
+        console.print(table)
+        console.print()
+
+    models = list_models()
+    if not models:
+        console.print("[dim]No models found in models/ directory.[/]")
+        return 0
+
+    for m in models:
+        gguf_path = MODELS_DIR / m.gguf_file
+        if not gguf_path.exists():
+            console.print(f"[yellow]{m.name}: GGUF file not found ({m.gguf_file})[/]")
+            continue
+
+        est_vram = estimate_model_vram_mb(gguf_path)
+        optimal = calculate_optimal_config(gguf_path, gpus)
+
+        console.print(f"[bold]{m.name}[/] ({m.gguf_file}, {m.gguf_size_mb} MiB, est. VRAM: {est_vram} MiB)")
+        console.print(f"  Current:  gpu_layers={m.gpu_layers}, context_size={m.context_size}")
+        console.print(f"  Optimal:  gpu_layers={optimal['gpu_layers']}, context_size={optimal['context_size']}, threads={optimal['threads']}")
+
+        if "tensor_split" in optimal:
+            console.print(f"  Multi-GPU: tensor_split={optimal['tensor_split']}, main_gpu={optimal['main_gpu']}")
+
+        if optimal["gpu_layers"] != m.gpu_layers or optimal["context_size"] != m.context_size:
+            console.print("  [yellow]Config differs from optimal.[/] Update? ", end="")
+            try:
+                answer = input("[y/N] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                continue
+            if answer == "y":
+                _apply_optimal_config(m.config_path, optimal)
+                console.print("  [green]Updated.[/] Restart LocalAI to apply: make local-up")
+        else:
+            console.print("  [green]Already optimal.[/]")
+        console.print()
+
+    return 0
+
+
+def _apply_optimal_config(config_path: Path, optimal: dict) -> None:
+    """Update a model YAML with optimal settings."""
+    import yaml
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+
+    cfg["gpu_layers"] = optimal["gpu_layers"]
+    cfg["context_size"] = optimal["context_size"]
+    cfg["threads"] = optimal["threads"]
+
+    if "tensor_split" in optimal:
+        if "parameters" not in cfg:
+            cfg["parameters"] = {}
+        cfg["parameters"]["tensor_split"] = optimal["tensor_split"]
+        cfg["parameters"]["main_gpu"] = optimal["main_gpu"]
+
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+
+def _run_models(command: str, model_name: str = None) -> int:
+    """Model management commands."""
+    from aicp.core.models import list_models, get_model_config
+    from rich.table import Table
+
+    if command == "list":
+        models = list_models()
+        if not models:
+            console.print("[dim]No models found.[/]")
+            return 0
+
+        table = Table(title="Local Models", show_header=True)
+        table.add_column("Name", style="bold")
+        table.add_column("File")
+        table.add_column("Size", justify="right")
+        table.add_column("Backend")
+        table.add_column("GPU Layers", justify="right")
+        table.add_column("Context", justify="right")
+
+        for m in models:
+            table.add_row(
+                m.name, m.gguf_file, f"{m.gguf_size_mb} MiB",
+                m.backend, str(m.gpu_layers), str(m.context_size),
+            )
+        console.print(table)
+        return 0
+
+    elif command == "info" and model_name:
+        cfg = get_model_config(model_name)
+        if cfg is None:
+            print_error(f"Model not found: {model_name}")
+            return 1
+        import yaml
+        console.print(f"[bold]{model_name}[/] configuration:")
+        console.print(yaml.dump(cfg, default_flow_style=False))
+        return 0
+
+    else:
+        print_error("Usage: --models list | --models info --models-arg <name>")
+        return 1
+
+
 def _run_history(count: int) -> int:
     """Show recent task history."""
     records = list_tasks(count)
@@ -233,6 +392,14 @@ def _run_replay(record_id: str) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # --auto-config (no config needed)
+    if args.auto_config:
+        return _run_auto_config()
+
+    # --models (no config needed)
+    if args.models is not None:
+        return _run_models(args.models, args.models_arg)
 
     # --stats mode (no config needed)
     if args.stats:
