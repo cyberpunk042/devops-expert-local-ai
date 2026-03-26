@@ -1,0 +1,2 @@
+FROM localai/localai:latest-gpu-nvidia-cuda-12
+COPY backends/cuda12-llama-cpp /backends/cuda12-llama-cpp

@@ -44,3 +44,27 @@ def test_rejects_unknown_backend(tmp_path):
     )
     with pytest.raises(ValueError, match="Unknown backend"):
         controller.run(task)
+
+
+def test_rejects_dangerous_project_root():
+    controller = Controller(backends={})
+    task = Task(
+        prompt="hello",
+        mode=Mode.THINK,
+        project_path=Path("/"),
+        backend_name="local",
+    )
+    with pytest.raises(ValueError, match="[Rr]efusing"):
+        controller.run(task)
+
+
+def test_rejects_home_as_project():
+    controller = Controller(backends={})
+    task = Task(
+        prompt="hello",
+        mode=Mode.THINK,
+        project_path=Path.home(),
+        backend_name="local",
+    )
+    with pytest.raises(ValueError, match="home directory"):
+        controller.run(task)

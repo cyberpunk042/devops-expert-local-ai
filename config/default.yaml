@@ -6,8 +6,8 @@ defaults:
 
 backends:
   local:
-    base_url: "http://localhost:8080"
-    model: "default"
+    base_url: "http://localhost:8090"
+    model: "hermes"
   claude:
     model: "opus"
     max_turns: 10

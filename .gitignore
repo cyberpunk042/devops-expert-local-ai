@@ -32,5 +32,9 @@ logs/
 .DS_Store
 Thumbs.db
 
+# LocalAI models and backends (large binary files)
+models/
+/backends/
+
 # Claude Code
 .claude/

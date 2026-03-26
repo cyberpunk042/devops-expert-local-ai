@@ -1,0 +1,23 @@
+services:
+  localai:
+    build:
+      context: .
+      dockerfile: Dockerfile.localai
+    image: aicp-localai:latest
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./models:/models
+    environment:
+      - THREADS=4
+      - MODELS_PATH=/models
+      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    restart: unless-stopped

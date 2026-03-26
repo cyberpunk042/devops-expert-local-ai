@@ -129,7 +129,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.print_help()
         return 1
 
-    controller = Controller(backends)
+    controller = Controller(backends, config=config)
     task = Task(
         prompt=args.prompt,
         mode=Mode(args.mode),
