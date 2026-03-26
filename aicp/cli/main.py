@@ -150,6 +150,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Run a multi-step pipeline from a YAML file",
     )
+    # Project management
+    parser.add_argument(
+        "--project-cmd",
+        metavar="CMD",
+        help="Project commands: register, list, status, plan, assess",
+    )
+    parser.add_argument(
+        "--project-name",
+        metavar="NAME",
+        help="Project name (for register)",
+    )
+    parser.add_argument(
+        "--project-desc",
+        metavar="DESC",
+        help="Project description (for register)",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -461,6 +477,94 @@ def _run_models(command: str, model_name: str = None) -> int:
         return 1
 
 
+def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str = None) -> int:
+    """Handle project management commands."""
+    from aicp.core.projects import (
+        register_project, list_projects, load_project_state,
+        unregister_project,
+    )
+    from rich.table import Table
+
+    if cmd == "register":
+        entry = register_project(project_path, name=name, description=desc or "")
+        console.print(f"[green]Registered:[/] {entry['name']} at {entry['path']}")
+        return 0
+
+    elif cmd == "unregister":
+        if unregister_project(project_path):
+            console.print(f"[yellow]Unregistered:[/] {project_path}")
+        else:
+            print_error("Project not found in registry.")
+        return 0
+
+    elif cmd == "list":
+        projects = list_projects()
+        if not projects:
+            console.print("[dim]No projects registered. Use --project-cmd register[/]")
+            return 0
+
+        table = Table(title="AICP Projects", show_header=True)
+        table.add_column("Name", style="bold")
+        table.add_column("Path")
+        table.add_column("Phase")
+        table.add_column("Milestones")
+        table.add_column("Last Session")
+
+        for p in projects:
+            path = Path(p["path"])
+            state = load_project_state(path)
+            phase = state.get("phase", "?") if state else "?"
+            milestones = state.get("milestones", []) if state else []
+            done = sum(1 for m in milestones if m.get("status") == "done")
+            total = len(milestones)
+            ms_str = f"{done}/{total}" if total else "-"
+            last = ""
+            if state and state.get("last_session"):
+                last = state["last_session"].get("timestamp", "")[:10]
+            table.add_row(p["name"], str(path), phase, ms_str, last)
+
+        console.print(table)
+        return 0
+
+    elif cmd == "status":
+        state = load_project_state(project_path)
+        if state is None:
+            print_error("No project state found. Register first with --project-cmd register")
+            return 1
+
+        console.print(f"[bold]{state.get('name', '?')}[/]")
+        console.print(f"  Phase: [cyan]{state.get('phase', '?')}[/]")
+        console.print(f"  Description: {state.get('description', '')}")
+        console.print(f"  Created: {state.get('created', '?')}")
+
+        last = state.get("last_session")
+        if last:
+            console.print(f"  Last session: {last.get('timestamp', '')[:19]}")
+            if last.get("summary"):
+                console.print(f"  Summary: {last['summary']}")
+
+        milestones = state.get("milestones", [])
+        if milestones:
+            console.print(f"\n  [bold]Milestones:[/]")
+            for m in milestones:
+                status = m.get("status", "pending")
+                color = "green" if status == "done" else "yellow" if status == "in_progress" else "dim"
+                console.print(f"    [{color}]{status:12s}[/] {m['name']}")
+
+        decisions = state.get("decisions", [])
+        if decisions:
+            console.print(f"\n  [bold]Recent decisions:[/]")
+            for d in decisions[-5:]:
+                console.print(f"    {d.get('timestamp', '')[:10]} {d['decision']}")
+
+        return 0
+
+    else:
+        print_error(f"Unknown project command: {cmd}")
+        print_error("Available: register, unregister, list, status")
+        return 1
+
+
 def _run_history(count: int) -> int:
     """Show recent task history."""
     records = list_tasks(count)
@@ -510,6 +614,13 @@ def _run_replay(record_id: str) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # --project-cmd (no config needed)
+    if args.project_cmd:
+        return _run_project_cmd(
+            args.project_cmd, args.project.resolve(),
+            name=args.project_name, desc=args.project_desc,
+        )
 
     # --agent mode (start daemon, no config needed beyond default)
     if args.agent is not None:
