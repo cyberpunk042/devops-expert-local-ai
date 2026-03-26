@@ -150,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Run a multi-step pipeline from a YAML file",
     )
+    # Control plane
+    parser.add_argument(
+        "--control",
+        nargs="?",
+        const="overview",
+        metavar="PROJECT",
+        help="Control plane: overview (default) or deep dive into a project",
+    )
     # Skill system
     parser.add_argument(
         "--skill",
@@ -747,7 +755,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # --project-cmd (no config needed)
+    # --control (no config needed)
+    if args.control is not None:
+        from aicp.cli.control import run_control
+        project_name = None if args.control == "overview" else args.control
+        return run_control(project_name)
+
+    # --project-cmd (no config needed for register/list/status)
     if args.project_cmd:
         return _run_project_cmd(
             args.project_cmd, args.project.resolve(),
