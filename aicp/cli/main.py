@@ -150,6 +150,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Run a multi-step pipeline from a YAML file",
     )
+    # Skill system
+    parser.add_argument(
+        "--skill",
+        metavar="CMD",
+        help="Skill commands: list, run <name>, create <name>, export <name>",
+    )
+    parser.add_argument(
+        "--skill-name",
+        metavar="NAME",
+        help="Skill name (for run, create, export)",
+    )
+    parser.add_argument(
+        "--param",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Skill parameter (repeatable: --param name=foo --param desc=bar)",
+    )
     # Project management
     parser.add_argument(
         "--project-cmd",
@@ -565,6 +582,116 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
         return 1
 
 
+def _run_skill(
+    cmd: str, project_path: Path, skill_name: str = None,
+    params: List[str] = None, backends: Dict = None, config: Dict = None,
+) -> int:
+    """Handle skill commands."""
+    from aicp.core.skills import (
+        discover_skills, get_skill, resolve_params, apply_params,
+        create_skill, generate_claude_command, _global_skills_dir, _project_skills_dir,
+    )
+    from aicp.core.pipeline import run_pipeline
+    from rich.table import Table
+
+    if cmd == "list":
+        skills = discover_skills(project_path)
+        if not skills:
+            console.print("[dim]No skills found. Create one with --skill create --skill-name <name>[/]")
+            return 0
+
+        table = Table(title="Available Skills", show_header=True)
+        table.add_column("Name", style="bold")
+        table.add_column("Source")
+        table.add_column("Description")
+        table.add_column("Params")
+
+        for s in skills:
+            param_str = ", ".join(p.name for p in s.parameters) if s.parameters else "-"
+            table.add_row(s.name, s.source, s.description[:60], param_str)
+        console.print(table)
+        return 0
+
+    elif cmd == "run" and skill_name:
+        skill = get_skill(skill_name, project_path)
+        if not skill:
+            print_error(f"Skill not found: {skill_name}")
+            return 1
+
+        if not skill.steps:
+            print_error(f"Skill '{skill_name}' has no steps (may be a Claude Code command).")
+            console.print(f"  Use in Claude Code: [bold]/{skill_name}[/]")
+            return 1
+
+        # Parse --param key=value
+        provided = {}
+        for p in (params or []):
+            if "=" in p:
+                k, v = p.split("=", 1)
+                provided[k] = v
+
+        try:
+            resolved = resolve_params(skill, provided)
+        except ValueError as e:
+            print_error(str(e))
+            return 1
+
+        steps = apply_params(skill.steps, resolved)
+
+        console.print(f"Running skill [bold]{skill_name}[/] ({len(steps)} steps)")
+        if backends is None:
+            print_error("No backends available. Provide config.")
+            return 1
+
+        results = run_pipeline(steps, backends, project_path, config)
+        for r in results:
+            status = "[green]OK[/]" if not r.get("error") else "[red]ERR[/]"
+            console.print(f"  {status} Step {r['step_index'] + 1}: {r['mode']}/{r['backend']}")
+            if r.get("error"):
+                print_error(r["error"])
+            elif r.get("result"):
+                print_response(r["result"])
+        return 0 if all(not r.get("error") for r in results) else 1
+
+    elif cmd == "create" and skill_name:
+        console.print(f"Creating skill: [bold]{skill_name}[/]")
+        console.print("Where to save?")
+        console.print("  1. Global (~/.aicp/skills/)")
+        console.print("  2. Project (.aicp/skills/)")
+        try:
+            choice = input("Choice [1/2]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return 1
+
+        target = _global_skills_dir() if choice == "1" else _project_skills_dir(project_path)
+
+        console.print("Enter description: ", end="")
+        desc = input().strip()
+
+        # Create a simple template
+        steps = [
+            {"prompt": f"TODO: implement {skill_name}", "mode": "think", "backend": "auto"},
+        ]
+        path = create_skill(skill_name, desc, [], steps, target)
+        console.print(f"[green]Created:[/] {path}")
+        console.print("Edit the YAML to add parameters and steps.")
+        return 0
+
+    elif cmd == "export" and skill_name:
+        skill = get_skill(skill_name, project_path)
+        if not skill:
+            print_error(f"Skill not found: {skill_name}")
+            return 1
+        path = generate_claude_command(skill, project_path)
+        console.print(f"[green]Exported to Claude Code command:[/] {path}")
+        console.print(f"  Use in Claude Code: [bold]/{skill_name}[/]")
+        return 0
+
+    else:
+        print_error("Usage: --skill list | --skill run|create|export --skill-name <name>")
+        return 1
+
+
 def _run_history(count: int) -> int:
     """Show recent task history."""
     records = list_tasks(count)
@@ -656,6 +783,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     backends = _build_backends(config)
+
+    # --skill commands
+    if args.skill:
+        return _run_skill(
+            args.skill, args.project.resolve(),
+            skill_name=args.skill_name, params=args.param,
+            backends=backends, config=config,
+        )
 
     # --check mode
     if args.check:

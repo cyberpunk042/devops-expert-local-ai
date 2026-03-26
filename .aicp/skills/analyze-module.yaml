@@ -1,0 +1,10 @@
+name: analyze-module
+description: Analyze a Python module and suggest improvements
+parameters:
+  - name: module
+    required: true
+    description: Module path to analyze (e.g., aicp/core/router.py)
+steps:
+  - prompt: "Analyze the Python module {module}. What does it do, what are its dependencies, and what could be improved?"
+    mode: think
+    backend: auto
