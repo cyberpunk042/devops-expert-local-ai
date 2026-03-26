@@ -334,8 +334,12 @@ def _apply_optimal_config(config_path: Path, optimal: dict) -> None:
 
 def _run_models(command: str, model_name: str = None) -> int:
     """Model management commands."""
-    from aicp.core.models import list_models, get_model_config
+    from aicp.core.models import (
+        list_models, get_model_config, download_model, activate_model,
+        benchmark_model,
+    )
     from rich.table import Table
+    from rich.progress import Progress
 
     if command == "list":
         models = list_models()
@@ -369,8 +373,61 @@ def _run_models(command: str, model_name: str = None) -> int:
         console.print(yaml.dump(cfg, default_flow_style=False))
         return 0
 
+    elif command == "download" and model_name:
+        console.print(f"Downloading: {model_name}")
+        try:
+            with Progress(console=console) as progress:
+                task_id = progress.add_task("Downloading...", total=None)
+
+                def on_progress(downloaded, total):
+                    if total:
+                        progress.update(task_id, completed=downloaded, total=total)
+
+                path = download_model(model_name, progress_callback=on_progress)
+            console.print(f"[green]Downloaded:[/] {path}")
+            console.print("Config generated. Restart LocalAI to load: [bold]make local-up[/]")
+            return 0
+        except FileExistsError as e:
+            print_error(str(e))
+            return 1
+        except Exception as e:
+            print_error(f"Download failed: {e}")
+            return 1
+
+    elif command == "activate" and model_name:
+        try:
+            from aicp.config.loader import load_config
+            config = load_config()
+            activate_model(model_name, config)
+            console.print(f"[green]Active model set to:[/] {model_name}")
+            console.print("Restart LocalAI to apply: [bold]make local-up[/]")
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    elif command == "benchmark" and model_name:
+        console.print(f"Benchmarking [bold]{model_name}[/]...")
+        try:
+            result = benchmark_model(model_name)
+            table = Table(title=f"Benchmark: {model_name}", show_header=False)
+            table.add_column("Metric", style="bold")
+            table.add_column("Value", justify="right")
+            table.add_row("Latency", f"{result['latency_seconds']:.2f}s")
+            table.add_row("Prompt tokens", str(result["prompt_tokens"]))
+            table.add_row("Completion tokens", str(result["completion_tokens"]))
+            table.add_row("Tokens/sec", f"{result['tokens_per_second']:.1f}")
+            table.add_row("Preview", result["response_preview"])
+            console.print(table)
+            return 0
+        except Exception as e:
+            print_error(f"Benchmark failed: {e}")
+            return 1
+
     else:
-        print_error("Usage: --models list | --models info --models-arg <name>")
+        print_error(
+            "Usage: --models list | --models info|download|activate|benchmark --models-arg <name/url>"
+        )
         return 1
 
 

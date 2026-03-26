@@ -1,15 +1,23 @@
-"""Model management — list, inspect, and configure local models."""
+"""Model management — list, inspect, download, activate, and benchmark."""
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+import httpx
 import yaml
+
+from aicp.core.gpu import calculate_optimal_config, detect_gpus
 
 
 MODELS_DIR = Path(__file__).parent.parent.parent / "models"
+
+# Common HuggingFace GGUF URL pattern
+_HF_URL_RE = re.compile(r"^https?://huggingface\.co/")
 
 
 @dataclass
@@ -77,3 +85,124 @@ def get_model_config(name: str, models_dir: Optional[Path] = None) -> Optional[d
         except (yaml.YAMLError, OSError):
             continue
     return None
+
+
+def download_model(
+    url: str,
+    models_dir: Optional[Path] = None,
+    name: Optional[str] = None,
+    progress_callback=None,
+) -> Path:
+    """Download a GGUF model file and generate a config.
+
+    Args:
+        url: Direct URL to a .gguf file (e.g., HuggingFace)
+        models_dir: Target directory (default: models/)
+        name: Model name for config (derived from filename if not given)
+        progress_callback: Called with (downloaded_bytes, total_bytes)
+
+    Returns: Path to the downloaded GGUF file.
+    """
+    d = models_dir or MODELS_DIR
+    d.mkdir(parents=True, exist_ok=True)
+
+    # Derive filename from URL
+    filename = url.split("/")[-1].split("?")[0]
+    if not filename.endswith(".gguf"):
+        filename += ".gguf"
+
+    dest = d / filename
+    if dest.exists():
+        raise FileExistsError(f"Model already exists: {dest}")
+
+    # Stream download
+    with httpx.stream("GET", url, follow_redirects=True, timeout=600.0) as response:
+        response.raise_for_status()
+        total = int(response.headers.get("content-length", 0))
+        downloaded = 0
+
+        with open(dest, "wb") as f:
+            for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded, total)
+
+    # Generate config
+    if name is None:
+        name = filename.replace(".gguf", "").lower()
+        name = re.sub(r"[^a-z0-9-]", "-", name)
+        name = re.sub(r"-+", "-", name).strip("-")
+
+    gpus = detect_gpus()
+    optimal = calculate_optimal_config(dest, gpus)
+
+    cfg = {
+        "name": name,
+        "backend": "cuda12-llama-cpp",
+        "parameters": {
+            "model": filename,
+            "temperature": 0.7,
+            "top_p": 0.9,
+        },
+        "context_size": optimal["context_size"],
+        "threads": optimal["threads"],
+        "gpu_layers": optimal["gpu_layers"],
+    }
+    if "tensor_split" in optimal:
+        cfg["parameters"]["tensor_split"] = optimal["tensor_split"]
+
+    config_path = d / f"{name}.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+    return dest
+
+
+def activate_model(name: str, config: Dict[str, Any], models_dir: Optional[Path] = None) -> None:
+    """Set a model as the active local model in the AICP config."""
+    config_path = Path(__file__).parent.parent.parent / "config" / "default.yaml"
+    with open(config_path) as f:
+        full_config = yaml.safe_load(f)
+
+    full_config["backends"]["local"]["model"] = name
+
+    with open(config_path, "w") as f:
+        yaml.dump(full_config, f, default_flow_style=False, sort_keys=False)
+
+
+def benchmark_model(
+    name: str,
+    base_url: str = "http://localhost:8090",
+    prompt: str = "Explain what a linked list is in 2 sentences.",
+) -> Dict[str, Any]:
+    """Run a simple benchmark against a model.
+
+    Returns: dict with tokens_per_second, latency, prompt_tokens, completion_tokens.
+    """
+    start = time.time()
+    response = httpx.post(
+        f"{base_url}/v1/chat/completions",
+        json={
+            "model": name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 128,
+        },
+        timeout=120.0,
+    )
+    elapsed = time.time() - start
+    response.raise_for_status()
+
+    data = response.json()
+    usage = data.get("usage", {})
+    pt = usage.get("prompt_tokens", 0)
+    ct = usage.get("completion_tokens", 0)
+
+    return {
+        "model": name,
+        "latency_seconds": round(elapsed, 2),
+        "prompt_tokens": pt,
+        "completion_tokens": ct,
+        "tokens_per_second": round(ct / elapsed, 1) if elapsed > 0 else 0,
+        "response_preview": data["choices"][0]["message"]["content"][:100],
+    }

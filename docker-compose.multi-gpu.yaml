@@ -1,0 +1,12 @@
+# Override for multi-GPU setup: docker compose -f docker-compose.yaml -f docker-compose.multi-gpu.yaml up -d
+services:
+  localai:
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0,1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1"]
+              capabilities: [gpu]
