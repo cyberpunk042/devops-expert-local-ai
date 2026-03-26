@@ -36,9 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend", "-b",
-        choices=["local", "claude"],
+        choices=["local", "claude", "auto"],
         default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
-        help="AI backend (default: local, env: AICP_DEFAULT_BACKEND)",
+        help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND)",
     )
     parser.add_argument(
         "--project", "-d",
@@ -126,6 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--schema",
         metavar="FILE",
         help="JSON Schema file for structured output (Claude Code only)",
+    )
+    parser.add_argument(
+        "--approval",
+        action="store_true",
+        help="Semi-auto: generate plan first, execute on approval",
+    )
+    parser.add_argument(
+        "--pipeline",
+        metavar="FILE",
+        type=Path,
+        help="Run a multi-step pipeline from a YAML file",
     )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
@@ -489,13 +500,40 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error("claude CLI not found on PATH.")
             return 1
 
+    # --pipeline mode
+    if args.pipeline:
+        from aicp.core.pipeline import load_pipeline, run_pipeline
+        try:
+            steps = load_pipeline(args.pipeline)
+        except (FileNotFoundError, ValueError) as e:
+            print_error(str(e))
+            return 1
+        results = run_pipeline(steps, backends, args.project.resolve(), config)
+        for r in results:
+            status = "[green]OK[/]" if not r["error"] else "[red]ERR[/]"
+            console.print(f"  {status} Step {r['step_index'] + 1}: {r['mode']}/{r['backend']}")
+            if r["error"]:
+                print_error(r["error"])
+            elif r["result"]:
+                print_response(r["result"])
+        return 0 if all(not r["error"] for r in results) else 1
+
     # Normal mode: need a prompt
     if not args.prompt:
         parser.print_help()
         return 1
 
+    # Resolve auto backend
+    actual_backend = args.backend
+    if args.backend == "auto":
+        from aicp.core.router import classify_task_with_reason
+        actual_backend, reason = classify_task_with_reason(
+            args.prompt, Mode(args.mode), backends, config
+        )
+        console.print(f"  [dim]Auto-routed to {actual_backend} ({reason})[/]", highlight=False)
+
     # --stream mode: real-time output
-    if args.stream and args.backend == "claude":
+    if args.stream and actual_backend == "claude":
         from rich.live import Live
         from rich.text import Text
         backend = backends["claude"]
@@ -513,9 +551,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error(str(e))
             return 1
 
+    # --approval mode: plan first, then execute
+    if args.approval:
+        from aicp.core.approval import run_with_approval
+        backend = backends.get(actual_backend)
+        if not backend:
+            print_error(f"Unknown backend: {actual_backend}")
+            return 1
+        try:
+            result = run_with_approval(
+                args.prompt, Mode(args.mode), args.project.resolve(), backend,
+            )
+            print_response(result)
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
     # Build extra kwargs for Claude Code
     extra_kwargs = {}
-    if args.backend == "claude":
+    if actual_backend == "claude":
         if args.effort:
             extra_kwargs["effort"] = args.effort
         if args.schema:
@@ -530,19 +585,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         prompt=args.prompt,
         mode=Mode(args.mode),
         project_path=args.project.resolve(),
-        backend_name=args.backend,
+        backend_name=actual_backend,
     )
 
     try:
-        with spinner(f"Asking {args.backend}..."):
-            if extra_kwargs and args.backend == "claude":
-                # Pass extra kwargs directly to Claude backend
+        with spinner(f"Asking {actual_backend}..."):
+            if extra_kwargs and actual_backend == "claude":
                 backend = backends["claude"]
                 result = backend.execute(
                     args.prompt, Mode(args.mode), args.project.resolve(),
                     **extra_kwargs,
                 )
-                # Still log to history via controller path
                 from aicp.core.history import save_task
                 usage = getattr(backend, "last_usage", {})
                 save_task(
@@ -560,7 +613,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as e:
         error_msg = str(e)
         print_error(error_msg)
-        alt = "claude" if args.backend == "local" else "local"
+        alt = "claude" if actual_backend == "local" else "local"
         alt_backend = backends.get(alt)
         if alt_backend and alt_backend.is_available():
             print_warning(f"Try with --backend {alt} instead?")
