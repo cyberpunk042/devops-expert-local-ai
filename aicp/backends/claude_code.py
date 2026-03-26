@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Generator, List, Optional
 
 from aicp.backends.base import Backend
 from aicp.core.context import build_project_context
 from aicp.core.modes import Mode
+from aicp.core.result import TaskResult, TokenUsage
 
 
 class ClaudeCodeBackend(Backend):
@@ -22,11 +24,13 @@ class ClaudeCodeBackend(Backend):
         max_turns: int = 10,
         max_budget_usd: Optional[float] = None,
         timeout: int = 300,
+        effort: Optional[str] = None,
     ) -> None:
         self.model = model
         self.max_turns = max_turns
         self.max_budget_usd = max_budget_usd
         self.timeout = timeout
+        self.effort = effort
 
     @property
     def name(self) -> str:
@@ -38,9 +42,7 @@ class ClaudeCodeBackend(Backend):
         try:
             result = subprocess.run(
                 ["claude", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
+                capture_output=True, text=True, timeout=5,
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, OSError):
@@ -52,9 +54,7 @@ class ClaudeCodeBackend(Backend):
         try:
             result = subprocess.run(
                 ["claude", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
+                capture_output=True, text=True, timeout=5,
             )
             if result.returncode == 0:
                 version = result.stdout.strip()
@@ -65,14 +65,29 @@ class ClaudeCodeBackend(Backend):
         except OSError as e:
             return f"UNAVAILABLE: {e}"
 
-    def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
+    def execute(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        session_name: Optional[str] = None,
+        resume_session: Optional[str] = None,
+        effort: Optional[str] = None,
+        json_schema: Optional[str] = None,
+    ) -> str:
         if not shutil.which("claude"):
             raise RuntimeError(
                 "Claude Code CLI not found on PATH. "
                 "Install it: https://docs.anthropic.com/en/docs/claude-code"
             )
 
-        cmd = self._build_command(prompt, mode, project_path)
+        cmd = self._build_command(
+            prompt, mode, project_path,
+            session_name=session_name,
+            resume_session=resume_session,
+            effort=effort or self.effort,
+            json_schema=json_schema,
+        )
 
         try:
             result = subprocess.run(
@@ -96,12 +111,69 @@ class ClaudeCodeBackend(Backend):
 
         return self._parse_response(result.stdout)
 
+    def execute_stream(
+        self, prompt: str, mode: Mode, project_path: Path,
+    ) -> Generator[str, None, None]:
+        """Stream Claude Code response chunks via stream-json output."""
+        if not shutil.which("claude"):
+            raise RuntimeError("Claude Code CLI not found on PATH.")
+
+        cmd = self._build_command(prompt, mode, project_path, output_format="stream-json")
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(project_path),
+        )
+
+        self.last_usage = {}
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    etype = event.get("type", "")
+                    if etype == "assistant" and "message" in event:
+                        # Content block
+                        msg = event["message"]
+                        if isinstance(msg, str):
+                            yield msg
+                        elif isinstance(msg, dict):
+                            yield msg.get("content", "")
+                    elif etype == "result":
+                        # Final result with usage
+                        text = event.get("result", "")
+                        if text:
+                            yield text
+                        usage = event.get("usage", {})
+                        cost = event.get("cost_usd") or event.get("cost", 0)
+                        self.last_usage = {
+                            "model": event.get("model", self.model),
+                            "prompt_tokens": usage.get("input_tokens") or usage.get("prompt_tokens"),
+                            "completion_tokens": usage.get("output_tokens") or usage.get("completion_tokens"),
+                            "estimated_cost_usd": float(cost) if cost else None,
+                        }
+                except json.JSONDecodeError:
+                    # Non-JSON line, output as-is
+                    yield line
+        finally:
+            proc.wait()
+
+    def list_sessions(self, project_path: Optional[Path] = None) -> List[Dict]:
+        """List available Claude Code sessions."""
+        # Claude stores sessions in ~/.claude/ — we parse `claude --resume` picker
+        # For now, return empty list as the session API isn't publicly exposed
+        return []
+
     def _parse_response(self, raw: str) -> str:
-        """Parse Claude Code output. Extracts text and usage from JSON format."""
+        """Parse Claude Code JSON output. Extracts text and usage."""
         self.last_usage = {}
         try:
             data = json.loads(raw)
-            # JSON output format: {"result": "text", "usage": {...}, ...}
             text = data.get("result", raw)
             usage = data.get("usage", {})
             cost = data.get("cost_usd") or data.get("cost", 0)
@@ -110,16 +182,24 @@ class ClaudeCodeBackend(Backend):
                 "prompt_tokens": usage.get("input_tokens") or usage.get("prompt_tokens"),
                 "completion_tokens": usage.get("output_tokens") or usage.get("completion_tokens"),
                 "estimated_cost_usd": float(cost) if cost else None,
+                "session_id": data.get("session_id"),
             }
             return text
         except (json.JSONDecodeError, TypeError, KeyError):
-            # Fallback: treat as plain text (--output-format text)
             return raw
 
     def _build_command(
-        self, prompt: str, mode: Mode, project_path: Path, session_name: Optional[str] = None,
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        session_name: Optional[str] = None,
+        resume_session: Optional[str] = None,
+        effort: Optional[str] = None,
+        json_schema: Optional[str] = None,
+        output_format: str = "json",
     ) -> List[str]:
-        cmd = ["claude", "-p", "--output-format", "json"]
+        cmd = ["claude", "-p", "--output-format", output_format]
 
         if self.model:
             cmd.extend(["--model", self.model])
@@ -130,21 +210,32 @@ class ClaudeCodeBackend(Backend):
         if self.max_budget_usd:
             cmd.extend(["--max-budget-usd", str(self.max_budget_usd)])
 
-        # Name the session for later resume via `claude -r`
-        if session_name:
+        # Session management
+        if resume_session:
+            cmd.extend(["--resume", resume_session])
+        elif session_name:
             cmd.extend(["--name", session_name])
 
-        # Inject project context so Claude knows about the project
+        # Effort level
+        if effort:
+            cmd.extend(["--effort", effort])
+
+        # Structured output
+        if json_schema:
+            cmd.extend(["--json-schema", json_schema])
+
+        # Project context
         context = build_project_context(project_path, max_chars=2000)
         if context:
             cmd.extend(["--append-system-prompt", f"Project context:\n{context}"])
 
-        # Map AICP modes to Claude Code permission modes and tool restrictions
+        # Map AICP modes to Claude Code permission modes
         if mode == Mode.THINK:
             cmd.extend(["--permission-mode", "plan"])
         elif mode == Mode.EDIT:
             cmd.extend(["--allowedTools", "Read", "Edit", "Write", "Glob", "Grep"])
             cmd.extend(["--disallowedTools", "Bash"])
+        # ACT mode: no extra restrictions
 
         cmd.append(prompt)
         return cmd

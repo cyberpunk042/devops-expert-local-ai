@@ -107,6 +107,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Continue most recent Claude Code session in this directory",
     )
+    parser.add_argument(
+        "--resume", "-r",
+        metavar="SESSION",
+        help="Resume a Claude Code session by name or ID",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream response in real-time (Claude Code only)",
+    )
+    parser.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "max"],
+        help="Effort level for Claude Code (default: derived from mode)",
+    )
+    parser.add_argument(
+        "--schema",
+        metavar="FILE",
+        help="JSON Schema file for structured output (Claude Code only)",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -445,12 +465,25 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --continue-session (resume Claude Code session)
     if args.continue_session:
-        import subprocess
+        import subprocess as sp
         cmd = ["claude", "-c"]
         if args.prompt:
             cmd.extend(["-p", args.prompt])
         try:
-            result = subprocess.run(cmd, cwd=str(args.project.resolve()))
+            result = sp.run(cmd, cwd=str(args.project.resolve()))
+            return result.returncode
+        except FileNotFoundError:
+            print_error("claude CLI not found on PATH.")
+            return 1
+
+    # --resume (resume named Claude Code session)
+    if args.resume:
+        import subprocess as sp
+        cmd = ["claude", "-r", args.resume]
+        if args.prompt:
+            cmd.extend(["-p", args.prompt])
+        try:
+            result = sp.run(cmd, cwd=str(args.project.resolve()))
             return result.returncode
         except FileNotFoundError:
             print_error("claude CLI not found on PATH.")
@@ -460,6 +493,37 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.prompt:
         parser.print_help()
         return 1
+
+    # --stream mode: real-time output
+    if args.stream and args.backend == "claude":
+        from rich.live import Live
+        from rich.text import Text
+        backend = backends["claude"]
+        collected = []
+        try:
+            with Live(Text(""), console=console, refresh_per_second=4) as live:
+                for chunk in backend.execute_stream(
+                    args.prompt, Mode(args.mode), args.project.resolve()
+                ):
+                    collected.append(chunk)
+                    live.update(Text("".join(collected)))
+            print_response("".join(collected))
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # Build extra kwargs for Claude Code
+    extra_kwargs = {}
+    if args.backend == "claude":
+        if args.effort:
+            extra_kwargs["effort"] = args.effort
+        if args.schema:
+            schema_path = Path(args.schema)
+            if not schema_path.exists():
+                print_error(f"Schema file not found: {args.schema}")
+                return 1
+            extra_kwargs["json_schema"] = schema_path.read_text()
 
     controller = Controller(backends, config=config)
     task = Task(
@@ -471,13 +535,31 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         with spinner(f"Asking {args.backend}..."):
-            result = controller.run(task)
+            if extra_kwargs and args.backend == "claude":
+                # Pass extra kwargs directly to Claude backend
+                backend = backends["claude"]
+                result = backend.execute(
+                    args.prompt, Mode(args.mode), args.project.resolve(),
+                    **extra_kwargs,
+                )
+                # Still log to history via controller path
+                from aicp.core.history import save_task
+                usage = getattr(backend, "last_usage", {})
+                save_task(
+                    prompt=args.prompt, mode=args.mode, backend="claude",
+                    project=str(args.project.resolve()), response=result,
+                    duration_seconds=0, model=usage.get("model"),
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                    estimated_cost_usd=usage.get("estimated_cost_usd"),
+                )
+            else:
+                result = controller.run(task)
         print_response(result)
         return 0
     except Exception as e:
         error_msg = str(e)
         print_error(error_msg)
-        # Suggest alternative backend on failure
         alt = "claude" if args.backend == "local" else "local"
         alt_backend = backends.get(alt)
         if alt_backend and alt_backend.is_available():
