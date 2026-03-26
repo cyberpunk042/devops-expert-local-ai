@@ -71,6 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replay full output from a previous task by ID",
     )
     parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show aggregated task metrics (tokens, cost, latency)",
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Live dashboard: GPU status, LocalAI, metrics (Ctrl+C to exit)",
+    )
+    parser.add_argument(
         "--interactive", "-i",
         action="store_true",
         help="Start interactive chat session (LocalAI only)",
@@ -133,6 +143,47 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     return 0
 
 
+def _run_stats() -> int:
+    """Show aggregated metrics."""
+    from aicp.core.metrics import aggregate
+    from rich.table import Table
+
+    m = aggregate(1000)
+
+    if m["total_tasks"] == 0:
+        console.print("[dim]No history yet.[/]")
+        return 0
+
+    table = Table(title="AICP Metrics", show_header=True, expand=False)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+
+    table.add_row("Tasks today", str(m["today"]))
+    table.add_row("Tasks this week", str(m["this_week"]))
+    table.add_row("Tasks total", str(m["total_tasks"]))
+    table.add_row("Avg duration", f"{m['avg_duration']:.1f}s")
+    table.add_row("Error rate", f"{m['error_rate']:.1f}%")
+    table.add_row("Prompt tokens", f"{m['total_prompt_tokens']:,}")
+    table.add_row("Completion tokens", f"{m['total_completion_tokens']:,}")
+    table.add_row("Total tokens", f"{m['total_tokens']:,}")
+    table.add_row("Est. cost", f"${m['total_cost_usd']:.4f}")
+
+    console.print(table)
+
+    for name, b in m.get("by_backend", {}).items():
+        bt = Table(title=f"Backend: {name}", show_header=True, expand=False)
+        bt.add_column("Metric", style="bold")
+        bt.add_column("Value", justify="right")
+        bt.add_row("Tasks", str(b["tasks"]))
+        bt.add_row("Avg duration", f"{b['avg_duration']:.1f}s")
+        bt.add_row("Error rate", f"{b['error_rate']:.1f}%")
+        bt.add_row("Tokens", f"{b['prompt_tokens'] + b['completion_tokens']:,}")
+        bt.add_row("Cost", f"${b['cost']:.4f}")
+        console.print(bt)
+
+    return 0
+
+
 def _run_history(count: int) -> int:
     """Show recent task history."""
     records = list_tasks(count)
@@ -183,6 +234,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # --stats mode (no config needed)
+    if args.stats:
+        return _run_stats()
+
     # --history mode (no config needed)
     if args.history is not None:
         return _run_history(args.history)
@@ -203,6 +258,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --check mode
     if args.check:
         return _run_check(config, backends)
+
+    # --dashboard mode
+    if args.dashboard:
+        from aicp.cli.dashboard import run_dashboard
+        local_cfg = get_backend_config(config, "local")
+        return run_dashboard(local_cfg.get("base_url", "http://localhost:8090"))
 
     # --interactive mode (LocalAI REPL)
     if args.interactive:

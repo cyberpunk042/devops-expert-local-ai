@@ -24,6 +24,10 @@ def save_task(
     response: str,
     duration_seconds: float,
     error: Optional[str] = None,
+    model: Optional[str] = None,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
+    estimated_cost_usd: Optional[float] = None,
 ) -> str:
     """Save a task record to disk. Returns the record ID (filename stem)."""
     now = datetime.utcnow()
@@ -35,9 +39,14 @@ def save_task(
         "prompt": prompt,
         "mode": mode,
         "backend": backend,
+        "model": model,
         "project": project,
         "response": response,
         "duration_seconds": round(duration_seconds, 2),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0) if prompt_tokens or completion_tokens else None,
+        "estimated_cost_usd": round(estimated_cost_usd, 6) if estimated_cost_usd else None,
         "error": error,
     }
 
@@ -67,12 +76,11 @@ def get_task(record_id: str) -> Optional[Dict[str, Any]]:
     """Load a single task record by ID."""
     path = _history_dir() / f"{record_id}.json"
     if not path.exists():
-        # Try partial match
         matches = list(_history_dir().glob(f"*{record_id}*.json"))
         if len(matches) == 1:
             path = matches[0]
         elif len(matches) > 1:
-            return None  # ambiguous
+            return None
         else:
             return None
 

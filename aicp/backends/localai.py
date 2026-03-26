@@ -93,6 +93,15 @@ class LocalAIBackend(Backend):
                 )
 
         data = response.json()
+
+        # Capture usage metadata for observability
+        usage = data.get("usage", {})
+        self.last_usage = {
+            "model": data.get("model", self.model),
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+
         return data["choices"][0]["message"]["content"]
 
     def _system_prompt(self, mode: Mode, project_path: Path) -> str:

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from aicp.backends.base import Backend
 from aicp.core.context import build_project_context
@@ -93,12 +94,32 @@ class ClaudeCodeBackend(Backend):
             detail = stderr or stdout or "unknown error"
             raise RuntimeError(f"Claude Code exited with code {result.returncode}: {detail}")
 
-        return result.stdout
+        return self._parse_response(result.stdout)
+
+    def _parse_response(self, raw: str) -> str:
+        """Parse Claude Code output. Extracts text and usage from JSON format."""
+        self.last_usage = {}
+        try:
+            data = json.loads(raw)
+            # JSON output format: {"result": "text", "usage": {...}, ...}
+            text = data.get("result", raw)
+            usage = data.get("usage", {})
+            cost = data.get("cost_usd") or data.get("cost", 0)
+            self.last_usage = {
+                "model": data.get("model", self.model),
+                "prompt_tokens": usage.get("input_tokens") or usage.get("prompt_tokens"),
+                "completion_tokens": usage.get("output_tokens") or usage.get("completion_tokens"),
+                "estimated_cost_usd": float(cost) if cost else None,
+            }
+            return text
+        except (json.JSONDecodeError, TypeError, KeyError):
+            # Fallback: treat as plain text (--output-format text)
+            return raw
 
     def _build_command(
         self, prompt: str, mode: Mode, project_path: Path, session_name: Optional[str] = None,
     ) -> List[str]:
-        cmd = ["claude", "-p", "--output-format", "text"]
+        cmd = ["claude", "-p", "--output-format", "json"]
 
         if self.model:
             cmd.extend(["--model", self.model])

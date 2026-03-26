@@ -41,7 +41,6 @@ class Controller:
 
     def run(self, task: Task) -> str:
         """Run a task through the selected backend with mode enforcement."""
-        # Run preflight guardrail checks
         issues = run_preflight_checks(
             task.project_path, task.mode, task.backend_name, self.config
         )
@@ -78,12 +77,17 @@ class Controller:
             raise
         finally:
             elapsed = (datetime.utcnow() - start).total_seconds()
+
+            # Collect usage metadata from backend (populated by execute())
+            usage = getattr(backend, "last_usage", {})
+
             logger.info(json.dumps({
                 "event": "task_complete",
                 "mode": task.mode.value,
                 "backend": task.backend_name,
                 "duration_seconds": elapsed,
                 "response_length": len(result),
+                "tokens": usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }))
             save_task(
@@ -94,6 +98,10 @@ class Controller:
                 response=result,
                 duration_seconds=elapsed,
                 error=error,
+                model=usage.get("model"),
+                prompt_tokens=usage.get("prompt_tokens"),
+                completion_tokens=usage.get("completion_tokens"),
+                estimated_cost_usd=usage.get("estimated_cost_usd"),
             )
 
         return result
