@@ -576,9 +576,14 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
 
         return 0
 
+    # Commands that need a backend are handled separately
+    elif cmd in ("create", "plan", "assess"):
+        print_error(f"'{cmd}' needs backends. Use after config load (handled in main).")
+        return 1
+
     else:
         print_error(f"Unknown project command: {cmd}")
-        print_error("Available: register, unregister, list, status")
+        print_error("Available: register, unregister, list, status, create, plan, assess")
         return 1
 
 
@@ -791,6 +796,30 @@ def main(argv: Optional[List[str]] = None) -> int:
             skill_name=args.skill_name, params=args.param,
             backends=backends, config=config,
         )
+
+    # Project commands that need backends (create, plan, assess)
+    if args.project_cmd in ("create", "plan", "assess"):
+        from aicp.cli.project_ops import create_project, plan_project, assess_project
+        from aicp.core.router import classify_task
+        # Pick best available backend
+        backend_name = classify_task("project analysis", Mode.THINK, backends, config)
+        backend = backends[backend_name]
+        try:
+            if args.project_cmd == "create":
+                create_project(
+                    name=args.project_name or "new-project",
+                    parent_dir=args.project.resolve(),
+                    backend=backend,
+                    idea=args.project_desc or "",
+                )
+            elif args.project_cmd == "plan":
+                plan_project(args.project.resolve(), backend)
+            elif args.project_cmd == "assess":
+                assess_project(args.project.resolve(), backend)
+            return 0
+        except (ValueError, FileExistsError) as e:
+            print_error(str(e))
+            return 1
 
     # --check mode
     if args.check:
