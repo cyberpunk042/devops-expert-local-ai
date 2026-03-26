@@ -69,6 +69,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),
+            max_turns=claude_cfg.get("max_turns", 10),
+            max_budget_usd=claude_cfg.get("max_budget_usd"),
+            timeout=claude_cfg.get("timeout", 300),
         ),
     }
 

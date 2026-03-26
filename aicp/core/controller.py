@@ -33,6 +33,12 @@ class Controller:
 
     def run(self, task: Task) -> str:
         """Run a task through the selected backend with mode enforcement."""
+        # Validate project path before doing anything
+        if not task.project_path.exists():
+            raise ValueError(f"Project path does not exist: {task.project_path}")
+        if not task.project_path.is_dir():
+            raise ValueError(f"Project path is not a directory: {task.project_path}")
+
         backend = self.backends.get(task.backend_name)
         if backend is None:
             raise ValueError(f"Unknown backend: {task.backend_name}")

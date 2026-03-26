@@ -10,6 +10,9 @@ backends:
     model: "default"
   claude:
     model: "opus"
+    max_turns: 10
+    timeout: 300
+    # max_budget_usd: 1.00  # uncomment to set a cost cap
 
 guardrails:
   forbidden_patterns:

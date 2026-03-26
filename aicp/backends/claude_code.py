@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
+import shutil
 import subprocess
 from pathlib import Path
+from typing import List, Optional
 
 from aicp.backends.base import Backend
 from aicp.core.modes import Mode
@@ -13,39 +14,74 @@ from aicp.core.modes import Mode
 class ClaudeCodeBackend(Backend):
     """Backend that shells out to the `claude` CLI."""
 
-    def __init__(self, model: str = "opus") -> None:
+    def __init__(
+        self,
+        model: str = "opus",
+        max_turns: int = 10,
+        max_budget_usd: Optional[float] = None,
+        timeout: int = 300,
+    ) -> None:
         self.model = model
+        self.max_turns = max_turns
+        self.max_budget_usd = max_budget_usd
+        self.timeout = timeout
 
     @property
     def name(self) -> str:
         return "claude"
 
     def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
+        if not shutil.which("claude"):
+            raise RuntimeError(
+                "Claude Code CLI not found on PATH. "
+                "Install it: https://docs.anthropic.com/en/docs/claude-code"
+            )
+
         cmd = self._build_command(prompt, mode, project_path)
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=str(project_path),
-        )
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=str(project_path),
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"Claude Code timed out after {self.timeout}s. "
+                "Try a simpler prompt or increase timeout in config."
+            )
+
         if result.returncode != 0:
-            raise RuntimeError(f"Claude Code failed: {result.stderr}")
+            stderr = result.stderr.strip()
+            stdout = result.stdout.strip()
+            detail = stderr or stdout or "unknown error"
+            raise RuntimeError(f"Claude Code exited with code {result.returncode}: {detail}")
+
         return result.stdout
 
-    def _build_command(self, prompt: str, mode: Mode, project_path: Path) -> list[str]:
+    def _build_command(self, prompt: str, mode: Mode, project_path: Path) -> List[str]:
         cmd = ["claude", "-p", "--output-format", "text"]
 
         if self.model:
             cmd.extend(["--model", self.model])
 
-        # Map AICP modes to Claude Code permission modes
+        if self.max_turns:
+            cmd.extend(["--max-turns", str(self.max_turns)])
+
+        if self.max_budget_usd:
+            cmd.extend(["--max-budget-usd", str(self.max_budget_usd)])
+
+        # Map AICP modes to Claude Code permission modes and tool restrictions
         if mode == Mode.THINK:
+            # Plan mode = read-only, no edits, no commands
             cmd.extend(["--permission-mode", "plan"])
-            cmd.extend(["--tools", "Read"])
         elif mode == Mode.EDIT:
+            # Allow file operations but no shell commands
             cmd.extend(["--allowedTools", "Read", "Edit", "Write", "Glob", "Grep"])
-        # ACT mode: no extra restrictions
+            cmd.extend(["--disallowedTools", "Bash"])
+        # ACT mode: no extra restrictions — full power
 
         cmd.append(prompt)
         return cmd
