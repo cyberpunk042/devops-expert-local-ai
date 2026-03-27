@@ -6,7 +6,22 @@
       "Bash(aicp --check)",
       "Bash(aicp \"What is 2 + 2? Answer in one word.\" -m think -b local)",
       "Bash(docker compose:*)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(find aicp -name \"*.py\" -type f -exec wc -l {} +)",
+      "Bash(pip --version)",
+      "Bash(docker --version)",
+      "Bash(nvidia-smi)",
+      "Bash(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader)",
+      "Bash(docker-compose ps:*)",
+      "Bash(python -m aicp.cli --check)",
+      "Bash(python3 -m aicp.cli --check)",
+      "Bash(python3 -c \"from aicp.cli.main import main; main\\(\\)\" -- --check)",
+      "Bash(pip3 show:*)",
+      "Bash(python3 -m pip show aicp)",
+      "Bash(pip3 --version)",
+      "Bash(python3 -m pip --version)",
+      "Bash(python3 -m pip list)",
+      "Bash(nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader,nounits)"
     ]
   }
 }

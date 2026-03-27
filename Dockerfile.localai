@@ -1,2 +1,6 @@
-FROM localai/localai:latest-gpu-nvidia-cuda-12
-COPY backends/cuda12-llama-cpp /backends/cuda12-llama-cpp
+# Pinned version — update deliberately after testing: make setup-force
+# To upgrade: change the version tag here, then run: make setup-force
+FROM localai/localai:v4.0.0-gpu-nvidia-cuda-12
+
+# Models are mounted at runtime via ./models:/models — no COPY needed.
+# Backends are downloaded by setup.sh into the localai_backends named volume.

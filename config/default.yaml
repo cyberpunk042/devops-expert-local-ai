@@ -8,6 +8,7 @@ backends:
   local:
     base_url: "http://localhost:8090"
     model: "hermes"
+    max_tokens: 2048
   claude:
     model: "opus"
     max_turns: 10
@@ -22,3 +23,7 @@ guardrails:
     - "*.pem"
     - "*credentials*"
     - "*secret*"
+  # allowed_paths restricts Edit/Act mode to specific directories.
+  # Uncomment and set to limit scope — useful for shared machines.
+  # allowed_paths:
+  #   - /home/youruser/projects

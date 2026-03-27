@@ -9,6 +9,42 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+def _append_event_log(record: Dict[str, Any]) -> None:
+    """Append a JSON-line entry to AICP_LOG_FILE if the env var is set.
+
+    Each line is a self-contained JSON object (newline-delimited JSON / JSONL),
+    making it easy to stream-process with jq or import into log aggregators.
+    The full response body is excluded to keep the log compact — history files
+    in ~/.aicp/history/ hold the full records.
+    """
+    log_path = os.environ.get("AICP_LOG_FILE")
+    if not log_path:
+        return
+
+    entry = {
+        "ts": record.get("timestamp"),
+        "id": record.get("id"),
+        "mode": record.get("mode"),
+        "backend": record.get("backend"),
+        "model": record.get("model"),
+        "project": record.get("project"),
+        "duration_s": record.get("duration_seconds"),
+        "prompt_tokens": record.get("prompt_tokens"),
+        "completion_tokens": record.get("completion_tokens"),
+        "total_tokens": record.get("total_tokens"),
+        "cost_usd": record.get("estimated_cost_usd"),
+        "error": record.get("error"),
+        # Truncated prompt for log correlation — full text is in the history file
+        "prompt_preview": (record.get("prompt") or "")[:120],
+    }
+
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass  # Never crash the main flow due to logging failure
+
+
 def _history_dir() -> Path:
     """Get history directory, respecting AICP_HISTORY_DIR env var."""
     d = Path(os.environ.get("AICP_HISTORY_DIR", Path.home() / ".aicp" / "history"))
@@ -53,6 +89,12 @@ def save_task(
     path = _history_dir() / f"{record_id}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
+
+    _append_event_log(record)
+
+    # Optional SQLite store — activated by AICP_DB_FILE env var
+    from aicp.core.db import record_task
+    record_task(record)
 
     return record_id
 

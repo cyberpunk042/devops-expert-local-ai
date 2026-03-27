@@ -64,6 +64,51 @@ def check_mode_compatibility(mode: Mode, backend_name: str) -> List[str]:
     return warnings
 
 
+def check_forbidden_path(
+    project_path: Path,
+    mode: Mode,
+    config: Dict[str, Any],
+) -> List[str]:
+    """Block Edit/Act tasks targeting forbidden or out-of-scope paths.
+
+    Checks two things:
+    1. Forbidden patterns — blocks .env, .ssh, *.key, *secret*, etc.
+    2. allowed_paths — if configured, the project must be within one of them.
+    """
+    if mode == Mode.THINK:
+        return []  # read-only mode: no restriction needed
+
+    from aicp.guardrails.paths import get_forbidden_patterns, is_path_allowed
+
+    forbidden_patterns = get_forbidden_patterns(config)
+
+    # Resolve allowed_paths from config (optional — restricts scope of Edit/Act)
+    raw_allowed = config.get("guardrails", {}).get("allowed_paths")
+    allowed_paths = [Path(p) for p in raw_allowed] if raw_allowed else None
+
+    if not is_path_allowed(
+        project_path,
+        project_path.parent,
+        allowed_paths=allowed_paths,
+        forbidden_patterns=forbidden_patterns,
+    ):
+        if allowed_paths and not any(
+            project_path.resolve() == ap.resolve()
+            or str(project_path.resolve()).startswith(str(ap.resolve()))
+            for ap in allowed_paths
+        ):
+            return [
+                f"Refusing to run {mode.value} mode on '{project_path}' — "
+                "not in guardrails.allowed_paths. "
+                "Add the path to allowed_paths in config or ~/.aicp/config.yaml."
+            ]
+        return [
+            f"Refusing to run {mode.value} mode on '{project_path}' — "
+            "it matches a forbidden pattern (secrets/credentials)."
+        ]
+    return []
+
+
 def run_preflight_checks(
     project_path: Path,
     mode: Mode,
@@ -75,5 +120,6 @@ def run_preflight_checks(
 
     results.extend(check_project_path(project_path))
     results.extend(check_mode_compatibility(mode, backend_name))
+    results.extend(check_forbidden_path(project_path, mode, config))
 
     return results

@@ -1,7 +1,11 @@
 """Integration tests — require real backends to be available.
 
-Run with: pytest tests/test_integration.py -v
-These tests are skipped when backends are not available.
+Run with:
+  pytest tests/test_integration.py -v              # all integration tests
+  pytest tests/test_integration.py -v -k localai   # LocalAI tests only
+  pytest tests/test_integration.py -v -k claude    # Claude Code tests only
+
+Tests are automatically skipped when the required backend is unavailable.
 """
 
 import shutil
@@ -10,6 +14,7 @@ import subprocess
 import pytest
 
 from aicp.backends.claude_code import ClaudeCodeBackend
+from aicp.backends.localai import LocalAIBackend
 from aicp.core.modes import Mode
 from pathlib import Path
 
@@ -17,6 +22,25 @@ from pathlib import Path
 has_claude = shutil.which("claude") is not None
 
 PROJECT_PATH = Path(__file__).parent.parent
+
+LOCALAI_BASE_URL = "http://localhost:8090"
+LOCALAI_MODEL = "hermes"  # matches config/default.yaml
+
+
+def _localai_available() -> bool:
+    """Return True if LocalAI is reachable and has at least one model loaded."""
+    try:
+        import httpx
+        resp = httpx.get(f"{LOCALAI_BASE_URL}/v1/models", timeout=3.0)
+        if resp.status_code != 200:
+            return False
+        models = resp.json().get("data", [])
+        return len(models) > 0
+    except Exception:
+        return False
+
+
+has_localai = _localai_available()
 
 
 @pytest.mark.skipif(not has_claude, reason="claude CLI not on PATH")
@@ -61,6 +85,80 @@ class TestControllerIntegration:
             mode=Mode.THINK,
             project_path=PROJECT_PATH,
             backend_name="claude",
+        )
+        result = controller.run(task)
+        assert len(result.strip()) > 0
+
+
+# =============================================================================
+# LocalAI integration tests
+# Run: pytest tests/test_integration.py -v -k localai
+# Requires: make local-up (LocalAI running on localhost:8090 with a model loaded)
+# =============================================================================
+
+@pytest.mark.skipif(not has_localai, reason="LocalAI not running on localhost:8090")
+class TestLocalAIIntegration:
+    """Integration tests that call the real LocalAI instance."""
+
+    def _backend(self) -> LocalAIBackend:
+        """Build a backend pointed at the running LocalAI instance."""
+        import httpx
+        # Use whichever model is actually loaded — don't hard-code the alias
+        resp = httpx.get(f"{LOCALAI_BASE_URL}/v1/models", timeout=3.0)
+        models = [m.get("id", "") for m in resp.json().get("data", [])]
+        model = models[0] if models else LOCALAI_MODEL
+        return LocalAIBackend(base_url=LOCALAI_BASE_URL, model=model, max_tokens=256)
+
+    def test_is_available(self):
+        """Backend reports itself as available."""
+        backend = self._backend()
+        assert backend.is_available() is True
+
+    def test_status_detail_shows_models(self):
+        """status_detail() returns a string mentioning the loaded model."""
+        backend = self._backend()
+        detail = backend.status_detail()
+        assert "OK" in detail
+        assert backend.model in detail
+
+    def test_think_mode_returns_response(self):
+        """Think mode returns a non-empty string from the model."""
+        backend = self._backend()
+        result = backend.execute(
+            "Say the word 'pong' and nothing else.",
+            Mode.THINK,
+            PROJECT_PATH,
+        )
+        assert isinstance(result, str)
+        assert len(result.strip()) > 0
+
+    def test_response_has_usage_metadata(self):
+        """After execute(), last_usage is populated with token counts."""
+        backend = self._backend()
+        backend.execute("Say 'ok'.", Mode.THINK, PROJECT_PATH)
+        usage = getattr(backend, "last_usage", {})
+        # prompt_tokens may be None if the model doesn't report them, but the
+        # key should exist
+        assert "prompt_tokens" in usage
+        assert "model" in usage
+
+    def test_model_loaded_check(self):
+        """_is_model_loaded() returns True when LocalAI has the model."""
+        backend = self._backend()
+        assert backend._is_model_loaded() is True
+
+    def test_full_pipeline_think_local(self):
+        """End-to-end: Controller -> LocalAI -> response."""
+        from aicp.core.controller import Controller, Task
+
+        backend = self._backend()
+        backends = {"local": backend}
+        controller = Controller(backends)
+        task = Task(
+            prompt="Reply with the single word: ready",
+            mode=Mode.THINK,
+            project_path=PROJECT_PATH,
+            backend_name="local",
         )
         result = controller.run(task)
         assert len(result.strip()) > 0

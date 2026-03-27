@@ -1,15 +1,98 @@
-.PHONY: local-up local-up-multi local-down local-status local-logs test check
+.PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
+        local-up local-up-multi local-down local-status local-logs \
+        test test-all check lint format type-check auto-config benchmark update \
+        model-download models-list model-list-remote agent-up agent-down \
+        install-aliases install-service uninstall-service db-rebuild \
+        install-nvidia-toolkit help
 
-PORT ?= 8090
+SETUP_SCRIPT := scripts/setup.sh
+PORT         ?= 8090
 
-# LocalAI management
+# Default target — show help
+.DEFAULT_GOAL := help
+
+help:
+	@echo ""
+	@echo "AICP — AI Control Platform"
+	@echo ""
+	@echo "SETUP"
+	@echo "  make setup                   Full setup: venv + deps + model + LocalAI (idempotent)"
+	@echo "  make setup-force             Force re-run every step even if already done"
+	@echo "  make setup-claude-only       Python + Claude Code only (no LocalAI)"
+	@echo "  make setup-local-only        LocalAI + GPU only (no Claude deps)"
+	@echo "  make setup-low-vram          Setup with phi3-mini (3 GB VRAM)"
+	@echo "  make check-prereqs           Check Python / Docker / GPU / NVIDIA toolkit"
+	@echo "  make install-nvidia-toolkit  Install NVIDIA Container Toolkit (GPU → Docker)"
+	@echo ""
+	@echo "LOCALAI"
+	@echo "  make local-up                Start LocalAI container"
+	@echo "  make local-down              Stop LocalAI container"
+	@echo "  make local-status            Container + API status"
+	@echo "  make local-logs              Tail LocalAI container logs"
+	@echo "  make local-up-multi          Start with multi-GPU compose override"
+	@echo ""
+	@echo "DEVELOPMENT"
+	@echo "  make test                    Run unit tests (excludes integration)"
+	@echo "  make test-all                Run all tests including integration"
+	@echo "  make check                   aicp --check (config + backend health)"
+	@echo "  make lint                    Ruff lint"
+	@echo "  make format                  Ruff format"
+	@echo "  make type-check              mypy static type check"
+	@echo "  make auto-config             GPU-aware model config optimiser"
+	@echo "  make benchmark               Benchmark the default model"
+	@echo ""
+	@echo "MODELS"
+	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
+	@echo "  make models-list             Models currently loaded in LocalAI"
+	@echo "  make model-download MODEL=<f> URL=<url>  Download a GGUF model"
+	@echo ""
+	@echo "AGENT"
+	@echo "  make agent-up                Start aicp-agent daemon (port 9100)"
+	@echo "  make agent-down              Stop aicp-agent daemon"
+	@echo "  make install-service         Install aicp-agent as systemd user service"
+	@echo "  make uninstall-service       Remove systemd service"
+	@echo ""
+	@echo "MAINTENANCE"
+	@echo "  make update                  git pull + pip install"
+	@echo "  make install-aliases         Add shell aliases to ~/.bashrc / ~/.zshrc"
+	@echo "  make db-rebuild              Rebuild SQLite metrics DB from history JSON"
+	@echo ""
+
+# =============================================================================
+# Setup — one command to go from zero to working
+# =============================================================================
+
+setup:
+	@bash $(SETUP_SCRIPT) --mode full
+
+setup-force:
+	@bash $(SETUP_SCRIPT) --mode full --force
+
+setup-claude-only:
+	@bash $(SETUP_SCRIPT) --mode claude
+
+setup-local-only:
+	@bash $(SETUP_SCRIPT) --mode local
+
+setup-low-vram:
+	@bash $(SETUP_SCRIPT) --mode full --model phi3-mini
+
+check-prereqs:
+	@bash $(SETUP_SCRIPT) --mode check-only
+
+install-nvidia-toolkit:
+	@bash scripts/install-nvidia-toolkit.sh
+
+# =============================================================================
+# LocalAI management (day-to-day)
+# =============================================================================
+
 local-up:
-	docker compose build
 	docker compose up -d
-	@echo "Waiting for LocalAI to start..."
+	@echo "Waiting for LocalAI API..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
-			echo "LocalAI is ready at http://localhost:$(PORT)"; \
+			echo "LocalAI ready at http://localhost:$(PORT)"; \
 			break; \
 		fi; \
 		echo "  waiting... ($$i/10)"; \
@@ -17,17 +100,7 @@ local-up:
 	done
 
 local-up-multi:
-	docker compose -f docker-compose.yaml -f docker-compose.multi-gpu.yaml build
 	docker compose -f docker-compose.yaml -f docker-compose.multi-gpu.yaml up -d
-	@echo "Waiting for LocalAI (multi-GPU) to start..."
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
-			echo "LocalAI is ready at http://localhost:$(PORT)"; \
-			break; \
-		fi; \
-		echo "  waiting... ($$i/10)"; \
-		sleep 3; \
-	done
 
 local-down:
 	docker compose down
@@ -40,7 +113,10 @@ local-status:
 local-logs:
 	docker compose logs -f --tail=50
 
+# =============================================================================
 # Development
+# =============================================================================
+
 test:
 	.venv/bin/pytest tests/ -v --ignore=tests/test_integration.py
 
@@ -50,8 +126,79 @@ test-all:
 check:
 	.venv/bin/aicp --check
 
+lint:
+	.venv/bin/ruff check aicp/ tests/
+
+format:
+	.venv/bin/ruff format aicp/ tests/
+
+type-check:
+	.venv/bin/mypy aicp/
+
+# Rebuild SQLite metrics DB from history JSON files (requires AICP_DB_FILE to be set)
+db-rebuild:
+	.venv/bin/python -c "from aicp.core.db import rebuild_db; n=rebuild_db(); print(f'Imported {n} records.')"
+
 auto-config:
 	.venv/bin/aicp --auto-config
 
 benchmark:
 	.venv/bin/aicp --models benchmark --models-arg hermes
+
+# =============================================================================
+# Model management
+# =============================================================================
+
+# Download a GGUF model into models/.
+# Usage: make model-download MODEL=filename.gguf URL=https://...
+model-download:
+	@test -n "$(URL)"   || (echo "ERROR: set URL=<gguf download url>"; exit 1)
+	@test -n "$(MODEL)" || (echo "ERROR: set MODEL=<filename.gguf>"; exit 1)
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/$(MODEL) "$(URL)"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+models-list:
+	@curl -sf http://localhost:$(PORT)/v1/models 2>/dev/null | python3 -m json.tool || \
+		echo "LocalAI not reachable at http://localhost:$(PORT)"
+
+# Print curated catalog of GGUF models with VRAM requirements and download URLs.
+# Filter by VRAM: make model-list-remote VRAM=8
+model-list-remote:
+	@bash scripts/models-catalog.sh
+
+# =============================================================================
+# Agent daemon
+# =============================================================================
+
+agent-up:
+	@mkdir -p .aicp
+	@.venv/bin/aicp-agent & echo $$! > .aicp/agent.pid
+	@echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100"
+	@echo "Stop with: make agent-down"
+
+agent-down:
+	@if [ -f .aicp/agent.pid ]; then \
+		kill $$(cat .aicp/agent.pid) 2>/dev/null && echo "aicp-agent stopped" || echo "Process already stopped"; \
+		rm -f .aicp/agent.pid; \
+	else \
+		echo "No PID file found (.aicp/agent.pid)"; \
+	fi
+
+# =============================================================================
+# Maintenance
+# =============================================================================
+
+update:
+	git pull
+	.venv/bin/pip install -e ".[dev]"
+	@echo "Updated. If LocalAI config changed: make setup-local-only"
+
+install-aliases:
+	@bash scripts/install-aliases.sh
+
+install-service:
+	@bash scripts/install-service.sh install
+
+uninstall-service:
+	@bash scripts/install-service.sh uninstall

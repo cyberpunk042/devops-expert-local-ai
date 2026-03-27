@@ -38,17 +38,34 @@ def _overview() -> int:
         ))
         return 0
 
+    # Enrich projects with state and last-activity timestamp for sorting
+    enriched = []
+    for p in projects:
+        path = Path(p["path"])
+        state = load_project_state(path)
+        last_ts = ""
+        if state and state.get("last_session"):
+            last_ts = state["last_session"].get("timestamp", "")
+        enriched.append((p, state, last_ts))
+
+    # Sort: most recently active first; projects with no activity fall to the bottom
+    enriched.sort(key=lambda x: x[2], reverse=True)
+
+    # Phase summary counts
+    phase_counts: Dict[str, int] = {}
+    for _, state, _ in enriched:
+        phase = (state or {}).get("phase", "no state")
+        phase_counts[phase] = phase_counts.get(phase, 0) + 1
+
     # Projects table
     proj_table = Table(show_header=True, expand=True, title="Managed Projects")
     proj_table.add_column("Project", style="bold")
     proj_table.add_column("Phase")
     proj_table.add_column("Progress")
     proj_table.add_column("Last Activity")
-    proj_table.add_column("Open Decisions")
+    proj_table.add_column("Decisions")
 
-    for p in projects:
-        path = Path(p["path"])
-        state = load_project_state(path)
+    for p, state, last_ts in enriched:
         if not state:
             proj_table.add_row(p["name"], "[dim]no state[/]", "-", "-", "-")
             continue
@@ -65,13 +82,11 @@ def _overview() -> int:
         if total:
             pct = done / total * 100
             bar = _progress_bar(pct)
-            progress = f"{bar} {done}/{total}"
+            progress = f"{bar} {done}/{total} ({pct:.0f}%)"
         else:
             progress = "[dim]-[/]"
 
-        last = ""
-        if state.get("last_session"):
-            last = state["last_session"].get("timestamp", "")[:10]
+        last_display = last_ts[:10] if last_ts else "[dim]-[/]"
 
         decisions = state.get("decisions", [])
         open_count = len(decisions)
@@ -80,11 +95,20 @@ def _overview() -> int:
             p["name"],
             f"[{phase_color}]{phase}[/]",
             progress,
-            last or "[dim]-[/]",
+            last_display,
             str(open_count) if open_count else "[dim]-[/]",
         )
 
     console.print(Panel(proj_table, title="AICP Control Plane", border_style="blue"))
+
+    # Phase summary footer
+    if phase_counts:
+        color_map = {"init": "dim", "planned": "yellow", "building": "cyan", "done": "green"}
+        parts = []
+        for phase in sorted(phase_counts):
+            color = color_map.get(phase, "white")
+            parts.append(f"[{color}]{phase}[/]: {phase_counts[phase]}")
+        console.print(f"  [dim]Phase breakdown:[/] {' · '.join(parts)}")
 
     # Recent activity across all projects
     recent = list_tasks(10)
@@ -132,11 +156,18 @@ def _project_deep_dive(project_name: str) -> int:
         console.print(f"[red]No state for project:[/] {project_name}")
         return 1
 
-    # Header
+    # Header with milestone completion percentage
+    milestones = state.get("milestones", [])
+    ms_done = sum(1 for m in milestones if m.get("status") == "done")
+    ms_total = len(milestones)
+    ms_pct = f"{ms_done}/{ms_total} ({ms_done / ms_total * 100:.0f}%)" if ms_total else "no milestones"
+    bar_str = _progress_bar(ms_done / ms_total * 100 if ms_total else 0)
+
     console.print(Panel(
         f"[bold]{state.get('name', project_name)}[/]\n"
         f"{state.get('description', '')}\n"
         f"Phase: [cyan]{state.get('phase', '?')}[/] | "
+        f"Progress: {bar_str} {ms_pct} | "
         f"Path: {project['path']}",
         title=f"Project: {project_name}",
         border_style="blue",
@@ -151,20 +182,23 @@ def _project_deep_dive(project_name: str) -> int:
             border_style="dim",
         ))
 
-    # Milestones
-    milestones = state.get("milestones", [])
+    # Milestones — group by status
     if milestones:
-        ms_table = Table(title="Milestones", show_header=True, expand=True)
-        ms_table.add_column("Status", width=12)
+        ms_table = Table(title=f"Milestones ({ms_pct})", show_header=True, expand=True)
+        ms_table.add_column("Status", width=14)
         ms_table.add_column("Name", style="bold")
         ms_table.add_column("Description")
 
-        for m in milestones:
+        # Order: in_progress first, then pending, then done
+        status_order = {"in_progress": 0, "pending": 1, "done": 2}
+        sorted_ms = sorted(milestones, key=lambda m: status_order.get(m.get("status", "pending"), 1))
+
+        for m in sorted_ms:
             status = m.get("status", "pending")
             color = {"done": "green", "in_progress": "yellow", "pending": "dim"}.get(status, "white")
-            icon = {"done": "v", "in_progress": ">", "pending": " "}.get(status, "?")
+            icon = {"done": "✓", "in_progress": "▶", "pending": "○"}.get(status, "?")
             ms_table.add_row(
-                f"[{color}][{icon}] {status}[/]",
+                f"[{color}]{icon} {status}[/]",
                 m["name"],
                 m.get("description", ""),
             )
@@ -188,7 +222,14 @@ def _project_deep_dive(project_name: str) -> int:
 
     # Recent tasks for this project
     all_tasks = list_tasks(50)
-    proj_tasks = [t for t in all_tasks if t.get("project", "").endswith(project_name)]
+    proj_path_str = str(path.resolve())
+    proj_tasks = [
+        t for t in all_tasks
+        if t.get("project") and (
+            t["project"] == proj_path_str
+            or Path(t["project"]).resolve() == path.resolve()
+        )
+    ]
     if proj_tasks:
         task_table = Table(title="Recent Tasks", show_header=True, expand=True)
         task_table.add_column("Time", style="dim")

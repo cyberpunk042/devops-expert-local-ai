@@ -3,16 +3,27 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.localai
+    # Local image name — Dockerfile pins the upstream LocalAI version.
+    # To upgrade: edit FROM in Dockerfile.localai, then run: make setup-force
     image: aicp-localai:latest
     ports:
       - "8090:8080"
     volumes:
       - ./models:/models
+      # Persist /backends so downloaded backend binaries survive container
+      # recreation. Use `docker compose down` (NOT `down -v`) to preserve this.
+      - localai_backends:/backends
     environment:
-      - THREADS=4
+      - THREADS=${THREADS:-4}
       - MODELS_PATH=/models
       - NVIDIA_VISIBLE_DEVICES=0
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - LOCALAI_LOG_LEVEL=${LOCALAI_LOG_LEVEL:-info}
+      # Install llama-cpp backend from gallery on first boot (no-op if already
+      # in the localai_backends volume from a previous run).
+      - EXTERNAL_BACKENDS=localai@llama-cpp
+    devices:
+      - /dev/dxg:/dev/dxg
     deploy:
       resources:
         reservations:
@@ -21,3 +32,8 @@ services:
               device_ids: ["0"]
               capabilities: [gpu]
     restart: unless-stopped
+
+volumes:
+  # Named volume persists /backends across `docker compose down` restarts.
+  # NEVER run `docker compose down -v` — that wipes the downloaded backends.
+  localai_backends:

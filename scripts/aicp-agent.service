@@ -1,0 +1,23 @@
+[Unit]
+Description=AICP Agent Daemon
+Documentation=file://%h/devops-expert-local-ai/README.md
+After=network.target
+
+[Service]
+Type=simple
+# Runs as the current user — no root required.
+# ExecStart is patched by make install-service with the real repo path.
+ExecStart=REPO_ROOT/.venv/bin/aicp-agent
+WorkingDirectory=REPO_ROOT
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment — override via ~/.config/systemd/user/aicp-agent.service.d/override.conf
+Environment=AICP_DEFAULT_MODE=think
+Environment=AICP_DEFAULT_BACKEND=local
+# Environment=AICP_AGENT_SECRET=change-me
+
+[Install]
+WantedBy=default.target

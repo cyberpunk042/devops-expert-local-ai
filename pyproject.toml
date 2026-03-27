@@ -17,6 +17,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
+    "mypy>=1.0",
 ]
 
 [project.scripts]
@@ -32,6 +33,16 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+# Gradually tighten: start with warn_return_any, enable disallow_untyped_defs later
+warn_return_any = true
+warn_unused_ignores = true
+# Exclude test files and generated stubs from strict checking
+exclude = ["tests/", "setup.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

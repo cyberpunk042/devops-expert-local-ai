@@ -15,7 +15,14 @@ has_localai = False
 try:
     import httpx
     r = httpx.get("http://localhost:8090/v1/models", timeout=3.0)
-    has_localai = r.status_code == 200
+    if r.status_code == 200:
+        # Verify the hermes model can actually respond (not just that the API is up)
+        probe = httpx.post(
+            "http://localhost:8090/v1/chat/completions",
+            json={"model": "hermes", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+            timeout=30.0,
+        )
+        has_localai = probe.status_code == 200
 except Exception:
     pass
 

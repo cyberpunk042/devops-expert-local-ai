@@ -191,6 +191,28 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DESC",
         help="Project description (for register)",
     )
+    # Session continuity (LocalAI single-shot conversation history)
+    parser.add_argument(
+        "--session",
+        metavar="NAME",
+        help="Named conversation session: persist history across single-shot calls (LocalAI only)",
+    )
+    parser.add_argument(
+        "--session-list",
+        action="store_true",
+        help="List all saved conversation sessions",
+    )
+    parser.add_argument(
+        "--session-delete",
+        metavar="NAME",
+        help="Delete a saved conversation session",
+    )
+    # Router debug
+    parser.add_argument(
+        "--router-debug",
+        action="store_true",
+        help="Show routing decision breakdown (why a backend was chosen)",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -203,6 +225,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
         "local": LocalAIBackend(
             base_url=local_cfg.get("base_url", "http://localhost:8090"),
             model=local_cfg.get("model", "default"),
+            max_tokens=local_cfg.get("max_tokens", 2048),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),
@@ -240,6 +263,31 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
                 f"[{color}]{g.vram_free_mb}/{g.vram_total_mb} MiB free[/] "
                 f"(driver {g.driver_version})"
             )
+
+        # Verify GPU passthrough to Docker (required for LocalAI to use GPU)
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["docker", "run", "--rm", "--gpus", "all",
+                 "ubuntu:22.04", "nvidia-smi", "-L"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                console.print("  [bold]Docker GPU passthrough:[/] [green]OK[/]")
+            else:
+                console.print(
+                    "  [bold]Docker GPU passthrough:[/] [yellow]FAIL[/] "
+                    "— LocalAI will run on CPU"
+                )
+                console.print(
+                    "  [dim]Fix: install NVIDIA Container Toolkit — "
+                    "see SETUP.md prerequisites[/]"
+                )
+                all_ok = False
+        except (_sp.TimeoutExpired, FileNotFoundError):
+            console.print("  [bold]Docker GPU passthrough:[/] [dim]skipped (Docker not available)[/]")
+        except Exception:
+            pass
     else:
         console.print("  [yellow]No GPUs detected[/]")
 
@@ -251,6 +299,28 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         print_status(name, detail, ok)
         if not ok:
             all_ok = False
+
+    # Warn if configured LocalAI model is not actually loaded
+    local_backend = backends.get("local")
+    if local_backend and local_backend.is_available():
+        try:
+            import httpx as _httpx
+            resp = _httpx.get(f"{local_backend.base_url}/v1/models", timeout=3.0)
+            if resp.status_code == 200:
+                loaded = [m.get("id", "") for m in resp.json().get("data", [])]
+                if loaded and local_backend.model not in loaded:
+                    console.print(
+                        f"\n  [yellow]WARNING: configured model '{local_backend.model}' "
+                        f"not found in LocalAI. Loaded: {', '.join(loaded)}[/]"
+                    )
+                    console.print("  [dim]Place a .gguf file in models/ matching the model name.[/]")
+                elif not loaded:
+                    console.print(
+                        "\n  [yellow]WARNING: LocalAI is running but has no models loaded.[/]"
+                    )
+                    console.print("  [dim]Download a .gguf model into models/ then restart with: make local-down && make local-up[/]")
+        except Exception:
+            pass
 
     # Cluster nodes
     from aicp.core.cluster import load_cluster_config, check_cluster
@@ -280,9 +350,10 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
 
 
 def _run_stats() -> int:
-    """Show aggregated metrics."""
+    """Show aggregated metrics with per-backend breakdown."""
     from aicp.core.metrics import aggregate
     from rich.table import Table
+    from rich.panel import Panel
 
     m = aggregate(1000)
 
@@ -290,31 +361,52 @@ def _run_stats() -> int:
         console.print("[dim]No history yet.[/]")
         return 0
 
-    table = Table(title="AICP Metrics", show_header=True, expand=False)
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", justify="right")
+    # Summary row
+    summary = Table(title="AICP Metrics — Summary", show_header=True, expand=False)
+    summary.add_column("Metric", style="bold")
+    summary.add_column("All", justify="right")
+    summary.add_row("Tasks today", str(m["today"]))
+    summary.add_row("Tasks this week", str(m["this_week"]))
+    summary.add_row("Tasks total", str(m["total_tasks"]))
+    summary.add_row("Avg latency", f"{m['avg_duration']:.1f}s")
+    summary.add_row("Error rate", f"{m['error_rate']:.1f}%")
+    summary.add_row("Prompt tokens", f"{m['total_prompt_tokens']:,}")
+    summary.add_row("Completion tokens", f"{m['total_completion_tokens']:,}")
+    summary.add_row("Total tokens", f"{m['total_tokens']:,}")
+    summary.add_row("Est. cost", f"${m['total_cost_usd']:.4f}")
+    console.print(summary)
 
-    table.add_row("Tasks today", str(m["today"]))
-    table.add_row("Tasks this week", str(m["this_week"]))
-    table.add_row("Tasks total", str(m["total_tasks"]))
-    table.add_row("Avg duration", f"{m['avg_duration']:.1f}s")
-    table.add_row("Error rate", f"{m['error_rate']:.1f}%")
-    table.add_row("Prompt tokens", f"{m['total_prompt_tokens']:,}")
-    table.add_row("Completion tokens", f"{m['total_completion_tokens']:,}")
-    table.add_row("Total tokens", f"{m['total_tokens']:,}")
-    table.add_row("Est. cost", f"${m['total_cost_usd']:.4f}")
-
-    console.print(table)
-
-    for name, b in m.get("by_backend", {}).items():
-        bt = Table(title=f"Backend: {name}", show_header=True, expand=False)
+    # Per-backend comparison table
+    by_backend = m.get("by_backend", {})
+    if len(by_backend) > 0:
+        console.print()
+        bt = Table(title="Per-Backend Breakdown", show_header=True, expand=False)
         bt.add_column("Metric", style="bold")
-        bt.add_column("Value", justify="right")
-        bt.add_row("Tasks", str(b["tasks"]))
-        bt.add_row("Avg duration", f"{b['avg_duration']:.1f}s")
-        bt.add_row("Error rate", f"{b['error_rate']:.1f}%")
-        bt.add_row("Tokens", f"{b['prompt_tokens'] + b['completion_tokens']:,}")
-        bt.add_row("Cost", f"${b['cost']:.4f}")
+        backend_names = list(by_backend.keys())
+        for name in backend_names:
+            color = "cyan" if name == "local" else "magenta"
+            bt.add_column(f"[{color}]{name}[/]", justify="right")
+
+        def _row(label: str, *vals: str) -> None:
+            bt.add_row(label, *vals)
+
+        _row("Tasks", *[str(by_backend[n]["tasks"]) for n in backend_names])
+        _row(
+            "Avg latency",
+            *[f"{by_backend[n]['avg_duration']:.1f}s" for n in backend_names],
+        )
+        _row(
+            "Error rate",
+            *[f"{by_backend[n]['error_rate']:.1f}%" for n in backend_names],
+        )
+        _row(
+            "Tokens",
+            *[
+                f"{by_backend[n]['prompt_tokens'] + by_backend[n]['completion_tokens']:,}"
+                for n in backend_names
+            ],
+        )
+        _row("Est. cost", *[f"${by_backend[n]['cost']:.4f}" for n in backend_names])
         console.print(bt)
 
     return 0
@@ -794,9 +886,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.replay:
         return _run_replay(args.replay)
 
+    # --session-list (no config needed)
+    if args.session_list:
+        from aicp.core.session import list_sessions
+        from rich.table import Table
+        sessions = list_sessions()
+        if not sessions:
+            console.print("[dim]No saved sessions. Use --session NAME to start one.[/]")
+            return 0
+        t = Table(title="Saved Sessions", show_header=True)
+        t.add_column("Name", style="bold")
+        t.add_column("Turns", justify="right")
+        t.add_column("Last Updated", style="dim")
+        for s in sessions:
+            t.add_row(s["name"], str(s["turns"]), s["updated"][:19])
+        console.print(t)
+        return 0
+
+    # --session-delete (no config needed)
+    if args.session_delete:
+        from aicp.core.session import delete_session
+        if delete_session(args.session_delete):
+            console.print(f"[green]Deleted session:[/] {args.session_delete}")
+        else:
+            print_error(f"Session not found: {args.session_delete}")
+        return 0
+
     # Load config
     try:
-        config = load_config(args.config) if args.config else load_config()
+        project_path = args.project.resolve() if hasattr(args, "project") and args.project else None
+        config = (
+            load_config(args.config, project_path=project_path)
+            if args.config
+            else load_config(project_path=project_path)
+        )
     except (FileNotFoundError, ValueError) as e:
         print_error(f"Config: {e}")
         return 1
@@ -854,6 +977,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             model=local_cfg.get("model", "default"),
             mode=Mode(args.mode),
             project_path=args.project.resolve(),
+            max_tokens=local_cfg.get("max_tokens", 2048),
+            stream=args.stream,
         )
 
     # --continue-session (resume Claude Code session)
@@ -915,24 +1040,62 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         console.print(f"  [dim]Auto-routed to {actual_backend} ({reason})[/]", highlight=False)
 
-    # --stream mode: real-time output
-    if args.stream and actual_backend == "claude":
+    # --router-debug: show routing decision table
+    if args.router_debug:
+        from aicp.core.router import classify_task_with_reason, _COMPLEX_KEYWORDS, _SIMPLE_KEYWORDS
+        from rich.table import Table as _Table
+        debug_backend, debug_reason = classify_task_with_reason(
+            args.prompt, Mode(args.mode), backends, config
+        )
+        dt = _Table(title="Router Debug", show_header=True, expand=False)
+        dt.add_column("Factor", style="bold")
+        dt.add_column("Value")
+        dt.add_row("Mode", args.mode)
+        dt.add_row("Prompt length", f"{len(args.prompt)} chars")
+        complex_hits = _COMPLEX_KEYWORDS.findall(args.prompt)
+        simple_hits = _SIMPLE_KEYWORDS.findall(args.prompt)
+        dt.add_row("Complex keywords", ", ".join(complex_hits) if complex_hits else "[dim]none[/]")
+        dt.add_row("Simple keywords", ", ".join(simple_hits) if simple_hits else "[dim]none[/]")
+        dt.add_row("Local available", str(backends.get("local") and backends["local"].is_available()))
+        dt.add_row("Claude available", str(backends.get("claude") and backends["claude"].is_available()))
+        dt.add_row("Recommended", f"[cyan]{debug_backend}[/]")
+        dt.add_row("Reason", debug_reason)
+        if args.backend != "auto":
+            dt.add_row("Overridden to", f"[magenta]{actual_backend}[/]")
+        console.print(dt)
+
+    # --stream mode: real-time output (both Claude and LocalAI)
+    if args.stream:
         from rich.live import Live
         from rich.text import Text
-        backend = backends["claude"]
-        collected = []
-        try:
-            with Live(Text(""), console=console, refresh_per_second=4) as live:
-                for chunk in backend.execute_stream(
-                    args.prompt, Mode(args.mode), args.project.resolve()
-                ):
-                    collected.append(chunk)
-                    live.update(Text("".join(collected)))
-            print_response("".join(collected))
-            return 0
-        except Exception as e:
-            print_error(str(e))
-            return 1
+        backend = backends[actual_backend]
+        if not hasattr(backend, "execute_stream"):
+            print_warning(f"Backend '{actual_backend}' does not support streaming. Running normally.")
+        else:
+            collected = []
+            try:
+                with Live(Text(""), console=console, refresh_per_second=4) as live:
+                    for chunk in backend.execute_stream(
+                        args.prompt, Mode(args.mode), args.project.resolve()
+                    ):
+                        collected.append(chunk)
+                        live.update(Text("".join(collected)))
+                full_result = "".join(collected)
+                print_response(full_result)
+
+                # Apply THINK-mode and secret-leak scans to streamed response too
+                if actual_backend == "local" and args.mode == "think":
+                    from aicp.guardrails.response import scan_think_mode
+                    for warning in scan_think_mode(full_result, Mode(args.mode)):
+                        print_warning(warning)
+                from aicp.guardrails.response import scan_response_secrets
+                for warning in scan_response_secrets(full_result):
+                    print_warning(f"SECRET LEAK RISK: {warning}")
+
+                return 0
+            except Exception as e:
+                print_error(str(e))
+                return 1
 
     # --approval mode: plan first, then execute
     if args.approval:
@@ -963,6 +1126,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
             extra_kwargs["json_schema"] = schema_path.read_text()
 
+    # --session: load conversation history for LocalAI single-shot continuity
+    session_messages: List = []
+    if args.session and actual_backend == "local":
+        from aicp.core.session import load_session
+        session_messages = load_session(args.session)
+        turns = (len(session_messages) - 1) // 2 if session_messages else 0
+        if turns > 0:
+            console.print(f"  [dim]Session '{args.session}': {turns} previous turn(s) loaded[/]")
+    elif args.session and actual_backend != "local":
+        print_warning("--session is only supported with --backend local (LocalAI).")
+
     controller = Controller(backends, config=config)
     task = Task(
         prompt=args.prompt,
@@ -989,9 +1163,46 @@ def main(argv: Optional[List[str]] = None) -> int:
                     completion_tokens=usage.get("completion_tokens"),
                     estimated_cost_usd=usage.get("estimated_cost_usd"),
                 )
+            elif session_messages and actual_backend == "local":
+                # Session mode: inject history into the LocalAI request
+                local_backend = backends["local"]
+                system = local_backend._system_prompt(Mode(args.mode), args.project.resolve())
+                # Rebuild messages: system + history + new user turn
+                if not session_messages or session_messages[0].get("role") != "system":
+                    messages = [{"role": "system", "content": system}] + session_messages
+                else:
+                    messages = list(session_messages)
+                messages.append({"role": "user", "content": args.prompt})
+                import httpx as _httpx
+                resp = _httpx.post(
+                    f"{local_backend.base_url}/v1/chat/completions",
+                    json={"model": local_backend.model, "messages": messages,
+                          "max_tokens": local_backend.max_tokens},
+                    timeout=120.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                result = data["choices"][0]["message"]["content"]
+                messages.append({"role": "assistant", "content": result})
+                # Save updated session (strip system message — it's rebuilt each time)
+                from aicp.core.session import save_session
+                save_session(args.session, [m for m in messages if m["role"] != "system"])
+                console.print(f"  [dim]Session '{args.session}' updated[/]")
             else:
                 result = controller.run(task)
         print_response(result)
+
+        # Warn if a local model snuck commands/writes into a THINK-mode response
+        if actual_backend == "local" and args.mode == "think":
+            from aicp.guardrails.response import scan_think_mode
+            for warning in scan_think_mode(result, Mode(args.mode)):
+                print_warning(warning)
+
+        # Warn if the response appears to contain leaked secrets (any mode/backend)
+        from aicp.guardrails.response import scan_response_secrets
+        for warning in scan_response_secrets(result):
+            print_warning(f"SECRET LEAK RISK: {warning}")
+
         return 0
     except Exception as e:
         error_msg = str(e)
