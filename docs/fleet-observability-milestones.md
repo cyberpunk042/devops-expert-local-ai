@@ -1,109 +1,139 @@
 # Fleet Observability & Interaction — Milestone Plan
 
-## What We Know
+## Architecture Analysis (Definitive)
 
-### OpenClaw Channel System
-- 9 built-in channels (Telegram, WhatsApp, Discord, etc.)
-- NO dedicated "headless/API" channel — agents communicate through chat channels
-- Control UI at gateway port communicates via WebSocket SPA
-- MC connects as an RPC client, NOT as a channel
-- The "Channel is required" error blocks MC→Agent message delivery
+### Three Independent Systems
 
-### Mission Control Observation Features (Already Built)
-- **Activity Events**: audit trail with event_type, message, agent_id, task_id, board_id
-- **SSE Streams**: real-time feeds for approvals, board memory, task comments (2s polling, 15s heartbeat)
-- **Board Memory**: persistent context storage + bidirectional chat between humans and agents
-  - Tagged "chat" entries auto-notify running agents
-  - @mentions route to specific agents
-  - Supports /pause and /resume commands
-- **Approval System**: pending/approved/rejected with confidence scores, rubric_scores, multi-task linking
-  - Resolution notifies board lead agent
-  - SSE stream for real-time approval updates
-- **Task Comments**: agents post results, humans can add comments, SSE stream available
+**1. `chat.send` — Internal/WebSocket Path (Used by MC)**
+- MC calls `chat.send` via WS with `deliver=false`
+- Gateway uses `INTERNAL_MESSAGE_CHANNEL` — no external channel needed
+- Gateway ACKs immediately, runs agent asynchronously
+- MC opens a NEW WebSocket per call, gets ACK, disconnects
+- Agent response broadcasts to connected WS clients (MC is already disconnected)
+- Normal task dispatch uses this path exclusively
 
-### What This Means
-MC already has most of what we need for observation and interaction:
-- Board Memory chat = human↔agent real-time communication
-- Task comments = agent output visible to humans
-- Approval system = human gates on agent work
-- SSE streams = real-time observation without polling
+**2. `agent` RPC Method — Outbound Delivery Path**
+- Used by external integrations and CLI
+- Requires a channel ONLY when `deliver=true`
+- MC triggers this in exactly TWO places: nudge and ask-user coordination
+- Normal task dispatch does NOT use this
 
-The MISSING piece is the channel for MC→Agent message delivery.
+**3. Channels (WhatsApp, Telegram, Discord, etc.)**
+- Purpose: OUTBOUND delivery to external chat platforms
+- Completely independent from `chat.send`
+- Not needed for headless fleet operation
 
-## The Channel Problem — Options
+### MC's Built-in Provisioning System
 
-### Option A: Configure a minimal channel
-Set up one lightweight channel (e.g., Telegram bot or Discord bot) that MC routes through.
-- Pro: uses existing OpenClaw infrastructure
-- Con: adds an external dependency just for internal communication
+MC already has a complete agent provisioning pipeline:
 
-### Option B: Use the Control UI channel
-The gateway's built-in web UI communicates through WebSocket. MC could connect the same way.
-- Pro: no external dependency
-- Con: may not be designed for MC's dispatch pattern
+1. **Agent creation** (`POST /api/v1/agents`) auto-triggers provisioning
+2. **Token minting**: `mint_agent_token()` generates a bcrypt-hashed token per agent
+3. **TOOLS.md push**: Provisioning renders `BOARD_TOOLS.md.j2` and pushes to agent in OpenClaw via `agents.files.set` RPC
+4. **TOOLS.md contents**: `BASE_URL`, `AUTH_TOKEN`, `AGENT_ID`, `BOARD_ID`, `WORKSPACE_ROOT`, OpenAPI discovery instructions
+5. **SOUL.md push**: Agent instructions pushed alongside TOOLS.md
+6. **Template sync**: `POST /api/v1/gateways/{id}/sync` re-provisions all agents
 
-### Option C: Build an MC channel plugin for OpenClaw
-Create an OpenClaw plugin that acts as a "Mission Control channel" — receives messages from MC and delivers them to agents without a chat platform.
-- Pro: clean architecture, purpose-built
-- Con: requires understanding OpenClaw's plugin SDK
+OpenClaw loads TOOLS.md and SOUL.md as bootstrap files — injected into agent context when running.
 
-### Option D: Bypass the channel requirement
-Modify the fleet's gateway interaction to use `agent` method with a session directly, bypassing channel routing.
-- Pro: simplest, no new components
-- Con: may not trigger all of OpenClaw's agent lifecycle properly
+### Agent REST API (Already Built)
 
-### Recommended: Option C (MC Channel Plugin)
-This is the most architecturally sound approach. It:
-- Fits OpenClaw's extension model (plugins)
-- Gives MC a proper channel identity
-- Allows full agent lifecycle (sessions, memory, tools)
-- Is reusable for any MC↔OpenClaw integration
+Agents authenticate with `X-Agent-Token` header. Key endpoints:
+- `GET /api/v1/agent/boards/{board_id}/tasks` — list tasks
+- `PATCH /api/v1/agent/boards/{board_id}/tasks/{task_id}` — update status, add comment
+- `POST /api/v1/agent/boards/{board_id}/tasks/{task_id}/comments` — log progress
+- `POST /api/v1/agent/boards/{board_id}/memory` — write to board memory (tags: chat, decision, plan)
+- `POST /api/v1/agent/boards/{board_id}/approvals` — create approval requests
+- `POST /api/v1/agent/heartbeat` — heartbeat/liveness
+- `GET /api/v1/agent/healthz` — health check
 
-## Milestones
+### How Response Flow Works (End-to-End)
 
-### M38: Study OpenClaw Plugin SDK
-- Read plugin SDK documentation and source
-- Understand channel plugin interface
-- Map what a "mission-control" channel needs to implement
-- Design the plugin architecture
+```
+1. MC creates task, assigns to agent
+2. MC calls chat.send(message, deliver=false) → agent's OpenClaw session
+3. OpenClaw runs the agent (Claude Code backend)
+4. Agent reads TOOLS.md → gets AUTH_TOKEN, BASE_URL, BOARD_ID
+5. Agent calls MC REST API:
+   - PATCH task status → "in_progress"
+   - POST comments with progress
+   - POST board memory with results
+   - PATCH task status → "done" (or "review" if approval required)
+6. MC sees updates via SSE streams + dashboard
+7. Human observes, can intervene via board memory chat
+```
 
-### M39: Build MC Channel Plugin for OpenClaw
-- Create openclaw-mc-channel plugin
-- Implements: receive message from MC, deliver to agent session, return response
-- Register as an OpenClaw channel
-- Add to fleet's setup.sh
+### What's Actually Missing
 
-### M40: Configure Observation in MC
-- Enable SSE streams for real-time monitoring
-- Configure board memory chat for human↔agent interaction
-- Set up approval gates on edit/act tasks
-- Test: human sees agent work in real-time, can add input
+Our `setup.py` calls `POST /api/v1/agents` which triggers provisioning. But we need to verify:
+1. Did provisioning succeed? (TOOLS.md actually pushed to OpenClaw agents)
+2. Are agents reading TOOLS.md when they run?
+3. Does the agent's SOUL.md instruct it to call back to MC?
 
-### M41: Build AICP Skill for Dashboard Components
-- Skill: `openclaw-add-dashboard-component`
-- Can add custom views/widgets to MC
-- Uses MC's API to create custom fields, views, activity feeds
-- Parameterized: component type, board, config
+The SOUL.md templates currently have **no MC callback instructions**. Agents know their role
+but don't know HOW to report back. MC's BOARD_TOOLS.md.j2 template provides the API
+discovery mechanism (OpenAPI refresh + operation tables), but agents need explicit workflow
+instructions in their SOUL.md.
 
-### M42: End-to-End Flow Test
-- Human creates task in MC → agent picks it up → executes → posts result
-- Human observes in real-time via SSE/board memory
-- Human adds input mid-execution via board memory chat
-- Agent incorporates input → completes task
-- Human approves → task done
-- No manual commands at any step
+## Revised Milestones
+
+### M38: Verify and Complete Provisioning
+**Goal**: Ensure agents are fully provisioned with credentials and callback knowledge.
+
+Tasks:
+1. Check if agent provisioning ran successfully during setup
+   - Query MC for agent status (should be "active" not "provisioning")
+   - Verify TOOLS.md was pushed to agents in OpenClaw (`agents.files.get`)
+2. If provisioning didn't run, trigger template sync:
+   - Call `POST /api/v1/gateways/{gateway_id}/sync`
+   - Add to setup.py after agent registration
+3. Update SOUL.md templates with MC workflow instructions:
+   - Read TOOLS.md for credentials
+   - Use MC REST API to update task status
+   - Post results to board memory
+   - Request approval when required
+4. Push updated SOUL.md to agents (via sync or API)
+5. Test: send message via `chat.send` → agent reads TOOLS.md → agent calls MC API → result visible
+
+### M39: End-to-End Task Loop
+**Goal**: Complete MC → OpenClaw → Agent → MC round-trip.
+
+Tasks:
+1. Create task in MC → assign to agent
+2. MC dispatches via `chat.send` (deliver=false)
+3. Agent receives instruction in OpenClaw session
+4. Agent reads TOOLS.md, authenticates to MC
+5. Agent updates task status, posts results
+6. Result visible in MC dashboard
+7. Add to setup.sh as a smoke test
+
+### M40: Observation & Interaction
+**Goal**: Human watches and participates in real-time.
+
+Tasks:
+1. SSE streams for real-time monitoring
+2. Board memory chat for human↔agent interaction
+3. Approval gates on critical tasks
+4. @mention routing to specific agents
+5. Test: human observes, intervenes, agent adapts
+
+### M41: Coordination Features
+**Goal**: Agent-to-agent and agent-to-human coordination.
+
+Tasks:
+1. For nudge/ask-user paths that need `deliver=true`:
+   - Option A: Configure the built-in web channel
+   - Option B: Modify those paths to use board memory callbacks instead
+2. Lead agent coordination
+3. Multi-agent task chains
+
+### M42: AICP Skills
+**Goal**: Reusable skills for fleet management from AICP.
+
+- `openclaw-fleet-provision` — trigger template sync
+- `openclaw-stream-monitor` — monitor SSE streams
+- `openclaw-task-dispatch` — dispatch tasks from AICP
+- `openclaw-observation-setup` — configure board observation
 
 ### M43: NNRT Autonomous Contribution
-- Fleet's first real autonomous mission on external project
-- Using all the infrastructure: MC tasks, OpenClaw agents, channels, observation
-- Human monitors through MC dashboard
-
-## What This Means for AICP
-
-AICP needs these skills (worked on from this repo):
-1. `openclaw-plugin-create` — scaffold an OpenClaw plugin
-2. `openclaw-channel-setup` — configure a channel for a fleet
-3. `openclaw-add-dashboard-component` — add components to MC
-4. `openclaw-stream-monitor` — monitor SSE streams from CLI
-
-These are generic skills that work on any OpenClaw project.
+**Goal**: Fleet's first real mission on external project.

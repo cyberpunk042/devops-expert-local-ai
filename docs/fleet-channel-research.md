@@ -1,69 +1,76 @@
-# Fleet Channel Research — Findings
+# Fleet Channel Research — Definitive Findings
 
-## The Problem
+## The Original Problem
 
-MC dispatches to OpenClaw agents using the `agent` WS method, which requires a configured channel for message delivery. Without a channel, MC can connect to the gateway but can't dispatch work.
+MC dispatches tasks to agents via `chat.send` → gateway returns ACK. We assumed the
+"Channel is required (no configured channels detected)" error was blocking this flow.
 
-## Research Findings
+## What We Found
 
-### How MC Dispatches to Agents
-- MC calls `send_agent_message()` → `ensure_session()` + `send_message()` → `chat.send` RPC
-- BUT the gateway's agent execution path also calls the `agent` RPC method
-- The `agent` method requires a delivery channel to route responses
-- MC's heartbeat also uses `agent` with `channel: heartbeat` (unknown to gateway)
+### The error is NOT on the task dispatch path.
 
-### OpenClaw Channel Options
-Built-in channels: WhatsApp, Telegram, Discord, IRC, Slack, Signal, iMessage, Google Chat, LINE, Mattermost, Teams
-Community plugins: DingTalk, WeChat, Zulip, Meshtastic, and more
+MC calls `chat.send` with `deliver=false`. When `deliver=false`, the gateway uses
+`INTERNAL_MESSAGE_CHANNEL` — no external channel needed. The ACK comes back immediately
+and the agent runs asynchronously. This path works without any channel configuration.
 
-### Simplest Local Channel: IRC
-- Built-in OpenClaw extension (32 source files — manageable complexity)
-- Needs: IRC server (local), nick, optional NickServ
-- Can run entirely local with a lightweight IRC daemon (e.g., miniircd, inspircd)
-- No external service dependency
-- Config: server, port, nick in openclaw.json channels.irc section
+### Where the error actually comes from
 
-### Alternative: Discord
-- Needs a bot token
-- OpenClaw has built-in support
-- Good for team visibility (others can see agent conversations)
+`resolveMessageChannelSelection()` in `infra/outbound/channel-selection.ts:201` throws
+"Channel is required" when:
+1. `deliver=true` is set
+2. No channel is explicitly specified
+3. No channels are configured in openclaw.json
 
-### Key Insight
-The `openclaw agent` CLI command works without a channel (`--reply-channel` is optional).
-The issue is specifically in MC's dispatch through the gateway WS protocol, which triggers the `agent` method's outbound delivery path.
+MC triggers this in exactly TWO places:
+- **Agent nudge** (`coordination_service.py:199`) — `deliver=True`
+- **Ask user via gateway main** (`coordination_service.py:468`) — `deliver=True`
 
-## Recommended Approach
+Normal task dispatch always uses `deliver=False` (`tasks.py:575`, `tasks.py:592`).
 
-### Short-term: IRC with local server
-1. Install a lightweight IRC daemon (miniircd — single Python file)
-2. Configure OpenClaw IRC channel pointing to localhost
-3. MC dispatches work → gateway sends through IRC → agent responds through IRC
-4. Human can observe IRC traffic (all conversations visible)
-5. Add to setup.sh as part of fleet bootstrap
+### How responses flow back
 
-### Medium-term: Custom MC channel
-Build a lightweight OpenClaw channel plugin specifically for Mission Control:
-- Receives messages from gateway, posts to MC board memory
-- Receives messages from MC board memory, sends to gateway
-- No external service needed
-- Purpose-built for fleet operation
+MC's RPC pattern is fire-and-forget:
+1. Connect WS → authenticate → send `chat.send` → receive ACK → disconnect
+2. Agent runs asynchronously
+3. Agent output broadcasts to connected WS clients (MC already disconnected)
 
-### Long-term: Contribute upstream
-Work with OpenClaw and MC communities to add native headless/fleet operation support.
+Agents report results back to MC via **REST API** — posting to board memory:
+```
+POST /api/v1/agent/boards/{board_id}/memory
+Body: {"content":"<result>","tags":[...],"source":"..."}
+```
 
-## What This Means for Milestones
+This is explicit in MC's coordination messages. The agents use MC's REST API as their
+"response channel", completely bypassing OpenClaw's outbound channel system.
 
-### M38: Set up IRC channel for fleet
-- Install miniircd or similar
-- Configure in openclaw.json
-- Add to setup.sh and Makefile
-- Test MC→IRC→Agent→IRC→MC flow
+## Revised Understanding
 
-### M39: Verify full MC flow with channel
-- Board onboarding completes
-- Tasks dispatch to agents
-- Results visible in MC dashboard
-- Human can observe and interact
+### Chat (`chat.send`) and Channels are INDEPENDENT
 
-### M40+: Continue with the plan
-- NNRT contribution, ocf-tag layers, etc.
+| Feature | `chat.send` | Channels |
+|---------|-------------|----------|
+| Purpose | Send message to agent session | Outbound delivery to external platforms |
+| Used by | MC, Control UI, gateway CLI | WhatsApp, Telegram, Discord, etc. |
+| Channel needed? | No (uses INTERNAL_MESSAGE_CHANNEL) | Yes (that IS the channel) |
+| Response path | WS broadcast to connected clients | External platform delivery |
+| MC uses? | Yes, for all task dispatch | Only for nudge/ask-user coordination |
+
+### What's Actually Needed for End-to-End
+
+1. **Agent SOUL.md with callback instructions** — tell agents how to POST results to MC
+2. **Agent MC API tokens** — agents need auth to call MC's REST API
+3. **For coordination features** — either configure a channel OR use `deliver=false` + callbacks
+
+### A channel plugin is NOT needed for basic operation.
+
+The original plan to build an MC channel plugin was based on a misunderstanding.
+Channels are for OUTBOUND delivery to external platforms. MC already has its own
+communication path: REST API + board memory + SSE streams.
+
+## Impact on Milestones
+
+The channel blocker is resolved. M38 becomes "Agent Callback Infrastructure" instead
+of "Study OpenClaw Plugin SDK". The path forward is:
+1. Configure agents to call back to MC via REST API
+2. Test the full task dispatch → execution → callback loop
+3. Add coordination features (nudge/ask-user) later with optional channel config
