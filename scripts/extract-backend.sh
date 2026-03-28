@@ -70,16 +70,16 @@ log_step "Installing backend to $BACKEND_DIR"
 rm -rf "$BACKEND_DIR"
 mkdir -p "$BACKEND_DIR/lib"
 
-# Binaries
-cp "$TMP_DIR/llama-cpp-grpc"   "$BACKEND_DIR/"
-cp "$TMP_DIR/llama-cpp-avx512" "$BACKEND_DIR/"
-cp "$TMP_DIR/run.sh"           "$BACKEND_DIR/"
+# All binaries (avx, avx2, avx512, fallback, grpc, rpc-server) + run.sh
+for f in "$TMP_DIR"/llama-cpp-* "$TMP_DIR"/run.sh; do
+    [ -f "$f" ] && cp "$f" "$BACKEND_DIR/"
+done
 
 # CUDA runtime libraries
 cp -r "$TMP_DIR/lib/"*         "$BACKEND_DIR/lib/"
 
-# Make binaries executable
-chmod +x "$BACKEND_DIR/llama-cpp-grpc" "$BACKEND_DIR/llama-cpp-avx512" "$BACKEND_DIR/run.sh"
+# Make all binaries executable
+chmod +x "$BACKEND_DIR"/llama-cpp-* "$BACKEND_DIR/run.sh"
 
 # ── Step 4: Cleanup ──────────────────────────────────────────────────────────
 log_step "Cleaning up"

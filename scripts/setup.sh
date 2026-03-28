@@ -256,6 +256,30 @@ else
     STEPS_DONE+=("model-download")
 fi
 
+# ── Supplementary models (embedding + code) ─────────────────────────────────
+EMBED_GGUF="nomic-embed-text-v1.5.Q8_0.gguf"
+EMBED_URL="https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf"
+CODE_GGUF="codellama-7b-instruct.Q4_K_M.gguf"
+CODE_URL="https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/resolve/main/codellama-7b-instruct.Q4_K_M.gguf"
+
+if [[ -f "models/$EMBED_GGUF" && "$FORCE" -eq 0 ]]; then
+    log_skip "Embedding model already present: $EMBED_GGUF"
+else
+    log_step "Downloading embedding model: $EMBED_GGUF (~140 MB)"
+    curl -L --progress-bar -C - -o "models/$EMBED_GGUF" "$EMBED_URL"
+    [[ -s "models/$EMBED_GGUF" ]] || die "Embedding model download failed."
+    log_ok "Downloaded embedding model: $EMBED_GGUF"
+fi
+
+if [[ -f "models/$CODE_GGUF" && "$FORCE" -eq 0 ]]; then
+    log_skip "Code model already present: $CODE_GGUF"
+else
+    log_step "Downloading code model: $CODE_GGUF (~3.8 GB)"
+    curl -L --progress-bar -C - -o "models/$CODE_GGUF" "$CODE_URL"
+    [[ -s "models/$CODE_GGUF" ]] || die "Code model download failed."
+    log_ok "Downloaded code model: $CODE_GGUF"
+fi
+
 # =============================================================================
 # SECTION 5 — Generate LocalAI model YAML
 # =============================================================================
@@ -284,6 +308,22 @@ print(f"  backend:      {backend}")
 PYEOF
     log_ok "models/$MODEL_ALIAS.yaml written"
     STEPS_DONE+=("model-yaml")
+fi
+
+# ── Activate supplementary model YAMLs if their GGUF files exist ─────────────
+if [[ -f "models/$EMBED_GGUF" && ! -f "models/nomic-embed.yaml" ]]; then
+    log_step "Activating nomic-embed model config"
+    # nomic-embed.yaml is committed to the repo — should already be in models/
+fi
+
+if [[ -f "models/$CODE_GGUF" ]]; then
+    if [[ ! -f "models/codellama.yaml" ]]; then
+        log_step "Activating codellama model config"
+        cp "config/codellama.yaml.template" "models/codellama.yaml"
+        log_ok "models/codellama.yaml activated"
+    else
+        log_skip "models/codellama.yaml already exists"
+    fi
 fi
 
 # =============================================================================

@@ -1,0 +1,27 @@
+# LocalAI model config — maps the alias "hermes" to a GGUF file.
+#
+# NOTE: You do NOT need to copy this manually.
+# Running 'make setup' generates models/hermes.yaml automatically with
+# GPU-optimized settings for your hardware.
+#
+# This .example file exists so the template travels with the repo.
+# The generated hermes.yaml and .gguf files are gitignored.
+
+name: hermes
+# Use 'cuda12-llama-cpp' for GPU (NVIDIA CUDA 12) or 'llama-cpp' for CPU-only.
+backend: cuda12-llama-cpp
+parameters:
+  model: hermes-2-pro-mistral-7b.Q4_K_M.gguf
+  temperature: 0.7
+  top_p: 0.9
+context_size: 4096
+# GPU offload layers — 99 = full GPU offload (fits if model < available VRAM).
+# 'make setup' auto-calculates this. Manual guidance:
+#   RTX 3060 Ti (8 GB VRAM): 99  (7B Q4_K_M fits fully in 8GB)
+#   RTX 3070 (8 GB VRAM):    99
+#   RTX 4090 (24 GB VRAM):   99
+#   GTX 1060 (6 GB VRAM):    ~20 (partial offload)
+#   CPU only:                  0
+gpu_layers: 99
+# Threads for CPU-side work (sampling, KV cache management)
+threads: 7

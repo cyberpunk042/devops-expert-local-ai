@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -128,6 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON Schema file for structured output (Claude Code only)",
     )
     parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Force JSON output from LocalAI (response_format: json_object)",
+    )
+    parser.add_argument(
+        "--tools",
+        action="store_true",
+        help="Enable function calling with built-in tools (file_read, grep, shell)",
+    )
+    parser.add_argument(
         "--agent",
         nargs="?",
         const="9100",
@@ -226,6 +237,14 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             base_url=local_cfg.get("base_url", "http://localhost:8090"),
             model=local_cfg.get("model", "default"),
             max_tokens=local_cfg.get("max_tokens", 2048),
+            api_key=local_cfg.get("api_key", ""),
+            temperature=local_cfg.get("temperature"),
+            top_p=local_cfg.get("top_p"),
+            top_k=local_cfg.get("top_k"),
+            repeat_penalty=local_cfg.get("repeat_penalty"),
+            embedding_model=local_cfg.get("embedding_model", ""),
+            code_model=local_cfg.get("code_model", ""),
+            auto_route=local_cfg.get("auto_route", False),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),
@@ -1108,6 +1127,34 @@ def main(argv: Optional[List[str]] = None) -> int:
             result = run_with_approval(
                 args.prompt, Mode(args.mode), args.project.resolve(), backend,
             )
+            print_response(result)
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --json mode: force JSON output from LocalAI
+    if getattr(args, "json", False) and actual_backend == "local":
+        backend = backends["local"]
+        try:
+            with spinner("Asking local (JSON mode)..."):
+                result = backend.execute_json(
+                    args.prompt, Mode(args.mode), args.project.resolve(),
+                )
+            print_response(json.dumps(result, indent=2))
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --tools mode: function calling with built-in tools
+    if getattr(args, "tools", False) and actual_backend == "local":
+        backend = backends["local"]
+        try:
+            with spinner("Asking local (with tools)..."):
+                result = backend.execute_with_tools(
+                    args.prompt, Mode(args.mode), args.project.resolve(),
+                )
             print_response(result)
             return 0
         except Exception as e:

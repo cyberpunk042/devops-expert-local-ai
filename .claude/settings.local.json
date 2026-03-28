@@ -21,7 +21,8 @@
       "Bash(pip3 --version)",
       "Bash(python3 -m pip --version)",
       "Bash(python3 -m pip list)",
-      "Bash(nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader,nounits)"
+      "Bash(nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader,nounits)",
+      "WebSearch"
     ]
   }
 }

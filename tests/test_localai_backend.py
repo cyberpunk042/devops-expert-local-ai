@@ -24,7 +24,7 @@ def test_max_tokens_in_payload(tmp_path):
     backend = LocalAIBackend(max_tokens=1024)
     captured = {}
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, headers=None):
         captured["payload"] = json
         resp = MagicMock()
         resp.status_code = 200

@@ -103,10 +103,12 @@ class TestLocalAIIntegration:
     def _backend(self) -> LocalAIBackend:
         """Build a backend pointed at the running LocalAI instance."""
         import httpx
-        # Use whichever model is actually loaded — don't hard-code the alias
+        # Pick a chat model (not embedding) from the loaded models
         resp = httpx.get(f"{LOCALAI_BASE_URL}/v1/models", timeout=3.0)
         models = [m.get("id", "") for m in resp.json().get("data", [])]
-        model = models[0] if models else LOCALAI_MODEL
+        # Prefer hermes, skip embedding-only models
+        chat_models = [m for m in models if m not in ("nomic-embed",)]
+        model = "hermes" if "hermes" in chat_models else (chat_models[0] if chat_models else LOCALAI_MODEL)
         return LocalAIBackend(base_url=LOCALAI_BASE_URL, model=model, max_tokens=256)
 
     def test_is_available(self):

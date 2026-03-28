@@ -9,6 +9,20 @@ backends:
     base_url: "http://localhost:8090"
     model: "hermes"
     max_tokens: 2048
+    # Multi-model: specialized models for different task types
+    embedding_model: "nomic-embed"
+    code_model: "codellama"
+    # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
+    # When false (default), always uses the primary model unless explicitly overridden.
+    auto_route: false
+    # Sampling overrides — these override model YAML defaults per-request.
+    # Uncomment to tune from AICP side (useful for mode-specific behavior).
+    # temperature: 0.7
+    # top_p: 0.9
+    # top_k: 40
+    # repeat_penalty: 1.1
+    # API key for LocalAI (must match LOCALAI_API_KEY in .env / docker-compose)
+    # api_key: ""
   claude:
     model: "opus"
     max_turns: 10

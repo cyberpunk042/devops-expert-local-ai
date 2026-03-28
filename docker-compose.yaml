@@ -16,6 +16,16 @@ services:
       - NVIDIA_VISIBLE_DEVICES=0
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - LOCALAI_LOG_LEVEL=${LOCALAI_LOG_LEVEL:-info}
+      # ── Performance ──
+      - LLAMACPP_PARALLEL=${LLAMACPP_PARALLEL:-4}
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-8192}
+      # ── Watchdog: auto-recover stuck or idle backends ──
+      - LOCALAI_WATCHDOG_IDLE=true
+      - LOCALAI_WATCHDOG_IDLE_TIMEOUT=15m
+      - LOCALAI_WATCHDOG_BUSY=true
+      - LOCALAI_WATCHDOG_BUSY_TIMEOUT=5m
+      # ── Auth (set in .env, empty = disabled) ──
+      - LOCALAI_API_KEY=${LOCALAI_API_KEY:-}
     devices:
       - /dev/dxg:/dev/dxg
     deploy:

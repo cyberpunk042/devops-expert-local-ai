@@ -130,7 +130,7 @@ def test_execute_stream_uses_configured_max_tokens():
     sse = _sse_lines("ok")
     captured_payload = {}
 
-    def fake_stream(method, url, json=None, timeout=None):
+    def fake_stream(method, url, json=None, timeout=None, headers=None):
         captured_payload.update(json or {})
         return _FakeStreamResponse(sse)
 

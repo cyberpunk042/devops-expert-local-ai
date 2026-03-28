@@ -145,6 +145,14 @@ def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = N
         "local": LocalAIBackend(
             base_url=local_cfg.get("base_url", "http://localhost:8090"),
             model=local_cfg.get("model", "default"),
+            api_key=local_cfg.get("api_key", ""),
+            temperature=local_cfg.get("temperature"),
+            top_p=local_cfg.get("top_p"),
+            top_k=local_cfg.get("top_k"),
+            repeat_penalty=local_cfg.get("repeat_penalty"),
+            embedding_model=local_cfg.get("embedding_model", ""),
+            code_model=local_cfg.get("code_model", ""),
+            auto_route=local_cfg.get("auto_route", False),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),

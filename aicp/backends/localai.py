@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Iterator, List, Optional
@@ -12,6 +13,14 @@ import httpx
 from aicp.backends.base import Backend
 from aicp.core.context import build_project_context
 from aicp.core.modes import Mode
+
+# Keywords that suggest a code-focused task → route to code model
+_CODE_KEYWORDS = re.compile(
+    r"\b(refactor|implement|write\s+code|fix\s+bug|debug|function|class\s+\w|"
+    r"def\s+\w|import\s+\w|syntax|compile|runtime\s+error|traceback|"
+    r"pull\s+request|PR|commit|git\s+diff|code\s+review|unittest|pytest)\b",
+    re.IGNORECASE,
+)
 
 # How long to wait for a model to finish loading on cold start
 _COLD_START_TIMEOUT = 60.0   # seconds
@@ -26,10 +35,26 @@ class LocalAIBackend(Backend):
         base_url: str = "http://localhost:8090",
         model: str = "default",
         max_tokens: int = 2048,
+        api_key: str = "",
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
+        repeat_penalty: Optional[float] = None,
+        embedding_model: str = "",
+        code_model: str = "",
+        auto_route: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.max_tokens = max_tokens
+        self.api_key = api_key
+        self.temperature = temperature
+        self.top_p = top_p
+        self.top_k = top_k
+        self.repeat_penalty = repeat_penalty
+        self.embedding_model = embedding_model
+        self.code_model = code_model
+        self.auto_route = auto_route
 
     @property
     def name(self) -> str:
@@ -58,6 +83,71 @@ class LocalAIBackend(Backend):
         except Exception as e:
             return f"UNAVAILABLE: {e}"
 
+    def _headers(self) -> dict[str, str]:
+        """Build request headers, including API key if configured."""
+        h: dict[str, str] = {}
+        if self.api_key:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        return h
+
+    def _sampling_params(self) -> dict:
+        """Build optional sampling overrides for the request payload."""
+        params: dict = {}
+        if self.temperature is not None:
+            params["temperature"] = self.temperature
+        if self.top_p is not None:
+            params["top_p"] = self.top_p
+        if self.top_k is not None:
+            params["top_k"] = self.top_k
+        if self.repeat_penalty is not None:
+            params["repeat_penalty"] = self.repeat_penalty
+        return params
+
+    def _select_model(self, prompt: str) -> str:
+        """Pick the best model for this prompt.
+
+        Returns the model name to use. When auto_route is off (default),
+        always returns self.model.
+        """
+        if not self.auto_route:
+            return self.model
+        if self.code_model and _CODE_KEYWORDS.search(prompt):
+            return self.code_model
+        return self.model
+
+    def embed(self, text: str) -> list[float]:
+        """Generate an embedding vector for the given text.
+
+        Uses the configured embedding_model (falls back to self.model).
+        """
+        model = self.embedding_model or self.model
+        payload = {"model": model, "input": text}
+        resp = httpx.post(
+            f"{self.base_url}/v1/embeddings",
+            json=payload,
+            headers=self._headers(),
+            timeout=30.0,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Embedding error ({resp.status_code}): {resp.text[:200]}")
+        data = resp.json()
+        return data["data"][0]["embedding"]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts in one call."""
+        model = self.embedding_model or self.model
+        payload = {"model": model, "input": texts}
+        resp = httpx.post(
+            f"{self.base_url}/v1/embeddings",
+            json=payload,
+            headers=self._headers(),
+            timeout=60.0,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Embedding error ({resp.status_code}): {resp.text[:200]}")
+        data = resp.json()
+        return [item["embedding"] for item in data["data"]]
+
     def _is_model_loaded(self) -> bool:
         """Check if the configured model is present in /v1/models."""
         try:
@@ -85,14 +175,17 @@ class LocalAIBackend(Backend):
 
     def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
         system = self._system_prompt(mode, project_path)
-        payload = {
-            "model": self.model,
+        selected_model = self._select_model(prompt)
+        payload: dict = {
+            "model": selected_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": self.max_tokens,
+            **self._sampling_params(),
         }
+        headers = self._headers()
 
         last_error: Optional[str] = None
         response = None
@@ -102,6 +195,7 @@ class LocalAIBackend(Backend):
                 response = httpx.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=payload,
+                    headers=headers,
                     timeout=120.0,
                 )
                 if response.status_code >= 500:
@@ -165,21 +259,25 @@ class LocalAIBackend(Backend):
                 print(chunk, end="", flush=True)
         """
         system = self._system_prompt(mode, project_path)
-        payload = {
-            "model": self.model,
+        selected_model = self._select_model(prompt)
+        payload: dict = {
+            "model": selected_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": self.max_tokens,
             "stream": True,
+            **self._sampling_params(),
         }
+        headers = self._headers()
 
         try:
             with httpx.stream(
                 "POST",
                 f"{self.base_url}/v1/chat/completions",
                 json=payload,
+                headers=headers,
                 timeout=120.0,
             ) as resp:
                 if resp.status_code >= 400:
@@ -235,6 +333,153 @@ class LocalAIBackend(Backend):
             f"  {hint}\n"
             f"  Check status with: make local-status"
         )
+
+    def execute_json(
+        self, prompt: str, mode: Mode, project_path: Path,
+        schema: Optional[dict] = None,
+    ) -> dict:
+        """Execute and return a parsed JSON response.
+
+        Uses response_format: json_object to guarantee valid JSON output.
+        If schema is provided, it is included in the system prompt to guide structure.
+        """
+        system = self._system_prompt(mode, project_path)
+        if schema:
+            system += f"\n\nRespond with JSON matching this schema:\n{json.dumps(schema, indent=2)}"
+        else:
+            system += "\n\nRespond with valid JSON only. No markdown, no explanation."
+
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.max_tokens,
+            "response_format": {"type": "json_object"},
+            **self._sampling_params(),
+        }
+
+        resp = httpx.post(
+            f"{self.base_url}/v1/chat/completions",
+            json=payload,
+            headers=self._headers(),
+            timeout=120.0,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(content)
+
+    def execute_with_tools(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        tools: Optional[list[dict]] = None,
+        max_rounds: int = 5,
+    ) -> str:
+        """Execute with function calling, running a tool loop.
+
+        Injects tool definitions into the system prompt using Hermes 2 Pro's
+        native <tools>/<tool_call> format. Parses tool calls from the response
+        and feeds results back until the model produces a final text answer.
+        """
+        from aicp.core.tools import execute_tool, get_tools_for_mode
+
+        if tools is None:
+            tools = get_tools_for_mode(mode.value)
+
+        # Build system prompt with tools injected
+        base_system = self._system_prompt(mode, project_path)
+        tools_json = json.dumps([t["function"] for t in tools], indent=2)
+        system = (
+            f"{base_system}\n\n"
+            f"You are a function calling AI model. You have access to the following tools:\n"
+            f"<tools>\n{tools_json}\n</tools>\n\n"
+            f"To call a tool, respond ONLY with JSON inside <tool_call></tool_call> tags:\n"
+            f"<tool_call>\n"
+            f'{{\"name\": \"function_name\", \"arguments\": {{\"arg\": \"value\"}}}}\n'
+            f"</tool_call>\n\n"
+            f"If you don't need to call a tool, respond normally with text."
+        )
+
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        selected_model = self._select_model(prompt)
+        headers = self._headers()
+
+        for _round in range(max_rounds):
+            payload: dict = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                **self._sampling_params(),
+            }
+
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=120.0,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+            data = resp.json()
+            content = data["choices"][0]["message"].get("content") or ""
+
+            # Parse tool calls from <tool_call>...</tool_call> tags
+            tool_calls = self._parse_tool_calls(content)
+            if not tool_calls:
+                # No tool calls — this is the final response
+                # Strip any residual tags
+                clean = re.sub(r"</?tool_call>", "", content).strip()
+                return clean
+
+            # Execute each tool and build result messages
+            messages.append({"role": "assistant", "content": content})
+            for tc in tool_calls:
+                args = tc.get("arguments") or tc.get("parameters") or {}
+                result = execute_tool(tc["name"], json.dumps(args), project_path)
+                messages.append({
+                    "role": "user",
+                    "content": f"Tool result for {tc['name']}:\n{result}",
+                })
+
+        return messages[-1].get("content", "(tool loop exhausted)")
+
+    @staticmethod
+    def _parse_tool_calls(content: str) -> list[dict]:
+        """Extract tool calls from <tool_call>JSON</tool_call> tags.
+
+        Also handles the case where </tool_call> is stripped by stopwords,
+        leaving just <tool_call>JSON at the end of the response.
+        """
+        calls = []
+        # First try complete tags
+        for match in re.finditer(r"<tool_call>\s*(.*?)\s*</tool_call>", content, re.DOTALL):
+            try:
+                parsed = json.loads(match.group(1))
+                if "name" in parsed:
+                    calls.append(parsed)
+            except json.JSONDecodeError:
+                continue
+        if calls:
+            return calls
+        # Fallback: closing tag stripped by stopwords
+        for match in re.finditer(r"<tool_call>\s*(.*?)$", content, re.DOTALL):
+            try:
+                parsed = json.loads(match.group(1).strip())
+                if "name" in parsed:
+                    calls.append(parsed)
+            except json.JSONDecodeError:
+                continue
+        return calls
 
     def _system_prompt(self, mode: Mode, project_path: Path) -> str:
         parts = []
