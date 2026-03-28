@@ -858,6 +858,49 @@ def aicp_models_loaded() -> str:
 
 
 @mcp.tool()
+def aicp_complete_logprobs(prompt: str, max_tokens: int = 256, top_logprobs: int = 5, seed: int = -1) -> str:
+    """Raw text completion with per-token log probabilities.
+
+    No chat template — pure text continuation with token-level confidence.
+    Good for evaluating model certainty on completions.
+
+    Args:
+        prompt: Text to complete.
+        max_tokens: Max tokens to generate.
+        top_logprobs: Top alternatives per position (1-20).
+        seed: Seed for reproducibility (-1 = random).
+
+    Returns:
+        JSON with text, tokens, token_logprobs, top_logprobs, avg_logprob.
+    """
+    backend = _get_backend()
+    s = seed if seed >= 0 else None
+    result = backend.complete_logprobs(prompt, max_tokens=max_tokens, top_logprobs=top_logprobs, seed=s)
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
+def aicp_complete_n(prompt: str, n: int = 3, max_tokens: int = 256, seed: int = -1) -> str:
+    """Generate N raw text completions (no chat template).
+
+    Pure text continuation with multiple candidates for comparison.
+
+    Args:
+        prompt: Text to complete.
+        n: Number of completions (1-10).
+        max_tokens: Max tokens per completion.
+        seed: Seed for reproducibility (-1 = random).
+
+    Returns:
+        JSON array of {index, text, finish_reason} objects.
+    """
+    backend = _get_backend()
+    s = seed if seed >= 0 else None
+    results = backend.complete_n(prompt, n=n, max_tokens=max_tokens, seed=s)
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
 def aicp_embed_typed(text: str, embed_type: str = "query") -> str:
     """Generate a typed embedding (query vs document) for asymmetric search.
 

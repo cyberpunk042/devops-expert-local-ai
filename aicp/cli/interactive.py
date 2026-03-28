@@ -56,6 +56,8 @@ Slash commands:
   /embed-typed <q|d> <text> Typed embedding (query vs document) for asymmetric search
   /warmup [model]           Pre-load a model into VRAM (avoid cold-start latency)
   /loaded                   List currently loaded models
+  /complete-lp <text>       Raw completion with token log probabilities
+  /complete-n [N] <text>    Generate N raw text completions (default: 3)
   /help                     Show this help
   /exit                     Quit
 """
@@ -831,6 +833,55 @@ def _handle_slash(
                 print("  No models currently loaded.")
         except Exception as e:
             print(f"[error] Failed to list loaded models: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/complete-lp":
+        if not backend:
+            print("[error] Complete-lp requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /complete-lp <text to complete>", file=sys.stderr)
+            return None
+        try:
+            result = backend.complete_logprobs(arg)
+            print(f"\n  {result['text']}\n")
+            print(f"  Tokens: {len(result['tokens'])}  |  Avg logprob: {result['avg_logprob']}")
+            for i, (tok, lp) in enumerate(zip(result["tokens"][:20], result["token_logprobs"][:20])):
+                lp_val = lp if lp is not None else 0.0
+                print(f"    {repr(tok):>15} → {lp_val:>8.3f}")
+            if len(result["tokens"]) > 20:
+                print(f"    ... ({len(result['tokens']) - 20} more tokens)")
+        except Exception as e:
+            print(f"[error] Complete-lp failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/complete-n":
+        if not backend:
+            print("[error] Complete-n requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /complete-n [N] <text to complete>", file=sys.stderr)
+            return None
+        parts = arg.split(None, 1)
+        try:
+            n = int(parts[0])
+            prompt_text = parts[1] if len(parts) > 1 else ""
+        except ValueError:
+            n = 3
+            prompt_text = arg
+        if not prompt_text:
+            print("[error] Usage: /complete-n [N] <text to complete>", file=sys.stderr)
+            return None
+        try:
+            results = backend.complete_n(prompt_text, n=n)
+            print(f"\n  Generated {len(results)} completions:\n")
+            for r in results:
+                idx = r["index"] + 1
+                text = r["text"]
+                display = text[:200] + "..." if len(text) > 200 else text
+                print(f"  [{idx}] {display}\n")
+        except Exception as e:
+            print(f"[error] Complete-n failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

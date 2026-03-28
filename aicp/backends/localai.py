@@ -1129,6 +1129,148 @@ class LocalAIBackend(Backend):
         except httpx.TimeoutException:
             raise RuntimeError("Streaming completion timed out.")
 
+    def complete_logprobs(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        top_logprobs: int = 5,
+        seed: Optional[int] = None,
+    ) -> dict:
+        """Raw text completion with per-token log probabilities.
+
+        Uses /v1/completions with logprobs enabled. Unlike execute_logprobs()
+        which uses chat format, this operates on raw text without templates.
+
+        Args:
+            prompt:       Text to complete.
+            max_tokens:   Max tokens to generate.
+            top_logprobs: Number of top alternatives per position (1-20).
+            seed:         Optional seed for reproducibility.
+
+        Returns:
+            Dict with text, tokens, logprobs, and avg_logprob.
+        """
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "prompt": prompt,
+            "max_tokens": max_tokens or self.max_tokens,
+            "logprobs": max(1, min(top_logprobs, 20)),
+            **self._sampling_params(),
+        }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Completion request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Completion error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "completion_logprobs": True,
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+
+        try:
+            choice = data["choices"][0]
+            text = choice["text"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
+
+        lp_data = choice.get("logprobs", {}) or {}
+        tokens = lp_data.get("tokens", [])
+        token_logprobs = lp_data.get("token_logprobs", [])
+        top_lps = lp_data.get("top_logprobs", [])
+
+        avg_lp = sum(v for v in token_logprobs if v is not None) / len(token_logprobs) if token_logprobs else 0.0
+
+        return {
+            "text": text,
+            "tokens": tokens,
+            "token_logprobs": token_logprobs,
+            "top_logprobs": top_lps,
+            "avg_logprob": round(avg_lp, 4),
+        }
+
+    def complete_n(
+        self,
+        prompt: str,
+        n: int = 3,
+        max_tokens: Optional[int] = None,
+        seed: Optional[int] = None,
+    ) -> list[dict]:
+        """Generate N raw text completions for the same prompt.
+
+        Uses /v1/completions with the n parameter. No chat template.
+
+        Args:
+            prompt:     Text to complete.
+            n:          Number of completions (1-10).
+            max_tokens: Max tokens per completion.
+            seed:       Optional seed for reproducibility.
+
+        Returns:
+            List of {index, text, finish_reason} dicts.
+        """
+        n = max(1, min(n, 10))
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "prompt": prompt,
+            "max_tokens": max_tokens or self.max_tokens,
+            "n": n,
+            **self._sampling_params(),
+        }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Completion request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Completion error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        choices = data.get("choices", [])
+        results = []
+        for choice in choices:
+            try:
+                results.append({
+                    "index": choice.get("index", len(results)),
+                    "text": choice["text"],
+                    "finish_reason": choice.get("finish_reason", "stop"),
+                })
+            except (KeyError, TypeError):
+                continue
+
+        if not results:
+            raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
+
+        return results
+
     def infill(
         self,
         prefix: str,
