@@ -87,6 +87,8 @@ class LocalAIBackend(Backend):
         self.typical_p = typical_p
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
+        # Session-wide seed for reproducible inference (None = random)
+        self.seed: Optional[int] = None
         # Mode profiles: deep-merge user config over built-in defaults
         if mode_profiles:
             merged = {}
@@ -279,6 +281,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         stop: Optional[list[str]] = None,
+        seed: Optional[int] = None,
     ) -> str:
         t_start = time.perf_counter()
         system = self._system_prompt(mode, project_path)
@@ -294,6 +297,9 @@ class LocalAIBackend(Backend):
         }
         if stop:
             payload["stop"] = stop
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
         headers = self._headers()
         t_prep = time.perf_counter()
 
@@ -376,6 +382,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         stop: Optional[list[str]] = None,
+        seed: Optional[int] = None,
     ) -> Iterator[str]:
         """Stream the response token-by-token using SSE.
 
@@ -400,6 +407,9 @@ class LocalAIBackend(Backend):
         }
         if stop:
             payload["stop"] = stop
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
         headers = self._headers()
 
         try:
@@ -923,6 +933,7 @@ class LocalAIBackend(Backend):
         max_tokens: Optional[int] = None,
         stop: Optional[list[str]] = None,
         model: Optional[str] = None,
+        seed: Optional[int] = None,
     ) -> str:
         """Fill-in-the-Middle (FIM) code completion.
 
@@ -936,6 +947,7 @@ class LocalAIBackend(Backend):
             max_tokens: Maximum tokens to generate (default: self.max_tokens).
             stop:       Optional stop sequences.
             model:      Model override (default: code_model or self.model).
+            seed:       Optional seed for reproducible output.
 
         Returns:
             The generated infill text.
@@ -950,6 +962,9 @@ class LocalAIBackend(Backend):
         }
         if stop:
             payload["stop"] = stop
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
 
         try:
             resp = httpx.post(
@@ -1003,6 +1018,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         schema: Optional[dict] = None,
+        seed: Optional[int] = None,
     ) -> dict:
         """Execute a prompt with JSON mode — forces valid JSON output.
 
@@ -1015,6 +1031,7 @@ class LocalAIBackend(Backend):
             project_path: Project root for context building.
             schema:       Optional JSON Schema dict to include in the system prompt
                           so the model knows the expected structure.
+            seed:         Optional seed for reproducible output.
 
         Returns:
             Parsed JSON dict from the model's response.
@@ -1035,6 +1052,9 @@ class LocalAIBackend(Backend):
             "response_format": {"type": "json_object"},
             **self.sampling_params_for_mode(mode),
         }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
         headers = self._headers()
 
         try:

@@ -73,19 +73,21 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def aicp_chat(prompt: str, mode: str = "think") -> str:
+def aicp_chat(prompt: str, mode: str = "think", seed: int = -1) -> str:
     """Send a prompt to the local LLM (Hermes / CodeLlama with auto-routing).
 
     Args:
         prompt: The text prompt to send.
         mode: Permission mode — think (read-only), edit, or act. Defaults to think.
+        seed: Seed for reproducible output (-1 = use session seed or random).
 
     Returns:
         The model's response text.
     """
     backend = _get_backend()
     m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
-    return backend.execute(prompt, m, Path.cwd())
+    s = seed if seed >= 0 else None
+    return backend.execute(prompt, m, Path.cwd(), seed=s)
 
 
 @mcp.tool()
@@ -826,7 +828,7 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
-def aicp_json(prompt: str, schema: str = "", mode: str = "think") -> str:
+def aicp_json(prompt: str, schema: str = "", mode: str = "think", seed: int = -1) -> str:
     """Force the LLM to output valid JSON (structured output mode).
 
     Uses response_format={"type": "json_object"} to guarantee parseable JSON.
@@ -836,6 +838,7 @@ def aicp_json(prompt: str, schema: str = "", mode: str = "think") -> str:
         prompt: The user prompt (should describe the desired JSON structure).
         schema: Optional JSON Schema as a string to guide the model's output.
         mode: Permission mode (think/edit/act).
+        seed: Seed for reproducible output (-1 = use session seed or random).
 
     Returns:
         The model's JSON response (pretty-printed).
@@ -843,8 +846,30 @@ def aicp_json(prompt: str, schema: str = "", mode: str = "think") -> str:
     backend = _get_backend()
     m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
     schema_dict = json.loads(schema) if schema else None
-    result = backend.execute_json(prompt, m, Path("."), schema=schema_dict)
+    s = seed if seed >= 0 else None
+    result = backend.execute_json(prompt, m, Path("."), schema=schema_dict, seed=s)
     return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_seed(seed: int = -1) -> str:
+    """Set or clear the session-wide seed for reproducible inference.
+
+    When set, all subsequent calls use this seed for deterministic output.
+    Same seed + same prompt = same response (on the same model).
+
+    Args:
+        seed: Integer seed value. -1 clears the seed (random inference).
+
+    Returns:
+        Confirmation message.
+    """
+    backend = _get_backend()
+    if seed < 0:
+        backend.seed = None
+        return "Seed cleared (random inference)."
+    backend.seed = seed
+    return f"Seed set to {seed} (reproducible inference)."
 
 
 @mcp.tool()

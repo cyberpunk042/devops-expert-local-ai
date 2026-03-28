@@ -49,6 +49,7 @@ Slash commands:
   /config [model]           Show model config (context_size, gpu_layers, …)
   /config set <key> <value> Update a model parameter at runtime
   /json <prompt>            Force JSON output (structured responses)
+  /seed [number]            Set/show seed for reproducible inference (clear = random)
   /help                     Show this help
   /exit                     Quit
 """
@@ -651,6 +652,21 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": json.dumps(result)})
         except Exception as e:
             print(f"[error] JSON mode failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/seed":
+        if not backend:
+            print("[error] Seed command requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg or arg.strip().lower() in ("clear", "none", "random"):
+            backend.seed = None
+            print("  Seed cleared (random inference).")
+            return None
+        try:
+            backend.seed = int(arg.strip())
+            print(f"  Seed set to {backend.seed} (reproducible inference).")
+        except ValueError:
+            print("[error] Seed must be an integer or 'clear'.", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
