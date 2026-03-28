@@ -52,6 +52,7 @@ def _get_backend() -> LocalAIBackend:
             typical_p=cfg.get("typical_p"),
             frequency_penalty=cfg.get("frequency_penalty"),
             presence_penalty=cfg.get("presence_penalty"),
+            mode_profiles=cfg.get("mode_profiles"),
         )
     return _backend
 
@@ -603,6 +604,38 @@ def aicp_tokenize_batch(texts: str) -> str:
     text_list = [t for t in texts.split("\n") if t.strip()]
     results = backend.tokenize_batch(text_list)
     return json.dumps(results)
+
+
+@mcp.tool()
+def aicp_vad(audio_path: str) -> str:
+    """Detect voice activity segments in an audio file.
+
+    Args:
+        audio_path: Path to audio file (wav, mp3, etc.).
+
+    Returns:
+        JSON array of voice segments with start/end times.
+    """
+    from pathlib import Path as _Path
+    backend = _get_backend()
+    segments = backend.vad(_Path(audio_path))
+    return json.dumps(segments)
+
+
+@mcp.tool()
+def aicp_detect(image_path: str) -> str:
+    """Detect objects in an image.
+
+    Args:
+        image_path: Path to image file.
+
+    Returns:
+        JSON array of detected objects with labels, confidence, and bounding boxes.
+    """
+    from pathlib import Path as _Path
+    backend = _get_backend()
+    detections = backend.detect(_Path(image_path))
+    return json.dumps(detections)
 
 
 @mcp.tool()

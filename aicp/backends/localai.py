@@ -52,6 +52,8 @@ class LocalAIBackend(Backend):
         typical_p: Optional[float] = None,
         frequency_penalty: Optional[float] = None,
         presence_penalty: Optional[float] = None,
+        # Mode-aware sampling profiles (overrides _MODE_SAMPLING defaults)
+        mode_profiles: Optional[dict] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -73,6 +75,14 @@ class LocalAIBackend(Backend):
         self.typical_p = typical_p
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
+        # Mode profiles: deep-merge user config over built-in defaults
+        if mode_profiles:
+            merged = {}
+            for mode_name in set(list(self._MODE_SAMPLING) + list(mode_profiles)):
+                base = dict(self._MODE_SAMPLING.get(mode_name, {}))
+                base.update(mode_profiles.get(mode_name, {}))
+                merged[mode_name] = base
+            self._MODE_SAMPLING = merged
 
     @property
     def name(self) -> str:
@@ -1557,6 +1567,86 @@ class LocalAIBackend(Backend):
             return data["choices"][0]["text"]
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected edit response: {str(data)[:200]}")
+
+    # ── Voice Activity Detection ───────────────────────────────────────────
+
+    def vad(
+        self,
+        audio_path: Path,
+        model: Optional[str] = None,
+    ) -> list[dict]:
+        """Detect voice segments in an audio file via /v1/audio/vad.
+
+        Args:
+            audio_path: Path to audio file (wav, mp3, etc.).
+            model:      VAD model name (defaults to whisper model).
+
+        Returns:
+            List of segments: [{start: float, end: float, text: str}, ...].
+        """
+        model = model or getattr(self, "whisper_model", None) or "whisper-1"
+        try:
+            with open(audio_path, "rb") as f:
+                resp = httpx.post(
+                    f"{self.base_url}/v1/audio/vad",
+                    files={"file": (audio_path.name, f)},
+                    data={"model": model},
+                    headers=self._headers(),
+                    timeout=120.0,
+                )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("VAD request timed out.")
+
+        if resp.status_code == 404:
+            raise RuntimeError("VAD endpoint not available. Requires whisper backend.")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"VAD error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        segments = data.get("segments", data if isinstance(data, list) else [])
+        return segments
+
+    # ── Object Detection ─────────────────────────────────────────────────────
+
+    def detect(
+        self,
+        image_path: Path,
+        model: Optional[str] = None,
+    ) -> list[dict]:
+        """Detect objects in an image via /v1/detection.
+
+        Args:
+            image_path: Path to image file.
+            model:      Detection model name.
+
+        Returns:
+            List of detections: [{label: str, confidence: float, box: {...}}, ...].
+        """
+        model = model or self.vision_model or self.model
+        try:
+            with open(image_path, "rb") as f:
+                resp = httpx.post(
+                    f"{self.base_url}/v1/detection",
+                    files={"file": (image_path.name, f)},
+                    data={"model": model},
+                    headers=self._headers(),
+                    timeout=120.0,
+                )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Detection request timed out.")
+
+        if resp.status_code == 404:
+            raise RuntimeError("Detection endpoint not available. Requires a detection model.")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Detection error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        detections = data.get("detections", data if isinstance(data, list) else [])
+        return detections
 
     # ── Health & Readiness ───────────────────────────────────────────────────
 

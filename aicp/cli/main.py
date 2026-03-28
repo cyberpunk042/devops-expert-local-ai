@@ -363,6 +363,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             typical_p=local_cfg.get("typical_p"),
             frequency_penalty=local_cfg.get("frequency_penalty"),
             presence_penalty=local_cfg.get("presence_penalty"),
+            mode_profiles=local_cfg.get("mode_profiles"),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),

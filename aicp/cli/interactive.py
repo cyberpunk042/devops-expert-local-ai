@@ -36,6 +36,8 @@ Slash commands:
   /complete <text>          Raw text completion (no chat template)
   /edit <instruction> | <text>  Edit text by instruction (e.g. fix grammar)
   /tokenize <text>          Count tokens in text
+  /vad <audio_path>         Detect voice segments in audio file
+  /detect <image_path>      Detect objects in image
   /health                   Check LocalAI health, readiness, and features
   /backends                 List installed LocalAI backends
   /help                     Show this help
@@ -331,6 +333,47 @@ def _handle_slash(
                 print(f"  IDs:    {result['tokens']}")
         except Exception as e:
             print(f"[error] Tokenize failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/vad":
+        if not backend:
+            print("[error] VAD commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /vad <audio_path>", file=sys.stderr)
+            return None
+        try:
+            segments = backend.vad(Path(arg.strip()))
+            if segments:
+                for seg in segments:
+                    start = seg.get("start", "?")
+                    end = seg.get("end", "?")
+                    text = seg.get("text", "")
+                    print(f"  [{start:.1f}s - {end:.1f}s] {text}")
+            else:
+                print("  No voice segments detected.")
+        except Exception as e:
+            print(f"[error] VAD failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/detect":
+        if not backend:
+            print("[error] Detection commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /detect <image_path>", file=sys.stderr)
+            return None
+        try:
+            detections = backend.detect(Path(arg.strip()))
+            if detections:
+                for det in detections:
+                    label = det.get("label", "unknown")
+                    conf = det.get("confidence", 0)
+                    print(f"  - {label} ({conf:.1%})")
+            else:
+                print("  No objects detected.")
+        except Exception as e:
+            print(f"[error] Detection failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/health":
