@@ -18,6 +18,10 @@ backends:
     tts_model: "piper-tts"
     # Image generation model (Stable Diffusion via stablediffusion-ggml backend)
     image_model: "stablediffusion"
+    # Reranker model (cross-encoder for RAG result reranking)
+    reranker_model: "bge-reranker-v2-m3"
+    # Prompt caching: reuse KV cache for repeated system prompts (faster warm calls)
+    cache_prompt: true
     # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
     # When false (default), always uses the primary model unless explicitly overridden.
     auto_route: false
@@ -44,6 +48,8 @@ rag:
   chunk_overlap: 64
   top_k: 5
   threshold: 0.3
+  # Cross-encoder reranking: improves search precision after embedding retrieval
+  rerank: true
   # Max characters of retrieved context injected into prompts
   max_context_chars: 3000
 

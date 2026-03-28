@@ -421,6 +421,26 @@ elif [[ -f "models/stablediffusion.yaml" ]]; then
     log_skip "models/stablediffusion.yaml already exists"
 fi
 
+# ── Reranker model (BGE-reranker-v2-m3 GGUF) ─────────────────────────────────
+RERANKER_MODEL="bge-reranker-v2-m3-Q4_K_M.gguf"
+RERANKER_URL="https://huggingface.co/nicoboss/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q4_K_M.gguf"
+
+if [[ ! -f "models/$RERANKER_MODEL" ]]; then
+    log_step "Downloading BGE-reranker-v2-m3 (~420MB)..."
+    curl -L --progress-bar -C - -o "models/$RERANKER_MODEL" "$RERANKER_URL"
+    log_ok "Downloaded $RERANKER_MODEL"
+else
+    log_skip "models/$RERANKER_MODEL already exists"
+fi
+
+if [[ -f "models/$RERANKER_MODEL" && ! -f "models/bge-reranker-v2-m3.yaml" ]]; then
+    log_step "Activating bge-reranker-v2-m3 model config"
+    cp "config/bge-reranker-v2-m3.yaml.template" "models/bge-reranker-v2-m3.yaml"
+    log_ok "models/bge-reranker-v2-m3.yaml activated"
+elif [[ -f "models/bge-reranker-v2-m3.yaml" ]]; then
+    log_skip "models/bge-reranker-v2-m3.yaml already exists"
+fi
+
 # =============================================================================
 # SECTION 6 — Sync config/default.yaml model name
 # =============================================================================

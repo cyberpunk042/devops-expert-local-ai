@@ -91,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         const="list",
         metavar="COMMAND",
-        help="Model management: list (default), info <name>",
+        help="Model management: list, gallery, install, job, unload, monitor, info, download, activate, benchmark",
     )
     parser.add_argument(
         "--models-arg",
@@ -261,6 +261,17 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Output path for --speak (default: /tmp/aicp_tts.wav)",
     )
+    # Voice pipeline
+    parser.add_argument(
+        "--voice-pipeline",
+        metavar="AUDIO",
+        help="Voice pipeline: audio in → transcribe → LLM → TTS → audio out",
+    )
+    parser.add_argument(
+        "--voice-output",
+        metavar="FILE",
+        help="Output path for --voice-pipeline (default: /tmp/aicp_voice_response.wav)",
+    )
     # Image generation
     parser.add_argument(
         "--imagine",
@@ -277,6 +288,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="WxH",
         default="512x512",
         help="Image size for --imagine (default: 512x512)",
+    )
+    # Grammar-constrained generation
+    parser.add_argument(
+        "--grammar",
+        metavar="GRAMMAR",
+        help="GBNF grammar to constrain output format (e.g. 'root ::= (\"yes\" | \"no\")')",
+    )
+    parser.add_argument(
+        "--grammar-file",
+        metavar="FILE",
+        type=Path,
+        help="Load GBNF grammar from a file",
     )
     # MCP server
     parser.add_argument(
@@ -317,6 +340,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             code_model=local_cfg.get("code_model", ""),
             vision_model=local_cfg.get("vision_model", ""),
             auto_route=local_cfg.get("auto_route", False),
+            cache_prompt=local_cfg.get("cache_prompt", True),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),
@@ -678,9 +702,126 @@ def _run_models(command: str, model_name: str = None) -> int:
             print_error(f"Benchmark failed: {e}")
             return 1
 
+    elif command == "gallery":
+        # List models from LocalAI gallery API
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        try:
+            backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            available = backend.models_available()
+        except Exception as e:
+            print_error(f"Gallery unavailable: {e}")
+            return 1
+
+        if not available:
+            console.print("[dim]No models in gallery.[/]")
+            return 0
+
+        # Filter by search term if provided
+        if model_name:
+            available = [m for m in available if model_name.lower() in m["name"].lower()
+                         or model_name.lower() in m.get("description", "").lower()]
+
+        table = Table(title="LocalAI Model Gallery", show_header=True)
+        table.add_column("Name", style="bold")
+        table.add_column("Installed", justify="center")
+        table.add_column("Tags")
+        table.add_column("Description", max_width=50)
+
+        for m in available[:50]:  # cap display at 50
+            installed = "[green]✓[/]" if m["installed"] else "[dim]–[/]"
+            tags = ", ".join(m.get("tags", [])[:3])
+            desc = (m.get("description", "") or "")[:50]
+            table.add_row(m["name"], installed, tags, desc)
+
+        console.print(table)
+        if len(available) > 50:
+            console.print(f"[dim]  ... and {len(available) - 50} more. Use --models-arg to filter.[/]")
+        return 0
+
+    elif command == "install" and model_name:
+        # Install model from gallery via /models/apply
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        try:
+            backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            result = backend.model_apply(model_name)
+            job_uuid = result.get("uuid", "")
+            console.print(f"[green]Installation started:[/] {model_name}")
+            console.print(f"  Job UUID: {job_uuid}")
+            console.print(f"  Track:    aicp --models job --models-arg {job_uuid}")
+            return 0
+        except Exception as e:
+            print_error(f"Install failed: {e}")
+            return 1
+
+    elif command == "job" and model_name:
+        # Check model download job status
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        try:
+            backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            status = backend.model_job_status(model_name)
+
+            if status.get("error"):
+                print_error(f"Job failed: {status['error']}")
+                return 1
+
+            if status.get("processed"):
+                console.print(f"[green]Download complete.[/]")
+            else:
+                progress = status.get("progress", 0)
+                file_size = status.get("file_size", "?")
+                downloaded = status.get("downloaded_size", "?")
+                console.print(f"  Progress: {progress:.1f}%  ({downloaded} / {file_size})")
+                console.print(f"  Status:   {status.get('message', 'downloading')}")
+            return 0
+        except Exception as e:
+            print_error(f"Job status failed: {e}")
+            return 1
+
+    elif command == "unload" and model_name:
+        # Unload model from GPU memory
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        try:
+            backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            success = backend.model_shutdown(model_name)
+            if success:
+                console.print(f"[green]Unloaded:[/] {model_name}")
+            else:
+                print_error(f"Failed to unload: {model_name}")
+                return 1
+            return 0
+        except Exception as e:
+            print_error(f"Unload failed: {e}")
+            return 1
+
+    elif command == "monitor" and model_name:
+        # Check model status and memory usage
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        try:
+            backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            info = backend.model_monitor(model_name)
+            state_map = {0: "uninitialized", 1: "busy", 2: "ready", -1: "error"}
+            state = info.get("state", -1)
+            state_label = state_map.get(state, f"unknown ({state})")
+            state_color = {0: "dim", 1: "yellow", 2: "green", -1: "red"}.get(state, "dim")
+
+            console.print(f"  Model:  [bold]{model_name}[/]")
+            console.print(f"  State:  [{state_color}]{state_label}[/{state_color}]")
+
+            memory = info.get("memory", {})
+            if memory:
+                total_mb = memory.get("total", 0) / 1024 / 1024
+                breakdown = memory.get("breakdown", {})
+                weights_mb = breakdown.get("weights", 0) / 1024 / 1024
+                kv_mb = breakdown.get("kv_cache", 0) / 1024 / 1024
+                console.print(f"  Memory: {total_mb:.0f} MiB total (weights: {weights_mb:.0f}, KV: {kv_mb:.0f})")
+            return 0
+        except Exception as e:
+            print_error(f"Monitor failed: {e}")
+            return 1
+
     else:
         print_error(
-            "Usage: --models list | --models info|download|activate|benchmark --models-arg <name/url>"
+            "Usage: --models list|gallery|install|job|unload|monitor|info|download|activate|benchmark --models-arg <name>"
         )
         return 1
 
@@ -1045,18 +1186,11 @@ def _run_kb(
             print_error("KB search requires the local backend (for embeddings)")
             return 1
 
-        pipeline = build_rag_pipeline(
-            backend=local_backend,
-            db_path=db_path,
-            store_name=rag_cfg["store_name"],
-            chunk_size=rag_cfg["chunk_size"],
-            chunk_overlap=rag_cfg["chunk_overlap"],
-            top_k=rag_cfg["top_k"],
-            threshold=rag_cfg["threshold"],
-        )
+        from aicp.core.kb import KnowledgeBase
+        kb = KnowledgeBase(local_backend, config)
 
-        with spinner("Searching knowledge base..."):
-            results = pipeline.retrieve(arg)
+        with spinner("Searching knowledge base (with reranking)..."):
+            results = kb.search(arg, top_k=rag_cfg["top_k"])
 
         if not results:
             console.print("[dim]No relevant results found.[/]")
@@ -1064,8 +1198,7 @@ def _run_kb(
 
         for i, r in enumerate(results, 1):
             source = Path(r["source"]).name if "/" in r["source"] else r["source"]
-            console.print(f"\n[bold cyan]#{i}[/] [dim]({r['similarity']:.3f})[/] [yellow]{source}[/]")
-            # Show first 200 chars of the chunk
+            console.print(f"\n[bold cyan]#{i}[/] [dim](score: {r['score']:.3f})[/] [yellow]{source}[/]")
             preview = r["text"][:200].replace("\n", " ")
             if len(r["text"]) > 200:
                 preview += "..."
@@ -1174,6 +1307,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         if lai["available"]:
             console.print(f"  LocalAI:     [green]ONLINE[/] ({lai['url']})")
             console.print(f"  Models:      {', '.join(lai['models']) or 'none'}")
+            loaded = lai.get("loaded_models", [])
+            if loaded:
+                console.print(f"  GPU active:  [bold green]{', '.join(loaded)}[/]")
+            else:
+                console.print(f"  GPU active:  [dim]none (model loads on first request)[/]")
+            backends = lai.get("backends", [])
+            if backends:
+                console.print(f"  Backends:    {', '.join(backends)}")
             if lai.get("goroutines"):
                 console.print(f"  Goroutines:  {int(lai['goroutines'])}")
             if lai.get("memory_alloc_mb"):
@@ -1198,19 +1339,21 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):
-        from aicp.core.observability import measure_request
+        from aicp.core.observability import (
+            measure_request, measure_embedding, measure_rerank, measure_grammar,
+        )
         local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
-        console.print("[bold]Performance Benchmark[/]\n")
+        console.print("[bold]AICP Performance Benchmark[/]\n")
 
+        # ── Chat (streaming, 3 runs) ──
+        console.print("[cyan]Chat (hermes, streaming)[/]")
         for run in range(3):
-            label = "cold" if run == 0 else f"warm {run}"
+            label = "cold" if run == 0 else f"warm"
             with spinner(f"Run {run + 1}/3 ({label})..."):
                 result = measure_request(local_url, model="hermes")
-
             if result.get("error"):
-                print_error(f"Run {run + 1}: {result['error']}")
+                print_error(f"  {result['error']}")
                 break
-
             console.print(
                 f"  Run {run + 1}: "
                 f"total={result['total_ms']:.0f}ms  "
@@ -1218,6 +1361,45 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"gen={result['generation_ms']:.0f}ms  "
                 f"tok/s={result['tokens_per_sec']}"
             )
+
+        # ── Grammar-constrained ──
+        console.print("\n[cyan]Grammar-constrained (yes/no)[/]")
+        with spinner("Running grammar bench..."):
+            result = measure_grammar(local_url)
+        if result.get("error"):
+            print_error(f"  {result['error']}")
+        else:
+            console.print(
+                f"  total={result['total_ms']:.0f}ms  "
+                f"response=\"{result['response']}\""
+            )
+
+        # ── Embedding ──
+        console.print("\n[cyan]Embedding (nomic-embed)[/]")
+        with spinner("Running embedding bench..."):
+            result = measure_embedding(local_url)
+        if result.get("error"):
+            print_error(f"  {result['error']}")
+        else:
+            console.print(
+                f"  total={result['total_ms']:.0f}ms  "
+                f"dim={result['dimensions']}  "
+                f"chars={result['chars']}"
+            )
+
+        # ── Reranking ──
+        console.print("\n[cyan]Reranking (bge-reranker-v2-m3)[/]")
+        with spinner("Running rerank bench..."):
+            result = measure_rerank(local_url)
+        if result.get("error"):
+            print_error(f"  {result['error']}")
+        else:
+            console.print(
+                f"  total={result['total_ms']:.0f}ms  "
+                f"docs={result['documents']}  "
+                f"results={result['results']}"
+            )
+
         return 0
 
     # Load config
@@ -1291,6 +1473,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             project_path=args.project.resolve(),
             max_tokens=local_cfg.get("max_tokens", 2048),
             stream=args.stream,
+            backend=backends.get("local"),
+            config=config,
         )
 
     # --continue-session (resume Claude Code session)
@@ -1348,7 +1532,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if (not args.prompt
             and not getattr(args, "transcribe", None)
             and not getattr(args, "vision", None)
-            and not getattr(args, "imagine", None)):
+            and not getattr(args, "imagine", None)
+            and not getattr(args, "voice_pipeline", None)):
         parser.print_help()
         return 1
 
@@ -1435,10 +1620,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error(str(e))
             return 1
 
-    # --rag: augment prompt with knowledge base context
+    # --rag: augment prompt with knowledge base context (with reranking)
     if getattr(args, "rag", False) and args.prompt:
         from aicp.config.loader import get_rag_config
-        from aicp.core.rag import build_rag_pipeline
 
         rag_cfg = get_rag_config(config)
         db_path_str = rag_cfg["db_path"]
@@ -1449,18 +1633,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         if db_path.exists():
             local_backend = backends.get("local")
             if local_backend:
-                pipeline = build_rag_pipeline(
-                    backend=local_backend,
-                    db_path=db_path,
-                    store_name=rag_cfg["store_name"],
-                    chunk_size=rag_cfg["chunk_size"],
-                    chunk_overlap=rag_cfg["chunk_overlap"],
-                    top_k=rag_cfg["top_k"],
-                    threshold=rag_cfg["threshold"],
-                )
-                args.prompt = pipeline.augment_prompt(
+                from aicp.core.kb import KnowledgeBase
+                kb = KnowledgeBase(local_backend, config)
+                args.prompt = kb.augment_prompt(
                     args.prompt, max_context_chars=rag_cfg["max_context_chars"],
                 )
+
+    # Auto-RAG: when rag.enabled is true, automatically augment prompts with KB context
+    if not getattr(args, "rag", False) and args.prompt:
+        from aicp.config.loader import get_rag_config
+        rag_cfg = get_rag_config(config)
+        if rag_cfg.get("enabled", False):
+            db_path_str = rag_cfg["db_path"]
+            db_path = (
+                Path(db_path_str) if Path(db_path_str).is_absolute()
+                else args.project.resolve() / db_path_str
+            )
+            if db_path.exists():
+                local_backend = backends.get("local")
+                if local_backend:
+                    from aicp.core.kb import KnowledgeBase
+                    kb = KnowledgeBase(local_backend, config)
+                    if kb.stats().get("total_chunks", 0) > 0:
+                        args.prompt = kb.augment_prompt(
+                            args.prompt, max_context_chars=rag_cfg["max_context_chars"],
+                        )
 
     # --json mode: force JSON output from LocalAI
     if getattr(args, "json", False) and actual_backend == "local":
@@ -1476,12 +1673,30 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error(str(e))
             return 1
 
+    # --grammar / --grammar-file: GBNF-constrained generation
+    grammar_str = getattr(args, "grammar", None)
+    grammar_file = getattr(args, "grammar_file", None)
+    if grammar_file and grammar_file.exists():
+        grammar_str = grammar_file.read_text()
+    if grammar_str and actual_backend == "local":
+        backend = backends["local"]
+        try:
+            with spinner("Asking local (grammar-constrained)..."):
+                result = backend.execute_grammar(
+                    args.prompt, grammar_str, Mode(args.mode), args.project.resolve(),
+                )
+            print_response(result)
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
     # --tools mode: function calling with built-in tools
     if getattr(args, "tools", False) and actual_backend == "local":
         backend = backends["local"]
         try:
-            with spinner("Asking local (with tools)..."):
-                result = backend.execute_with_tools(
+            with spinner("Asking local (with native function calling)..."):
+                result = backend.execute_with_native_tools(
                     args.prompt, Mode(args.mode), args.project.resolve(),
                 )
             print_response(result)
@@ -1514,6 +1729,38 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 print_warning("No speech detected in audio.")
                 return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --voice-pipeline: full audio round-trip (transcribe → LLM → TTS)
+    if getattr(args, "voice_pipeline", None) and actual_backend == "local":
+        audio_input = Path(args.voice_pipeline)
+        if not audio_input.is_absolute():
+            audio_input = args.project.resolve() / audio_input
+        if not audio_input.exists():
+            print_error(f"Audio file not found: {audio_input}")
+            return 1
+
+        voice_output = (
+            Path(args.voice_output) if getattr(args, "voice_output", None)
+            else Path("/tmp/aicp_voice_response.wav")
+        )
+        local_cfg = get_backend_config(config, "local")
+        backend = backends["local"]
+        try:
+            with spinner("Processing voice pipeline..."):
+                result = backend.voice_pipeline(
+                    audio_input, voice_output,
+                    mode=Mode(args.mode),
+                    project_path=args.project.resolve(),
+                    whisper_model=local_cfg.get("whisper_model", "whisper-1"),
+                    tts_model=local_cfg.get("tts_model", "piper-tts"),
+                )
+            console.print(f"  [dim]You said:[/] {result['transcription']}")
+            print_response(result["response"])
+            console.print(f"  [dim]Audio response saved to {result['audio_output']}[/]")
+            return 0
         except Exception as e:
             print_error(str(e))
             return 1

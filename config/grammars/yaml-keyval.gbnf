@@ -1,0 +1,4 @@
+root   ::= pair ("\n" pair)*
+pair   ::= key ": " value
+key    ::= [a-z_]+
+value  ::= [^\n]+

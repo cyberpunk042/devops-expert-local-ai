@@ -44,6 +44,7 @@ class LocalAIBackend(Backend):
         code_model: str = "",
         vision_model: str = "",
         auto_route: bool = False,
+        cache_prompt: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -57,6 +58,7 @@ class LocalAIBackend(Backend):
         self.code_model = code_model
         self.vision_model = vision_model
         self.auto_route = auto_route
+        self.cache_prompt = cache_prompt
 
     @property
     def name(self) -> str:
@@ -103,6 +105,8 @@ class LocalAIBackend(Backend):
             params["top_k"] = self.top_k
         if self.repeat_penalty is not None:
             params["repeat_penalty"] = self.repeat_penalty
+        if self.cache_prompt:
+            params["cache_prompt"] = True
         return params
 
     def _select_model(self, prompt: str) -> str:
@@ -480,6 +484,97 @@ class LocalAIBackend(Backend):
         self.last_usage = {"model": model, "tts": True, "output_bytes": len(resp.content)}
         return output_path
 
+    def voice_pipeline(
+        self,
+        audio_input: Path,
+        audio_output: Path,
+        mode: Mode,
+        project_path: Path,
+        whisper_model: str = "whisper-1",
+        tts_model: str = "piper-tts",
+        system_prompt: Optional[str] = None,
+    ) -> dict:
+        """Full voice pipeline: audio in → transcribe → LLM → TTS → audio out.
+
+        Args:
+            audio_input: Path to input audio file (wav, mp3, ogg, flac).
+            audio_output: Path to write the response audio (WAV).
+            mode: Permission mode for the LLM.
+            project_path: Project directory for context.
+            whisper_model: STT model name.
+            tts_model: TTS model name.
+            system_prompt: Optional override for the system prompt.
+
+        Returns:
+            Dict with keys: transcription, response, audio_output, usage.
+        """
+        # Step 1: Transcribe
+        stt_result = self.transcribe(audio_input, model=whisper_model)
+        transcription = stt_result.get("text", "").strip()
+        if not transcription:
+            raise RuntimeError("No speech detected in audio input.")
+
+        # Step 2: LLM response
+        response = self.execute(transcription, mode, project_path)
+
+        # Step 3: TTS
+        self.speak(response, audio_output, model=tts_model)
+
+        return {
+            "transcription": transcription,
+            "response": response,
+            "audio_output": str(audio_output),
+            "usage": getattr(self, "last_usage", {}),
+        }
+
+    def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        model: str = "bge-reranker-v2-m3",
+        top_n: int | None = None,
+    ) -> list[dict]:
+        """Rerank documents against a query using a cross-encoder model.
+
+        Args:
+            query: The search query.
+            documents: List of document strings to rank.
+            model: Reranker model name configured in LocalAI.
+            top_n: Return only the top N results (default: all).
+
+        Returns:
+            List of dicts with keys: index, relevance_score, sorted by score descending.
+        """
+        payload: dict = {
+            "model": model,
+            "query": query,
+            "documents": documents,
+        }
+        if top_n is not None:
+            payload["top_n"] = top_n
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/rerank",
+                json=payload,
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Reranking timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Rerank error ({resp.status_code}): {resp.text[:300]}")
+
+        data = resp.json()
+        results = data.get("results", [])
+        # Sort by relevance_score descending
+        results.sort(key=lambda r: r.get("relevance_score", 0), reverse=True)
+        self.last_usage = {"model": model, "reranking": True, "documents": len(documents)}
+        return results
+
     def generate_image(
         self,
         prompt: str,
@@ -621,6 +716,69 @@ class LocalAIBackend(Backend):
         content = data["choices"][0]["message"]["content"]
         return json.loads(content)
 
+    def execute_grammar(
+        self,
+        prompt: str,
+        grammar: str,
+        mode: Mode,
+        project_path: Path,
+    ) -> str:
+        """Execute with GBNF grammar constraint.
+
+        The grammar forces the model's output to conform to a formal grammar
+        (GBNF format, similar to BNF). This is more powerful than JSON mode —
+        it can constrain output to YAML, CSV, enums, custom DSLs, etc.
+
+        Args:
+            prompt: The user prompt.
+            grammar: GBNF grammar string (e.g. 'root ::= ("yes" | "no")').
+            mode: Permission mode.
+            project_path: Project directory for context.
+
+        Returns:
+            The constrained model response.
+        """
+        system = self._system_prompt(mode, project_path)
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.max_tokens,
+            "grammar": grammar,
+            **self._sampling_params(),
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Grammar-constrained request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "grammar": True,
+        }
+
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
+
     def execute_with_tools(
         self,
         prompt: str,
@@ -693,13 +851,120 @@ class LocalAIBackend(Backend):
             messages.append({"role": "assistant", "content": content})
             for tc in tool_calls:
                 args = tc.get("arguments") or tc.get("parameters") or {}
-                result = execute_tool(tc["name"], json.dumps(args), project_path)
+                result = execute_tool(tc["name"], json.dumps(args), project_path, backend=self)
                 messages.append({
                     "role": "user",
                     "content": f"Tool result for {tc['name']}:\n{result}",
                 })
 
         return messages[-1].get("content", "(tool loop exhausted)")
+
+    def execute_with_native_tools(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        tools: Optional[list[dict]] = None,
+        max_rounds: int = 5,
+        tool_choice: str = "auto",
+    ) -> str:
+        """Execute with OpenAI-compatible native function calling.
+
+        Uses the ``tools`` parameter in the chat completions payload.
+        LocalAI constrains output via grammar to ensure valid tool call JSON.
+        Falls back to ``<tool_call>`` tag parsing if the model response
+        doesn't include native ``tool_calls``.
+
+        Args:
+            prompt:       User prompt.
+            mode:         Permission mode.
+            project_path: Project directory for context.
+            tools:        OpenAI-format tool definitions. Auto-selected if None.
+            max_rounds:   Maximum tool-call/response loops.
+            tool_choice:  "auto", "none", or {"type":"function","function":{"name":"fn"}}.
+        """
+        from aicp.core.tools import execute_tool, get_tools_for_mode
+
+        if tools is None:
+            tools = get_tools_for_mode(mode.value)
+
+        system = self._system_prompt(mode, project_path)
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        selected_model = self._select_model(prompt)
+        headers = self._headers()
+
+        for _round in range(max_rounds):
+            payload: dict = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                "tools": tools,
+                "tool_choice": tool_choice,
+                **self._sampling_params(),
+            }
+
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=120.0,
+                )
+            except httpx.ConnectError:
+                raise RuntimeError(self._connect_error_message())
+            except httpx.TimeoutException:
+                raise RuntimeError("Function calling request timed out.")
+
+            if resp.status_code >= 400:
+                raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+            data = resp.json()
+            message = data["choices"][0]["message"]
+            content = message.get("content") or ""
+            native_tool_calls = message.get("tool_calls")
+
+            # ── Native tool_calls in response ──────────────────────────
+            if native_tool_calls:
+                messages.append(message)  # preserve assistant message with tool_calls
+                for tc in native_tool_calls:
+                    fn = tc["function"]
+                    tool_call_id = tc.get("id", f"call_{_round}")
+                    result = execute_tool(
+                        fn["name"],
+                        fn.get("arguments", "{}"),
+                        project_path,
+                        backend=self,
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    })
+                continue  # next round — let model process results
+
+            # ── Fallback: parse <tool_call> tags from content ──────────
+            tag_calls = self._parse_tool_calls(content)
+            if tag_calls:
+                messages.append({"role": "assistant", "content": content})
+                for tc in tag_calls:
+                    args = tc.get("arguments") or tc.get("parameters") or {}
+                    result = execute_tool(tc["name"], json.dumps(args), project_path, backend=self)
+                    messages.append({
+                        "role": "user",
+                        "content": f"Tool result for {tc['name']}:\n{result}",
+                    })
+                continue
+
+            # ── No tool calls — final text response ────────────────────
+            clean = re.sub(r"</?tool_call>", "", content).strip()
+            return clean
+
+        # All rounds exhausted
+        last_content = messages[-1].get("content", "")
+        return last_content or "(tool loop exhausted)"
 
     @staticmethod
     def _parse_tool_calls(content: str) -> list[dict]:
@@ -747,3 +1012,197 @@ class LocalAIBackend(Backend):
             parts.append(context)
 
         return "\n\n".join(parts)
+
+    # ── Stores API ─────────────────────────────────────────────────────────
+
+    def store_set(
+        self,
+        texts: list[str],
+        store_name: str = "default",
+    ) -> int:
+        """Embed and store texts in LocalAI's native store.
+
+        Args:
+            texts:      List of texts to store.
+            store_name: Store name (auto-created if new).
+
+        Returns:
+            Number of entries stored.
+        """
+        from aicp.core.stores import LocalAIStore
+
+        embeddings = self.embed_batch(texts)
+        store = LocalAIStore(self.base_url, store_name=store_name, api_key=self.api_key)
+        store.set(embeddings, texts)
+        return len(texts)
+
+    def store_find(
+        self,
+        query: str,
+        store_name: str = "default",
+        top_k: int = 5,
+    ) -> list[dict]:
+        """Search LocalAI's native store by semantic similarity.
+
+        Args:
+            query:      Search query (will be embedded automatically).
+            store_name: Store name to search.
+            top_k:      Number of results.
+
+        Returns:
+            List of dicts with 'value' and 'similarity' fields.
+        """
+        from aicp.core.stores import LocalAIStore
+
+        embedding = self.embed(query)
+        store = LocalAIStore(self.base_url, store_name=store_name, api_key=self.api_key)
+        results = store.find(embedding, top_k=top_k)
+        return [{"value": r["value"], "similarity": r["similarity"]} for r in results]
+
+    def store_delete(
+        self,
+        texts: list[str],
+        store_name: str = "default",
+    ) -> None:
+        """Delete texts from LocalAI's native store.
+
+        Args:
+            texts:      List of texts to remove (re-embedded to find keys).
+            store_name: Store name.
+        """
+        from aicp.core.stores import LocalAIStore
+
+        embeddings = self.embed_batch(texts)
+        store = LocalAIStore(self.base_url, store_name=store_name, api_key=self.api_key)
+        store.delete(embeddings)
+
+    # ── Model Management ───────────────────────────────────────────────────
+
+    def models_available(self) -> list[dict]:
+        """List models available in the LocalAI gallery.
+
+        Returns:
+            List of dicts with name, description, installed, tags, gallery fields.
+        """
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/models/available",
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Gallery error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        results = []
+        for m in data:
+            results.append({
+                "name": m.get("name", ""),
+                "description": m.get("description", ""),
+                "installed": m.get("installed", False),
+                "tags": m.get("tags", []),
+                "gallery": m.get("gallery", {}).get("name", ""),
+                "license": m.get("license", ""),
+            })
+        return results
+
+    def model_apply(self, model_id: str, name: str = "") -> dict:
+        """Install a model from the gallery (async download).
+
+        Args:
+            model_id: Gallery model ID (e.g. "huggingface@user/model").
+            name:     Optional custom name for the installed model.
+
+        Returns:
+            Dict with 'uuid' (job ID) and 'status' (progress URL).
+        """
+        payload: dict = {"id": model_id}
+        if name:
+            payload["name"] = name
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/models/apply",
+                json=payload,
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Model apply error ({resp.status_code}): {resp.text[:200]}")
+
+        return resp.json()
+
+    def model_job_status(self, job_uuid: str) -> dict:
+        """Check the progress of a model download job.
+
+        Args:
+            job_uuid: Job UUID returned by model_apply().
+
+        Returns:
+            Dict with processed, progress, file_size, downloaded_size, error fields.
+        """
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/models/jobs/{job_uuid}",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Job status error ({resp.status_code}): {resp.text[:200]}")
+
+        return resp.json()
+
+    def model_shutdown(self, model_name: str) -> bool:
+        """Unload a model from GPU memory (does not delete files).
+
+        Args:
+            model_name: Name of the model to unload.
+
+        Returns:
+            True if shutdown was successful.
+        """
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/backend/shutdown",
+                json={"model": model_name},
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        return resp.status_code < 400
+
+    def model_monitor(self, model_name: str) -> dict:
+        """Check a model's status and memory usage.
+
+        Args:
+            model_name: Name of the model to check.
+
+        Returns:
+            Dict with 'state' (0=uninit, 1=busy, 2=ready, -1=error)
+            and 'memory' details.
+        """
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/backend/monitor",
+                json={"model": model_name},
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            return {"state": -1, "memory": {}}
+
+        return resp.json()

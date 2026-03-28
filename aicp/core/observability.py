@@ -46,20 +46,64 @@ def get_loaded_models(base_url: str, timeout: float = 3.0) -> List[str]:
     return []
 
 
+def get_system_info(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
+    """Query LocalAI's /system endpoint for runtime info.
+
+    Returns loaded models (in GPU memory) and installed backends.
+    """
+    try:
+        resp = httpx.get(f"{base_url}/system", timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            loaded = [m.get("id", "?") for m in data.get("loaded_models", [])]
+            backends = data.get("backends", [])
+            return {
+                "available": True,
+                "loaded_models": loaded,
+                "backends": backends,
+            }
+    except Exception:
+        pass
+    return {"available": False, "loaded_models": [], "backends": []}
+
+
+def get_backends_detail(base_url: str, timeout: float = 3.0) -> List[Dict[str, Any]]:
+    """Query LocalAI's /backends/ endpoint for installed backend details."""
+    try:
+        resp = httpx.get(f"{base_url}/backends/", timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            return [
+                {
+                    "name": b.get("Name", "?"),
+                    "is_meta": b.get("IsMeta", False),
+                    "alias": b.get("Metadata", {}).get("alias", ""),
+                }
+                for b in data
+                if not b.get("IsMeta", False)
+            ]
+    except Exception:
+        pass
+    return []
+
+
 def get_system_status(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
     """Build a comprehensive system status snapshot.
 
-    Combines: model list, Prometheus metrics, and GPU info.
+    Combines: model list, Prometheus metrics, system info, and GPU status.
     """
     models = get_loaded_models(base_url, timeout)
     prom = scrape_prometheus(base_url, timeout)
     gpu = get_gpu_status()
+    sys_info = get_system_info(base_url, timeout)
 
     return {
         "localai": {
             "available": prom.get("available", False),
             "url": base_url,
             "models": models,
+            "loaded_models": sys_info.get("loaded_models", []),
+            "backends": sys_info.get("backends", []),
             "goroutines": prom.get("go_goroutines"),
             "memory_alloc_mb": _bytes_to_mb(prom.get("go_memstats_alloc_bytes")),
             "memory_sys_mb": _bytes_to_mb(prom.get("go_memstats_sys_bytes")),
@@ -167,7 +211,100 @@ def measure_request(
         return {"error": str(e), "total_ms": 0}
 
 
-# ── Prometheus text format parsing ────────────────────────────────────────���──
+def measure_embedding(
+    base_url: str,
+    model: str = "nomic-embed",
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Benchmark embedding generation speed."""
+    text = "The quick brown fox jumps over the lazy dog. " * 10
+    t0 = time.perf_counter()
+    try:
+        resp = httpx.post(
+            f"{base_url}/v1/embeddings",
+            json={"model": model, "input": text},
+            timeout=timeout,
+        )
+        total_ms = (time.perf_counter() - t0) * 1000
+        if resp.status_code >= 400:
+            return {"error": f"HTTP {resp.status_code}", "total_ms": 0}
+        data = resp.json()
+        dim = len(data["data"][0]["embedding"])
+        return {
+            "total_ms": round(total_ms, 1),
+            "dimensions": dim,
+            "chars": len(text),
+        }
+    except (httpx.ConnectError, httpx.TimeoutException) as e:
+        return {"error": str(e), "total_ms": 0}
+
+
+def measure_rerank(
+    base_url: str,
+    model: str = "bge-reranker-v2-m3",
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Benchmark reranking speed."""
+    docs = [
+        "Python is a programming language used for web development.",
+        "Machine learning is a subset of artificial intelligence.",
+        "The weather today is sunny and warm.",
+        "Docker containers provide isolated environments.",
+        "Neural networks are inspired by biological neurons.",
+    ]
+    t0 = time.perf_counter()
+    try:
+        resp = httpx.post(
+            f"{base_url}/v1/rerank",
+            json={"model": model, "query": "What is AI?", "documents": docs},
+            timeout=timeout,
+        )
+        total_ms = (time.perf_counter() - t0) * 1000
+        if resp.status_code >= 400:
+            return {"error": f"HTTP {resp.status_code}", "total_ms": 0}
+        data = resp.json()
+        results = data.get("results", [])
+        return {
+            "total_ms": round(total_ms, 1),
+            "documents": len(docs),
+            "results": len(results),
+        }
+    except (httpx.ConnectError, httpx.TimeoutException) as e:
+        return {"error": str(e), "total_ms": 0}
+
+
+def measure_grammar(
+    base_url: str,
+    model: str = "hermes",
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """Benchmark grammar-constrained generation."""
+    t0 = time.perf_counter()
+    try:
+        resp = httpx.post(
+            f"{base_url}/v1/chat/completions",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "Is the sky blue?"}],
+                "max_tokens": 5,
+                "grammar": 'root ::= ("yes" | "no")',
+            },
+            timeout=timeout,
+        )
+        total_ms = (time.perf_counter() - t0) * 1000
+        if resp.status_code >= 400:
+            return {"error": f"HTTP {resp.status_code}", "total_ms": 0}
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        return {
+            "total_ms": round(total_ms, 1),
+            "response": content.strip(),
+        }
+    except (httpx.ConnectError, httpx.TimeoutException) as e:
+        return {"error": str(e), "total_ms": 0}
+
+
+# ── Prometheus text format parsing ─────────────────────────────────────────
 
 
 def _parse_gauge(text: str, metric_name: str) -> Optional[float]:

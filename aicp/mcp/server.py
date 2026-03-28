@@ -45,6 +45,7 @@ def _get_backend() -> LocalAIBackend:
             code_model=cfg.get("code_model", ""),
             vision_model=cfg.get("vision_model", ""),
             auto_route=cfg.get("auto_route", False),
+            cache_prompt=cfg.get("cache_prompt", True),
         )
     return _backend
 
@@ -152,6 +153,39 @@ def aicp_vision(
 
 
 @mcp.tool()
+def aicp_voice_pipeline(
+    audio_input: str,
+    audio_output: str = "/tmp/aicp_mcp_voice_response.wav",
+) -> str:
+    """Full voice pipeline: transcribe audio → send to LLM → speak the response.
+
+    Takes an audio file as input, transcribes it, sends the text to the local LLM,
+    converts the response to speech, and saves it as a WAV file.
+
+    Args:
+        audio_input: Absolute path to the input audio file (wav, mp3, ogg, flac).
+        audio_output: Where to write the response WAV file.
+
+    Returns:
+        JSON with transcription, LLM response, and output audio path.
+    """
+    backend = _get_backend()
+    cfg = get_backend_config(_config, "local")
+    input_path = Path(audio_input)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {audio_input}")
+
+    result = backend.voice_pipeline(
+        input_path, Path(audio_output),
+        mode=Mode.THINK,
+        project_path=Path.cwd(),
+        whisper_model=cfg.get("whisper_model", "whisper-1"),
+        tts_model=cfg.get("tts_model", "piper-tts"),
+    )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
 def aicp_imagine(
     prompt: str,
     output_path: str = "/tmp/aicp_mcp_imagine.png",
@@ -210,6 +244,150 @@ def aicp_models() -> str:
 
 
 @mcp.tool()
+def aicp_grammar(
+    prompt: str,
+    grammar: str,
+    mode: str = "think",
+) -> str:
+    """Generate text constrained by a GBNF grammar using the local LLM.
+
+    GBNF grammars force the model output to conform to a formal grammar.
+    More powerful than JSON mode — can constrain to YAML, CSV, enums, custom formats.
+
+    Example grammars:
+      - Boolean: 'root ::= ("yes" | "no")'
+      - Rating:  'root ::= ("1" | "2" | "3" | "4" | "5")'
+      - CSV row: 'root ::= field "," field "," field "\\n"  field ::= [a-zA-Z0-9 ]+'
+
+    Args:
+        prompt: The text prompt.
+        grammar: GBNF grammar string defining allowed output format.
+        mode: Permission mode — think, edit, or act. Defaults to think.
+
+    Returns:
+        The grammar-constrained model response.
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    return backend.execute_grammar(prompt, grammar, m, Path.cwd())
+
+
+@mcp.tool()
+def aicp_rerank(
+    query: str,
+    documents: list[str],
+    top_n: int = 5,
+) -> str:
+    """Rerank documents by relevance to a query using a local cross-encoder model (BGE-reranker).
+
+    Useful for improving RAG results — first retrieve candidates with embedding search,
+    then rerank them with this tool for higher precision.
+
+    Args:
+        query: The search query.
+        documents: List of document strings to score against the query.
+        top_n: Number of top results to return (default: 5).
+
+    Returns:
+        JSON array of results with index, relevance_score, and document text.
+    """
+    backend = _get_backend()
+    cfg = get_backend_config(_config, "local")
+    model = cfg.get("reranker_model", "bge-reranker-v2-m3")
+    results = backend.rerank(query, documents, model=model, top_n=top_n)
+    # Enrich results with the original document text
+    for r in results:
+        idx = r.get("index", 0)
+        if 0 <= idx < len(documents):
+            r["document"] = documents[idx]
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
+def aicp_system() -> str:
+    """Get LocalAI system status: active GPU model, installed backends, and all available models.
+
+    Useful for understanding which model is currently loaded in GPU memory
+    (with SINGLE_ACTIVE_BACKEND, only one GPU model is loaded at a time).
+
+    Returns:
+        JSON with loaded_models (in GPU), backends, and all configured models.
+    """
+    backend = _get_backend()
+    from aicp.core.observability import get_system_info, get_loaded_models
+    sys_info = get_system_info(backend.base_url)
+    models = get_loaded_models(backend.base_url)
+    return json.dumps({
+        "active_gpu_model": sys_info.get("loaded_models", []),
+        "installed_backends": sys_info.get("backends", []),
+        "configured_models": models,
+    }, indent=2)
+
+
+@mcp.tool()
+def aicp_agent(
+    prompt: str,
+    mode: str = "think",
+    max_rounds: int = 5,
+) -> str:
+    """Run a prompt with native function calling — the local LLM can autonomously call tools.
+
+    The LLM gets access to tools matching the permission mode (file_read, grep, kb_search,
+    system_info, etc.) and can call them in a loop to gather information before answering.
+    Uses OpenAI-compatible native function calling with grammar-constrained output.
+
+    Args:
+        prompt: The task or question for the agent.
+        mode: Permission mode — think (read-only tools), edit (+ generate), act (+ shell). Default: think.
+        max_rounds: Maximum tool-call loops before forcing a final answer (default: 5).
+
+    Returns:
+        The agent's final answer after using tools.
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    return backend.execute_with_native_tools(prompt, m, Path.cwd(), max_rounds=max_rounds)
+
+
+@mcp.tool()
+def aicp_store_set(text: str, store: str = "memory") -> str:
+    """Store text in LocalAI's ephemeral working memory (in-memory, lost on restart).
+
+    Embeds the text automatically and stores it for later similarity search.
+    Use for session-scoped notes, findings, or context the agent needs to remember.
+
+    Args:
+        text: The text to store.
+        store: Store name (default: "memory"). Different names create separate stores.
+
+    Returns:
+        Confirmation message.
+    """
+    backend = _get_backend()
+    backend.store_set([text], store_name=store)
+    return f"Stored in '{store}': {text[:100]}"
+
+
+@mcp.tool()
+def aicp_store_find(query: str, top_k: int = 5, store: str = "memory") -> str:
+    """Search LocalAI's ephemeral working memory by semantic similarity.
+
+    Returns the most relevant entries previously stored with aicp_store_set.
+
+    Args:
+        query: What to search for.
+        top_k: Number of results (default: 5).
+        store: Store name (default: "memory").
+
+    Returns:
+        JSON array of results with value and similarity score.
+    """
+    backend = _get_backend()
+    results = backend.store_find(query, store_name=store, top_k=top_k)
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
 def aicp_kb_search(query: str, top_k: int = 5) -> str:
     """Search the AICP knowledge base using semantic search (RAG).
 
@@ -230,6 +408,84 @@ def aicp_kb_search(query: str, top_k: int = 5) -> str:
         return "Knowledge base module not available."
     except Exception as e:
         return f"KB search error: {e}"
+
+
+@mcp.tool()
+def aicp_model_gallery(search: str = "") -> str:
+    """Browse LocalAI's model gallery — see what's available to install.
+
+    Args:
+        search: Optional search filter (matches name or description).
+
+    Returns:
+        JSON array of available models with name, installed status, and tags.
+    """
+    backend = _get_backend()
+    available = backend.models_available()
+    if search:
+        available = [m for m in available if search.lower() in m["name"].lower()
+                     or search.lower() in m.get("description", "").lower()]
+    return json.dumps(available[:30], indent=2)
+
+
+@mcp.tool()
+def aicp_model_install(model_id: str, name: str = "") -> str:
+    """Install a model from the LocalAI gallery (async download).
+
+    Args:
+        model_id: Gallery model ID (e.g. "huggingface@user/model" or model name).
+        name: Optional custom name for the installed model.
+
+    Returns:
+        JSON with job UUID for tracking progress.
+    """
+    backend = _get_backend()
+    result = backend.model_apply(model_id, name=name)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_model_status(model_or_job: str) -> str:
+    """Check model state or download job progress.
+
+    If given a UUID, checks download job progress.
+    If given a model name, checks if the model is loaded and its memory usage.
+
+    Args:
+        model_or_job: Model name or job UUID.
+
+    Returns:
+        JSON with status information.
+    """
+    backend = _get_backend()
+    # Try as job UUID first (UUIDs contain hyphens and are 36 chars)
+    if len(model_or_job) > 30 and "-" in model_or_job:
+        try:
+            return json.dumps(backend.model_job_status(model_or_job), indent=2)
+        except Exception:
+            pass
+    # Fall back to model monitor
+    info = backend.model_monitor(model_or_job)
+    state_map = {0: "uninitialized", 1: "busy", 2: "ready", -1: "error"}
+    info["state_label"] = state_map.get(info.get("state", -1), "unknown")
+    return json.dumps(info, indent=2)
+
+
+@mcp.tool()
+def aicp_model_unload(model_name: str) -> str:
+    """Unload a model from GPU memory (does not delete files).
+
+    Useful with SINGLE_ACTIVE_BACKEND to free GPU for another model.
+
+    Args:
+        model_name: Name of the model to unload.
+
+    Returns:
+        Success or failure message.
+    """
+    backend = _get_backend()
+    success = backend.model_shutdown(model_name)
+    return f"Unloaded: {model_name}" if success else f"Failed to unload: {model_name}"
 
 
 # ---------------------------------------------------------------------------
