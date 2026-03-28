@@ -328,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run a quick benchmark: measure TTFT, tokens/sec, latency",
     )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Validate all AICP features: config, models, endpoints, tools",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -351,6 +356,13 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             vision_model=local_cfg.get("vision_model", ""),
             auto_route=local_cfg.get("auto_route", False),
             cache_prompt=local_cfg.get("cache_prompt", True),
+            # Advanced sampling
+            mirostat=local_cfg.get("mirostat"),
+            mirostat_tau=local_cfg.get("mirostat_tau"),
+            mirostat_eta=local_cfg.get("mirostat_eta"),
+            typical_p=local_cfg.get("typical_p"),
+            frequency_penalty=local_cfg.get("frequency_penalty"),
+            presence_penalty=local_cfg.get("presence_penalty"),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),
@@ -472,6 +484,216 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         console.print("  [yellow]Some backends or nodes are unavailable.[/]")
 
     return 0
+
+
+def _run_self_test() -> int:
+    """Validate all AICP features against a live LocalAI instance."""
+    import httpx as _httpx
+
+    local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+    console.print("[bold]AICP Self-Test[/]\n")
+    passed = 0
+    failed = 0
+    skipped = 0
+
+    def _probe(label: str, fn) -> None:
+        nonlocal passed, failed, skipped
+        try:
+            result = fn()
+            if result is None:
+                console.print(f"  [yellow]SKIP[/]  {label}")
+                skipped += 1
+            else:
+                console.print(f"  [green]PASS[/]  {label}")
+                passed += 1
+        except Exception as exc:
+            console.print(f"  [red]FAIL[/]  {label}: {exc}")
+            failed += 1
+
+    # 1. API reachable
+    def _check_api():
+        resp = _httpx.get(f"{local_url}/v1/models", timeout=5.0)
+        resp.raise_for_status()
+        models = [m["id"] for m in resp.json().get("data", [])]
+        if not models:
+            raise RuntimeError("no models loaded")
+        return models
+    _probe("LocalAI API reachable", _check_api)
+
+    # 2. Chat completions
+    def _check_chat():
+        resp = _httpx.post(f"{local_url}/v1/chat/completions", json={
+            "model": "hermes", "messages": [{"role": "user", "content": "Say hi"}],
+            "max_tokens": 8,
+        }, timeout=60.0)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    _probe("Chat completions (/v1/chat/completions)", _check_chat)
+
+    # 3. Raw completions
+    def _check_completions():
+        resp = _httpx.post(f"{local_url}/v1/completions", json={
+            "model": "hermes", "prompt": "Hello", "max_tokens": 8,
+        }, timeout=60.0)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["text"]
+    _probe("Raw completions (/v1/completions)", _check_completions)
+
+    # 4. Embeddings
+    def _check_embed():
+        resp = _httpx.post(f"{local_url}/v1/embeddings", json={
+            "model": "nomic-embed", "input": "test",
+        }, timeout=30.0)
+        resp.raise_for_status()
+        data = resp.json()["data"][0]["embedding"]
+        if len(data) < 10:
+            raise RuntimeError(f"embedding too short: {len(data)}")
+        return len(data)
+    _probe("Embeddings (/v1/embeddings)", _check_embed)
+
+    # 5. Tokenize
+    def _check_tokenize():
+        resp = _httpx.post(f"{local_url}/v1/tokenize", json={
+            "model": "hermes", "content": "Hello world",
+        }, timeout=10.0)
+        resp.raise_for_status()
+        tokens = resp.json().get("tokens", [])
+        if not tokens:
+            raise RuntimeError("empty token list")
+        return len(tokens)
+    _probe("Tokenization (/v1/tokenize)", _check_tokenize)
+
+    # 6. Edits
+    def _check_edits():
+        resp = _httpx.post(f"{local_url}/v1/edits", json={
+            "model": "hermes", "input": "Ths is a tset",
+            "instruction": "Fix spelling", "max_tokens": 32,
+        }, timeout=60.0)
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["text"]
+    _probe("Text edits (/v1/edits)", _check_edits)
+
+    # 7. Models list
+    def _check_models():
+        resp = _httpx.get(f"{local_url}/v1/models", timeout=5.0)
+        resp.raise_for_status()
+        return len(resp.json().get("data", []))
+    _probe("Model listing (/v1/models)", _check_models)
+
+    # 8. Model gallery
+    def _check_gallery():
+        resp = _httpx.get(f"{local_url}/models/available", timeout=10.0)
+        resp.raise_for_status()
+        items = resp.json()
+        if not isinstance(items, list):
+            raise RuntimeError("unexpected response format")
+        return len(items)
+    _probe("Model gallery (/models/available)", _check_gallery)
+
+    # 9. Backend monitor
+    def _check_monitor():
+        resp = _httpx.post(f"{local_url}/backend/monitor", json={
+            "model": "hermes",
+        }, timeout=10.0)
+        if resp.status_code == 404:
+            return None  # skip — older LocalAI
+        resp.raise_for_status()
+        return resp.json()
+    _probe("Backend monitor (/backend/monitor)", _check_monitor)
+
+    # 10. Stores API
+    def _check_stores():
+        # Set a test vector, then delete it
+        test_key = [[0.1] * 32]
+        test_val = ["__aicp_self_test__"]
+        resp = _httpx.post(f"{local_url}/stores/set", json={
+            "store": "__selftest__", "keys": test_key, "values": test_val,
+        }, timeout=10.0)
+        if resp.status_code == 404:
+            return None  # stores not available
+        resp.raise_for_status()
+        # Clean up
+        _httpx.post(f"{local_url}/stores/delete", json={
+            "store": "__selftest__", "keys": test_key,
+        }, timeout=5.0)
+        return True
+    _probe("Stores API (/stores/*)", _check_stores)
+
+    # 11. P2P (optional — skip if not enabled)
+    def _check_p2p():
+        resp = _httpx.get(f"{local_url}/api/p2p/stats", timeout=5.0)
+        if resp.status_code in (404, 501):
+            return None  # P2P not enabled
+        resp.raise_for_status()
+        return resp.json()
+    _probe("P2P cluster (/api/p2p/stats)", _check_p2p)
+
+    # 12. Reranking
+    def _check_rerank():
+        resp = _httpx.post(f"{local_url}/v1/reranking", json={
+            "model": "bge-reranker-v2-m3",
+            "query": "test query",
+            "documents": ["doc one", "doc two"],
+            "top_n": 2,
+        }, timeout=30.0)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+    _probe("Reranking (/v1/reranking)", _check_rerank)
+
+    # 13. Config completeness
+    def _check_config():
+        from aicp.config.loader import load_config
+        cfg = load_config()
+        local_cfg = cfg.get("backends", {}).get("local", {})
+        required = ["base_url", "model", "embedding_model", "code_model",
+                     "vision_model", "whisper_model", "tts_model", "image_model",
+                     "reranker_model"]
+        missing = [k for k in required if not local_cfg.get(k)]
+        if missing:
+            raise RuntimeError(f"missing config keys: {', '.join(missing)}")
+        return len(required)
+    _probe("Config completeness (all model keys)", _check_config)
+
+    # 14. Python imports (all modules)
+    def _check_imports():
+        import importlib
+        modules = [
+            "aicp.backends.localai", "aicp.backends.claude_code",
+            "aicp.core.tools", "aicp.core.stores", "aicp.core.modes",
+            "aicp.core.context", "aicp.core.history", "aicp.core.observability",
+            "aicp.guardrails.checks", "aicp.config.loader",
+            "aicp.mcp.server", "aicp.cli.interactive",
+        ]
+        for mod in modules:
+            importlib.import_module(mod)
+        return len(modules)
+    _probe("Python module imports", _check_imports)
+
+    # 15. MCP tool count (count aicp_* functions in server module)
+    def _check_mcp_tools():
+        import aicp.mcp.server as srv
+        tool_fns = [n for n in dir(srv) if n.startswith("aicp_") and callable(getattr(srv, n))]
+        count = len(tool_fns)
+        if count < 20:
+            raise RuntimeError(f"expected ≥20 MCP tools, found {count}")
+        return count
+    _probe(f"MCP tool registry (≥20 tools)", _check_mcp_tools)
+
+    # Summary
+    console.print()
+    total = passed + failed + skipped
+    console.print(f"[bold]Results:[/] {passed}/{total} passed", end="")
+    if skipped:
+        console.print(f", {skipped} skipped", end="")
+    if failed:
+        console.print(f", [red]{failed} failed[/]")
+    else:
+        console.print()
+    console.print()
+
+    return 1 if failed else 0
 
 
 def _run_stats() -> int:
@@ -1345,7 +1567,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             console.print(f"  GPU:         [dim]{gpu.get('error', 'unavailable')}[/]")
 
+        # P2P cluster
+        try:
+            p2p_backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+            p2p = p2p_backend.p2p_stats()
+            if p2p.get("enabled"):
+                console.print()
+                console.print(f"  P2P:         [green]ENABLED[/]")
+                for k, v in p2p.items():
+                    if k not in ("enabled", "error"):
+                        console.print(f"  {k}:  {v}")
+            # Silently skip if P2P not enabled
+        except Exception:
+            pass
+
         return 0
+
+    # --self-test: validate all features (no config needed)
+    if getattr(args, "self_test", False):
+        return _run_self_test()
 
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):

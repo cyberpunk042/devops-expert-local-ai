@@ -34,6 +34,8 @@ Slash commands:
   /store find <query>       Search working memory by similarity
   /sound <prompt>           Generate sound/music from text description
   /complete <text>          Raw text completion (no chat template)
+  /edit <instruction> | <text>  Edit text by instruction (e.g. fix grammar)
+  /tokenize <text>          Count tokens in text
   /help                     Show this help
   /exit                     Quit
 """
@@ -288,6 +290,39 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": result})
         except Exception as e:
             print(f"[error] Completion failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/edit":
+        if not arg or "|" not in arg:
+            print("[error] Usage: /edit <instruction> | <text>", file=sys.stderr)
+            print("  Example: /edit fix grammar | Their going to the store", file=sys.stderr)
+            return None
+        instruction, input_text = arg.split("|", 1)
+        instruction = instruction.strip()
+        input_text = input_text.strip()
+        if not instruction or not input_text:
+            print("[error] Both instruction and text are required.", file=sys.stderr)
+            return None
+        try:
+            result = backend.edit(input_text, instruction)
+            print(f"\nai> {result}\n")
+            messages.append({"role": "user", "content": f"[edit: {instruction}] {input_text}"})
+            messages.append({"role": "assistant", "content": result})
+        except Exception as e:
+            print(f"[error] Edit failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/tokenize":
+        if not arg:
+            print("[error] Usage: /tokenize <text>", file=sys.stderr)
+            return None
+        try:
+            result = backend.tokenize(arg)
+            print(f"  Tokens: {result['count']}")
+            if result["count"] <= 50:
+                print(f"  IDs:    {result['tokens']}")
+        except Exception as e:
+            print(f"[error] Tokenize failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

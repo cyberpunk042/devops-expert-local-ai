@@ -20,17 +20,28 @@ backends:
     image_model: "stablediffusion"
     # Reranker model (cross-encoder for RAG result reranking)
     reranker_model: "bge-reranker-v2-m3"
+    # Sound generation model (ElevenLabs-compatible /v1/sound-generation)
+    # Install via: aicp --models install --models-arg transformers-musicgen
+    sound_model: "transformers-musicgen"
     # Prompt caching: reuse KV cache for repeated system prompts (faster warm calls)
     cache_prompt: true
     # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
     # When false (default), always uses the primary model unless explicitly overridden.
     auto_route: false
-    # Sampling overrides — these override model YAML defaults per-request.
+    # ── Sampling overrides ──────────────────────────────────────────────────────
+    # These override model YAML defaults per-request.
     # Uncomment to tune from AICP side (useful for mode-specific behavior).
     # temperature: 0.7
     # top_p: 0.9
     # top_k: 40
     # repeat_penalty: 1.1
+    # ── Advanced sampling (llama.cpp) ───────────────────────────────────────────
+    # mirostat: 2              # 0=disabled, 1=Mirostat, 2=Mirostat 2.0
+    # mirostat_tau: 5.0        # target entropy (lower = more focused)
+    # mirostat_eta: 0.1        # learning rate
+    # typical_p: 1.0           # typical sampling threshold (1.0 = disabled)
+    # frequency_penalty: 0.0   # penalise repeated tokens by frequency
+    # presence_penalty: 0.0    # penalise tokens that already appeared
     # API key for LocalAI (must match LOCALAI_API_KEY in .env / docker-compose)
     # api_key: ""
   claude:
@@ -52,6 +63,14 @@ rag:
   rerank: true
   # Max characters of retrieved context injected into prompts
   max_context_chars: 3000
+
+stores:
+  # Ephemeral in-memory vector stores via LocalAI /stores/* API.
+  # Stores are agent working memory — lost on LocalAI restart.
+  default_store: "default"
+  # P2P cluster: if enabled in LocalAI (--p2p flag), AICP can query
+  # /api/p2p/stats and /api/p2p/workers for cluster awareness.
+  # No config needed — AICP auto-detects P2P via --observe.
 
 guardrails:
   forbidden_patterns:

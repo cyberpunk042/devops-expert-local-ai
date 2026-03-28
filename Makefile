@@ -1,6 +1,6 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
         local-up local-up-multi local-down local-status local-logs \
-        test test-all check lint format type-check auto-config benchmark update \
+        test test-all check lint format type-check auto-config benchmark self-test update \
         model-download models-list model-list-remote agent-up agent-down \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
@@ -43,6 +43,7 @@ help:
 	@echo "  make type-check              mypy static type check"
 	@echo "  make auto-config             GPU-aware model config optimiser"
 	@echo "  make benchmark               Benchmark the default model"
+	@echo "  make self-test               Validate all AICP features against live LocalAI"
 	@echo ""
 	@echo "MODELS"
 	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
@@ -161,6 +162,9 @@ auto-config:
 
 benchmark:
 	.venv/bin/aicp --models benchmark --models-arg hermes
+
+self-test:
+	.venv/bin/aicp --self-test
 
 # =============================================================================
 # Model management

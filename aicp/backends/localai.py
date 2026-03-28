@@ -45,6 +45,13 @@ class LocalAIBackend(Backend):
         vision_model: str = "",
         auto_route: bool = False,
         cache_prompt: bool = True,
+        # Advanced sampling (llama.cpp)
+        mirostat: Optional[int] = None,
+        mirostat_tau: Optional[float] = None,
+        mirostat_eta: Optional[float] = None,
+        typical_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -59,6 +66,13 @@ class LocalAIBackend(Backend):
         self.vision_model = vision_model
         self.auto_route = auto_route
         self.cache_prompt = cache_prompt
+        # Advanced sampling
+        self.mirostat = mirostat
+        self.mirostat_tau = mirostat_tau
+        self.mirostat_eta = mirostat_eta
+        self.typical_p = typical_p
+        self.frequency_penalty = frequency_penalty
+        self.presence_penalty = presence_penalty
 
     @property
     def name(self) -> str:
@@ -107,6 +121,19 @@ class LocalAIBackend(Backend):
             params["repeat_penalty"] = self.repeat_penalty
         if self.cache_prompt:
             params["cache_prompt"] = True
+        # Advanced sampling (llama.cpp)
+        if self.mirostat is not None:
+            params["mirostat"] = self.mirostat
+        if self.mirostat_tau is not None:
+            params["mirostat_tau"] = self.mirostat_tau
+        if self.mirostat_eta is not None:
+            params["mirostat_eta"] = self.mirostat_eta
+        if self.typical_p is not None:
+            params["typical_p"] = self.typical_p
+        if self.frequency_penalty is not None:
+            params["frequency_penalty"] = self.frequency_penalty
+        if self.presence_penalty is not None:
+            params["presence_penalty"] = self.presence_penalty
         return params
 
     def _select_model(self, prompt: str) -> str:
@@ -1311,3 +1338,127 @@ class LocalAIBackend(Backend):
             return {"state": -1, "memory": {}}
 
         return resp.json()
+
+    # ── P2P / Cluster ──────────────────────────────────────────────────────
+
+    def p2p_stats(self) -> dict:
+        """Get P2P cluster statistics.
+
+        Returns:
+            Dict with online/total node counts, or empty if P2P is not enabled.
+        """
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/api/p2p/stats",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            return {"enabled": False, "error": "cannot connect"}
+
+        if resp.status_code >= 400:
+            return {"enabled": False, "error": f"HTTP {resp.status_code}"}
+
+        data = resp.json()
+        data["enabled"] = True
+        return data
+
+    def p2p_workers(self) -> list[dict]:
+        """List P2P worker nodes.
+
+        Returns:
+            List of worker dicts with name, online status, etc.
+        """
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/api/p2p/workers",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            return []
+
+        if resp.status_code >= 400:
+            return []
+
+        return resp.json() if isinstance(resp.json(), list) else []
+
+    # ── Tokenization ──────────────────────────────────────────────────────
+
+    def tokenize(self, text: str, model: Optional[str] = None) -> dict:
+        """Tokenize text and return token IDs.
+
+        Args:
+            text:  The text to tokenize.
+            model: Model whose tokenizer to use (default: self.model).
+
+        Returns:
+            Dict with 'tokens' (list of int) and 'count' (int).
+        """
+        payload: dict = {
+            "content": text,
+            "model": model or self.model,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/tokenize",
+                json=payload,
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Tokenize error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        tokens = data.get("tokens", [])
+        return {"tokens": tokens, "count": len(tokens)}
+
+    # ── Text Edits ─────────────────────────────────────────────────────────
+
+    def edit(
+        self,
+        input_text: str,
+        instruction: str,
+        model: Optional[str] = None,
+    ) -> str:
+        """Edit text based on an instruction via /v1/edits.
+
+        Args:
+            input_text:  The text to edit.
+            instruction: What edit to perform.
+            model:       Model to use (default: self.model).
+
+        Returns:
+            The edited text.
+        """
+        payload: dict = {
+            "model": model or self.model,
+            "input": input_text,
+            "instruction": instruction,
+            **self._sampling_params(),
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/edits",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Edit request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Edit error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        try:
+            return data["choices"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected edit response: {str(data)[:200]}")

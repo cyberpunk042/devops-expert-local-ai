@@ -46,6 +46,12 @@ def _get_backend() -> LocalAIBackend:
             vision_model=cfg.get("vision_model", ""),
             auto_route=cfg.get("auto_route", False),
             cache_prompt=cfg.get("cache_prompt", True),
+            mirostat=cfg.get("mirostat"),
+            mirostat_tau=cfg.get("mirostat_tau"),
+            mirostat_eta=cfg.get("mirostat_eta"),
+            typical_p=cfg.get("typical_p"),
+            frequency_penalty=cfg.get("frequency_penalty"),
+            presence_penalty=cfg.get("presence_penalty"),
         )
     return _backend
 
@@ -408,6 +414,55 @@ def aicp_kb_search(query: str, top_k: int = 5) -> str:
         return "Knowledge base module not available."
     except Exception as e:
         return f"KB search error: {e}"
+
+
+@mcp.tool()
+def aicp_tokenize(text: str) -> str:
+    """Count tokens in text using the local model's tokenizer.
+
+    Useful for checking prompt size before sending, or for guardrails.
+
+    Args:
+        text: The text to tokenize.
+
+    Returns:
+        JSON with token count and token IDs.
+    """
+    backend = _get_backend()
+    result = backend.tokenize(text)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_edit(input_text: str, instruction: str) -> str:
+    """Edit text based on an instruction using the local LLM.
+
+    Uses /v1/edits endpoint for instruction-based text transformation.
+
+    Args:
+        input_text: The text to edit.
+        instruction: What edit to perform (e.g. "fix grammar", "translate to French").
+
+    Returns:
+        The edited text.
+    """
+    backend = _get_backend()
+    return backend.edit(input_text, instruction)
+
+
+@mcp.tool()
+def aicp_p2p_status() -> str:
+    """Get P2P cluster status — online workers, federation nodes, and statistics.
+
+    Shows the state of the LocalAI distributed inference cluster.
+
+    Returns:
+        JSON with cluster stats and worker list.
+    """
+    backend = _get_backend()
+    stats = backend.p2p_stats()
+    workers = backend.p2p_workers()
+    return json.dumps({"stats": stats, "workers": workers}, indent=2)
 
 
 @mcp.tool()
