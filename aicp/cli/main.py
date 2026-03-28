@@ -338,6 +338,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show all AICP capabilities: endpoints, tools, slash commands, models",
     )
+    parser.add_argument(
+        "--metrics",
+        action="store_true",
+        help="Show live Prometheus metrics, GPU status, and API call stats",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -884,6 +889,82 @@ def _run_capabilities() -> int:
         console.print()
     except Exception:
         pass
+
+    return 0
+
+
+def _run_metrics() -> int:
+    """Show live Prometheus metrics from LocalAI."""
+    from rich.table import Table
+
+    local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+    backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+    status = backend.metrics()
+
+    console.print("[bold]AICP Live Metrics[/]\n")
+
+    # ── LocalAI status ──────────────────────────────────────────────────
+    lai = status.get("localai", {})
+    if not lai.get("available"):
+        console.print(f"  [red]LocalAI not reachable at {local_url}[/]")
+        return 1
+
+    console.print(f"  URL:         {lai.get('url', local_url)}")
+    console.print(f"  Goroutines:  {lai.get('goroutines', '?')}")
+    mem_alloc = lai.get("memory_alloc_mb")
+    mem_sys = lai.get("memory_sys_mb")
+    if mem_alloc is not None:
+        console.print(f"  Memory:      {mem_alloc} MiB allocated / {mem_sys} MiB system")
+
+    # Models
+    models = lai.get("models", [])
+    loaded = lai.get("loaded_models", [])
+    if models:
+        console.print(f"  Models:      {', '.join(models)}")
+    if loaded:
+        console.print(f"  GPU loaded:  {', '.join(loaded)}")
+
+    # Backends
+    backends = lai.get("backends", [])
+    if backends:
+        console.print(f"  Backends:    {', '.join(backends[:10])}")
+
+    console.print()
+
+    # ── API call stats ──────────────────────────────────────────────────
+    api_calls = lai.get("api_calls", {})
+    if api_calls:
+        t = Table(title="API Call Stats (from /metrics)", show_header=True)
+        t.add_column("Method", style="cyan")
+        t.add_column("Count", justify="right")
+        t.add_column("Total ms", justify="right")
+        t.add_column("Avg ms", justify="right")
+        for method in sorted(api_calls.keys()):
+            stats = api_calls[method]
+            t.add_row(
+                method,
+                str(stats.get("count", 0)),
+                str(stats.get("total_ms", 0)),
+                str(stats.get("avg_ms", 0)),
+            )
+        console.print(t)
+        console.print()
+
+    # ── GPU status ──────────────────────────────────────────────────────
+    gpu = status.get("gpu", {})
+    if gpu.get("available"):
+        console.print("[bold]GPU[/]")
+        console.print(f"  {gpu.get('name', '?')}")
+        used = gpu.get("memory_used_mb", 0)
+        total = gpu.get("memory_total_mb", 0)
+        pct = gpu.get("memory_used_pct", 0)
+        color = "green" if pct < 70 else "yellow" if pct < 90 else "red"
+        console.print(f"  VRAM:  [{color}]{used}/{total} MiB ({pct}%)[/]")
+        console.print(f"  GPU:   {gpu.get('utilization_pct', '?')}% utilization")
+        console.print(f"  Temp:  {gpu.get('temperature_c', '?')}°C")
+        console.print()
+    else:
+        console.print(f"  [yellow]GPU: {gpu.get('error', 'not available')}[/]\n")
 
     return 0
 
@@ -1802,6 +1883,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --capabilities: show all integrated features
     if getattr(args, "capabilities", False):
         return _run_capabilities()
+
+    # --metrics: live Prometheus metrics
+    if getattr(args, "metrics", False):
+        return _run_metrics()
 
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):

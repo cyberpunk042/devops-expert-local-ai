@@ -704,6 +704,21 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
 
 
 @mcp.tool()
+def aicp_metrics() -> str:
+    """Get live Prometheus metrics, GPU status, and API call stats from LocalAI.
+
+    Returns a JSON snapshot of goroutines, memory usage, loaded models,
+    API call histograms, and GPU utilization.
+
+    Returns:
+        JSON object with localai and gpu sub-objects.
+    """
+    backend = _get_backend()
+    status = backend.metrics()
+    return json.dumps(status, indent=2)
+
+
+@mcp.tool()
 def aicp_model_delete(model_name: str) -> str:
     """Delete/uninstall a model from LocalAI.
 

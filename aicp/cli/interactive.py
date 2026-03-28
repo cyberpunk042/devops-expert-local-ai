@@ -40,6 +40,7 @@ Slash commands:
   /detect <image_path>      Detect objects in image
   /health                   Check LocalAI health, readiness, and features
   /backends                 List installed LocalAI backends
+  /metrics                  Live Prometheus metrics, GPU, and API call stats
   /help                     Show this help
   /exit                     Quit
 """
@@ -432,6 +433,39 @@ def _handle_slash(
                 print("  No backends found (endpoint may not be available)")
         except Exception as e:
             print(f"[error] Backends list failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/metrics":
+        if not backend:
+            print("[error] Metrics require a LocalAI backend.", file=sys.stderr)
+            return None
+        try:
+            import json as _json
+            status = backend.metrics()
+            lai = status.get("localai", {})
+            if not lai.get("available"):
+                print(f"  LocalAI not reachable", file=sys.stderr)
+                return None
+            print(f"  Goroutines:  {lai.get('goroutines', '?')}")
+            mem = lai.get("memory_alloc_mb")
+            if mem is not None:
+                print(f"  Memory:      {mem} MiB allocated / {lai.get('memory_sys_mb', '?')} MiB sys")
+            models = lai.get("models", [])
+            if models:
+                print(f"  Models:      {', '.join(models)}")
+            api_calls = lai.get("api_calls", {})
+            if api_calls:
+                print("  API calls:")
+                for method in sorted(api_calls):
+                    s = api_calls[method]
+                    print(f"    {method}: {s.get('count', 0)} calls, avg {s.get('avg_ms', 0)} ms")
+            gpu = status.get("gpu", {})
+            if gpu.get("available"):
+                used = gpu.get("memory_used_mb", 0)
+                total = gpu.get("memory_total_mb", 0)
+                print(f"  GPU:         {gpu.get('name', '?')} — {used}/{total} MiB, {gpu.get('utilization_pct', '?')}% util, {gpu.get('temperature_c', '?')}°C")
+        except Exception as e:
+            print(f"[error] Metrics failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

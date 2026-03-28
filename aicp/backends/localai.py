@@ -1980,3 +1980,15 @@ class LocalAIBackend(Backend):
                 pass
 
         return result
+
+    def metrics(self) -> dict:
+        """Retrieve Prometheus metrics and system status from LocalAI.
+
+        Combines /metrics parsing, GPU status, and loaded model info
+        into a single observability snapshot.
+
+        Returns:
+            Dict with localai (goroutines, memory, api_calls) and gpu sub-dicts.
+        """
+        from aicp.core.observability import get_system_status
+        return get_system_status(self.base_url)
