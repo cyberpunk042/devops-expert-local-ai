@@ -1010,6 +1010,100 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
+    # ── Logprobs / Token Probabilities ──────────────────────────────────────
+
+    def execute_logprobs(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        top_logprobs: int = 5,
+        seed: Optional[int] = None,
+    ) -> dict:
+        """Execute a prompt and return the response with per-token log probabilities.
+
+        Uses the ``logprobs`` and ``top_logprobs`` parameters to get token-level
+        confidence scores. Useful for evaluation, calibration, and best-of-N.
+
+        Args:
+            prompt:       The user prompt.
+            mode:         Permission mode for sampling profile.
+            project_path: Project root for context building.
+            top_logprobs: Number of top token alternatives per position (1-20).
+            seed:         Optional seed for reproducible output.
+
+        Returns:
+            Dict with keys:
+                text:      The generated text.
+                logprobs:  List of token logprob entries from the API.
+                tokens:    List of generated tokens.
+                avg_logprob: Average log probability (confidence metric).
+        """
+        system = self._system_prompt(mode, project_path)
+        selected_model = self._select_model(prompt)
+        payload: dict = {
+            "model": selected_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.max_tokens,
+            "logprobs": True,
+            "top_logprobs": max(1, min(top_logprobs, 20)),
+            **self.sampling_params_for_mode(mode),
+        }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                f"LocalAI timed out at {self.base_url}.\n"
+                "The model may still be loading. Check logs: make local-logs"
+            )
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "logprobs": True,
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+
+        try:
+            choice = data["choices"][0]
+            text = choice["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
+
+        # Extract logprobs from the response
+        lp_data = choice.get("logprobs", {}) or {}
+        content_lp = lp_data.get("content", [])
+
+        tokens = [entry.get("token", "") for entry in content_lp]
+        logprob_values = [entry.get("logprob", 0.0) for entry in content_lp]
+        avg_lp = sum(logprob_values) / len(logprob_values) if logprob_values else 0.0
+
+        return {
+            "text": text,
+            "logprobs": content_lp,
+            "tokens": tokens,
+            "avg_logprob": round(avg_lp, 4),
+        }
+
     # ── JSON Mode / Structured Output ────────────────────────────────────────
 
     def execute_json(

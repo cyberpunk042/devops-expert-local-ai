@@ -828,6 +828,29 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_logprobs(prompt: str, top_logprobs: int = 5, mode: str = "think", seed: int = -1) -> str:
+    """Get response with per-token log probabilities (confidence scores).
+
+    Returns the generated text plus token-level logprobs for evaluation,
+    calibration, and model confidence analysis.
+
+    Args:
+        prompt: The user prompt.
+        top_logprobs: Number of top alternative tokens per position (1-20).
+        mode: Permission mode (think/edit/act).
+        seed: Seed for reproducible output (-1 = random).
+
+    Returns:
+        JSON with text, tokens, logprobs array, and avg_logprob.
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    s = seed if seed >= 0 else None
+    result = backend.execute_logprobs(prompt, m, Path("."), top_logprobs=top_logprobs, seed=s)
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
 def aicp_json(prompt: str, schema: str = "", mode: str = "think", seed: int = -1) -> str:
     """Force the LLM to output valid JSON (structured output mode).
 

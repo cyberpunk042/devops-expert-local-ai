@@ -50,6 +50,7 @@ Slash commands:
   /config set <key> <value> Update a model parameter at runtime
   /json <prompt>            Force JSON output (structured responses)
   /seed [number]            Set/show seed for reproducible inference (clear = random)
+  /logprobs <prompt>        Show response with per-token log probabilities
   /help                     Show this help
   /exit                     Quit
 """
@@ -667,6 +668,35 @@ def _handle_slash(
             print(f"  Seed set to {backend.seed} (reproducible inference).")
         except ValueError:
             print("[error] Seed must be an integer or 'clear'.", file=sys.stderr)
+        return None
+
+    if cmd == "/logprobs":
+        if not backend:
+            print("[error] Logprobs requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /logprobs <prompt>", file=sys.stderr)
+            return None
+        try:
+            result = backend.execute_logprobs(arg, mode, project_path)
+            print(f"\n  {result['text']}\n")
+            print(f"  Tokens: {len(result['tokens'])}  |  Avg logprob: {result['avg_logprob']}")
+            # Show top tokens with their logprobs
+            for entry in result["logprobs"][:20]:
+                token = entry.get("token", "")
+                lp = entry.get("logprob", 0.0)
+                top_alts = entry.get("top_logprobs", [])
+                alt_str = ""
+                if top_alts:
+                    alts = [f"{a.get('token', '?')}={a.get('logprob', 0):.3f}" for a in top_alts[:3]]
+                    alt_str = f"  alternatives: {', '.join(alts)}"
+                print(f"    {repr(token):>15} → {lp:>8.3f}{alt_str}")
+            if len(result["logprobs"]) > 20:
+                print(f"    ... ({len(result['logprobs']) - 20} more tokens)")
+            messages.append({"role": "user", "content": f"[Logprobs] {arg}"})
+            messages.append({"role": "assistant", "content": result["text"]})
+        except Exception as e:
+            print(f"[error] Logprobs failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
