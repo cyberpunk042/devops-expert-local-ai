@@ -43,6 +43,9 @@ Slash commands:
   /metrics                  Live Prometheus metrics, GPU, and API call stats
   /batch <p1> | <p2> | ...  Run multiple prompts concurrently (pipe-separated)
   /infill <prefix> | <suffix>  Fill-in-the-middle code completion (Copilot-style)
+  /embed-image <path>       Generate embedding for an image (CLIP-style)
+  /lora load <model> <path> Load a LoRA adapter onto a model
+  /lora list                List models with LoRA adapters
   /help                     Show this help
   /exit                     Quit
 """
@@ -520,6 +523,57 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": result})
         except Exception as e:
             print(f"[error] Infill failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/embed-image":
+        if not backend:
+            print("[error] Image embedding requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /embed-image <image_path>", file=sys.stderr)
+            return None
+        try:
+            from pathlib import Path as _Path
+            vec = backend.embed_image(_Path(arg.strip()))
+            print(f"  Dimensions: {len(vec)}")
+            print(f"  First 5:    {vec[:5]}")
+            print(f"  Norm:       {sum(x**2 for x in vec)**0.5:.4f}")
+        except Exception as e:
+            print(f"[error] Image embedding failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/lora":
+        if not backend:
+            print("[error] LoRA commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        parts = arg.split(None, 2) if arg else []
+        subcmd = parts[0] if parts else ""
+
+        if subcmd == "load" and len(parts) >= 3:
+            model_name = parts[1]
+            adapter_path = parts[2]
+            try:
+                result = backend.lora_load(model_name, adapter_path)
+                print(f"  LoRA adapter loaded: {adapter_path} → {model_name}")
+            except Exception as e:
+                print(f"[error] LoRA load failed: {e}", file=sys.stderr)
+            return None
+
+        if subcmd == "list":
+            try:
+                models = backend.lora_list()
+                if models:
+                    for m in models:
+                        name = m.get("name", "?")
+                        adapter = m.get("lora_adapter", m.get("config", {}).get("lora_adapter", "?"))
+                        print(f"  {name} → {adapter}")
+                else:
+                    print("  No models with LoRA adapters found.")
+            except Exception as e:
+                print(f"[error] LoRA list failed: {e}", file=sys.stderr)
+            return None
+
+        print("[error] Usage: /lora load <model> <adapter_path> | /lora list", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

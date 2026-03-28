@@ -203,6 +203,51 @@ class LocalAIBackend(Backend):
         data = resp.json()
         return [item["embedding"] for item in data["data"]]
 
+    def embed_image(
+        self,
+        image_path: Path,
+        model: Optional[str] = None,
+    ) -> list[float]:
+        """Generate an embedding vector for an image (CLIP-style).
+
+        Encodes the image as base64 and sends it to /v1/embeddings.
+        Requires a multimodal embedding model (e.g. CLIP, LLaVA-embed).
+
+        Args:
+            image_path: Path to image file (png, jpg, etc.).
+            model:      Embedding model override.
+
+        Returns:
+            Embedding vector as list of floats.
+        """
+        import base64
+        selected_model = model or self.vision_model or self.embedding_model or self.model
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        mime = "image/png" if str(image_path).endswith(".png") else "image/jpeg"
+        payload = {
+            "model": selected_model,
+            "input": f"data:{mime};base64,{b64}",
+        }
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/embeddings",
+                json=payload,
+                headers=self._headers(),
+                timeout=60.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Image embedding timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Image embedding error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        self.last_usage = {"model": selected_model, "image_embedding": True}
+        return data["data"][0]["embedding"]
+
     def _is_model_loaded(self) -> bool:
         """Check if the configured model is present in /v1/models."""
         try:
@@ -2142,3 +2187,56 @@ class LocalAIBackend(Backend):
         """
         from aicp.core.observability import get_system_status
         return get_system_status(self.base_url)
+
+    # ── LoRA Adapter Management ──────────────────────────────────────────────
+
+    def lora_load(self, model_name: str, adapter_path: str) -> dict:
+        """Load a LoRA adapter onto a model at runtime.
+
+        Args:
+            model_name:   The base model to attach the adapter to.
+            adapter_path: Path to the LoRA adapter (local path or URL).
+
+        Returns:
+            Server response dict.
+        """
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/models/apply",
+                json={
+                    "id": model_name,
+                    "lora_adapter": adapter_path,
+                },
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("LoRA load timed out.")
+
+        if resp.status_code == 404:
+            raise RuntimeError("LoRA adapter endpoint not available on this LocalAI version.")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LoRA load error ({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
+    def lora_list(self, model_name: Optional[str] = None) -> list[dict]:
+        """List models that have LoRA adapters configured.
+
+        Checks model gallery/config for adapter presence.
+
+        Args:
+            model_name: Optional filter by model name.
+
+        Returns:
+            List of model config dicts that have lora_adapter set.
+        """
+        models = self.models_available()
+        lora_models = [
+            m for m in models
+            if m.get("lora_adapter") or m.get("config", {}).get("lora_adapter")
+        ]
+        if model_name:
+            lora_models = [m for m in lora_models if m.get("name") == model_name]
+        return lora_models

@@ -704,6 +704,56 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
 
 
 @mcp.tool()
+def aicp_embed_image(image_path: str) -> str:
+    """Generate an embedding vector for an image (CLIP-style multimodal).
+
+    Requires a multimodal embedding model. Returns the raw embedding
+    which can be used for visual search, similarity, or RAG.
+
+    Args:
+        image_path: Path to image file (png, jpg, etc.).
+
+    Returns:
+        JSON object with embedding vector and dimension count.
+    """
+    from pathlib import Path as _Path
+    backend = _get_backend()
+    vec = backend.embed_image(_Path(image_path))
+    return json.dumps({"embedding": vec[:10], "dimensions": len(vec), "truncated": len(vec) > 10})
+
+
+@mcp.tool()
+def aicp_lora_load(model_name: str, adapter_path: str) -> str:
+    """Load a LoRA adapter onto a model at runtime.
+
+    LoRA adapters allow specializing a base model for specific tasks
+    (coding, analysis, creative writing) without reloading the full model.
+
+    Args:
+        model_name: Base model to attach the adapter to.
+        adapter_path: Path or URL to the LoRA adapter.
+
+    Returns:
+        Server response as JSON.
+    """
+    backend = _get_backend()
+    result = backend.lora_load(model_name, adapter_path)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_lora_list() -> str:
+    """List models with LoRA adapters configured.
+
+    Returns:
+        JSON array of models that have LoRA adapters attached.
+    """
+    backend = _get_backend()
+    models = backend.lora_list()
+    return json.dumps(models, indent=2)
+
+
+@mcp.tool()
 def aicp_infill(prefix: str, suffix: str, max_tokens: int = 256) -> str:
     """Fill-in-the-Middle (FIM) code completion — Copilot-style.
 
