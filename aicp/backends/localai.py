@@ -45,6 +45,12 @@ class LocalAIBackend(Backend):
         vision_model: str = "",
         auto_route: bool = False,
         cache_prompt: bool = True,
+        # Specialized model overrides (use config value or built-in default)
+        reranker_model: str = "",
+        image_model: str = "",
+        sound_model: str = "",
+        whisper_model: str = "",
+        tts_model: str = "",
         # Advanced sampling (llama.cpp)
         mirostat: Optional[int] = None,
         mirostat_tau: Optional[float] = None,
@@ -68,6 +74,12 @@ class LocalAIBackend(Backend):
         self.vision_model = vision_model
         self.auto_route = auto_route
         self.cache_prompt = cache_prompt
+        # Specialized models (fallback to sane defaults)
+        self.reranker_model = reranker_model or "bge-reranker-v2-m3"
+        self.image_model = image_model or "stablediffusion"
+        self.sound_model = sound_model or "transformers-musicgen"
+        self.whisper_model = whisper_model or "whisper-1"
+        self.tts_model = tts_model or "piper-tts"
         # Advanced sampling
         self.mirostat = mirostat
         self.mirostat_tau = mirostat_tau
@@ -216,7 +228,13 @@ class LocalAIBackend(Backend):
             elapsed += interval
         return False
 
-    def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
+    def execute(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        stop: Optional[list[str]] = None,
+    ) -> str:
         t_start = time.perf_counter()
         system = self._system_prompt(mode, project_path)
         selected_model = self._select_model(prompt)
@@ -229,6 +247,8 @@ class LocalAIBackend(Backend):
             "max_tokens": self.max_tokens,
             **self.sampling_params_for_mode(mode),
         }
+        if stop:
+            payload["stop"] = stop
         headers = self._headers()
         t_prep = time.perf_counter()
 
@@ -305,7 +325,13 @@ class LocalAIBackend(Backend):
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
 
-    def execute_stream(self, prompt: str, mode: Mode, project_path: Path) -> Iterator[str]:
+    def execute_stream(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        stop: Optional[list[str]] = None,
+    ) -> Iterator[str]:
         """Stream the response token-by-token using SSE.
 
         Yields string chunks as they arrive. The caller is responsible for
@@ -327,6 +353,8 @@ class LocalAIBackend(Backend):
             "stream": True,
             **self.sampling_params_for_mode(mode),
         }
+        if stop:
+            payload["stop"] = stop
         headers = self._headers()
 
         try:
@@ -438,7 +466,7 @@ class LocalAIBackend(Backend):
     def transcribe(
         self,
         audio_path: Path,
-        model: str = "whisper-1",
+        model: str = "",
         language: str = "en",
         response_format: str = "json",
     ) -> dict:
@@ -458,7 +486,7 @@ class LocalAIBackend(Backend):
 
         with open(audio_path, "rb") as f:
             files = {"file": (audio_path.name, f, "audio/wav")}
-            data = {"model": model, "language": language, "response_format": response_format}
+            data = {"model": model or self.whisper_model, "language": language, "response_format": response_format}
             try:
                 resp = httpx.post(
                     f"{self.base_url}/v1/audio/transcriptions",
@@ -483,7 +511,7 @@ class LocalAIBackend(Backend):
         self,
         text: str,
         output_path: Path,
-        model: str = "piper-tts",
+        model: str = "",
     ) -> Path:
         """Generate speech audio from text using the TTS backend.
 
@@ -495,7 +523,7 @@ class LocalAIBackend(Backend):
         Returns:
             Path to the generated audio file.
         """
-        payload = {"model": model, "input": text}
+        payload = {"model": model or self.tts_model, "input": text}
         try:
             resp = httpx.post(
                 f"{self.base_url}/tts",
@@ -527,8 +555,8 @@ class LocalAIBackend(Backend):
         audio_output: Path,
         mode: Mode,
         project_path: Path,
-        whisper_model: str = "whisper-1",
-        tts_model: str = "piper-tts",
+        whisper_model: str = "",
+        tts_model: str = "",
         system_prompt: Optional[str] = None,
     ) -> dict:
         """Full voice pipeline: audio in → transcribe → LLM → TTS → audio out.
@@ -568,7 +596,7 @@ class LocalAIBackend(Backend):
         self,
         query: str,
         documents: list[str],
-        model: str = "bge-reranker-v2-m3",
+        model: str = "",
         top_n: int | None = None,
     ) -> list[dict]:
         """Rerank documents against a query using a cross-encoder model.
@@ -583,7 +611,7 @@ class LocalAIBackend(Backend):
             List of dicts with keys: index, relevance_score, sorted by score descending.
         """
         payload: dict = {
-            "model": model,
+            "model": model or self.reranker_model,
             "query": query,
             "documents": documents,
         }
@@ -616,7 +644,7 @@ class LocalAIBackend(Backend):
         self,
         prompt: str,
         output_path: Path,
-        model: str = "stablediffusion",
+        model: str = "",
         size: str = "512x512",
         step: Optional[int] = None,
     ) -> Path:
@@ -633,7 +661,7 @@ class LocalAIBackend(Backend):
         Returns:
             Path to the generated image file.
         """
-        payload: dict = {"prompt": prompt, "model": model, "size": size}
+        payload: dict = {"prompt": prompt, "model": model or self.image_model, "size": size}
         if step is not None:
             payload["step"] = step
 
@@ -690,7 +718,7 @@ class LocalAIBackend(Backend):
         self,
         prompt: str,
         output_path: Path,
-        model: str = "transformers-musicgen",
+        model: str = "",
         duration: Optional[float] = None,
     ) -> Path:
         """Generate sound/music from a text description.
@@ -706,7 +734,7 @@ class LocalAIBackend(Backend):
         Returns:
             Path to the generated audio file.
         """
-        payload: dict = {"model": model, "input": prompt}
+        payload: dict = {"model": model or self.sound_model, "input": prompt}
         if duration is not None:
             payload["duration"] = duration
 

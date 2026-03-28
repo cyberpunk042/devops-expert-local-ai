@@ -48,9 +48,9 @@ class TestVoicePipeline:
         assert result["audio_output"] == str(audio_out)
 
         # Verify call chain
-        mock_stt.assert_called_once_with(audio_in, model="whisper-1")
+        mock_stt.assert_called_once_with(audio_in, model="")
         mock_llm.assert_called_once_with("What is the weather today?", Mode.THINK, tmp_path)
-        mock_tts.assert_called_once_with("It is sunny and 72 degrees.", audio_out, model="piper-tts")
+        mock_tts.assert_called_once_with("It is sunny and 72 degrees.", audio_out, model="")
 
     def test_pipeline_custom_models(self, tmp_path):
         audio_in = tmp_path / "input.wav"

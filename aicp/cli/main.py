@@ -361,6 +361,12 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             vision_model=local_cfg.get("vision_model", ""),
             auto_route=local_cfg.get("auto_route", False),
             cache_prompt=local_cfg.get("cache_prompt", True),
+            # Specialized model overrides
+            reranker_model=local_cfg.get("reranker_model", ""),
+            image_model=local_cfg.get("image_model", ""),
+            sound_model=local_cfg.get("sound_model", ""),
+            whisper_model=local_cfg.get("whisper_model", ""),
+            tts_model=local_cfg.get("tts_model", ""),
             # Advanced sampling
             mirostat=local_cfg.get("mirostat"),
             mirostat_tau=local_cfg.get("mirostat_tau"),
