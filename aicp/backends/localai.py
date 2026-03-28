@@ -480,6 +480,80 @@ class LocalAIBackend(Backend):
         self.last_usage = {"model": model, "tts": True, "output_bytes": len(resp.content)}
         return output_path
 
+    def generate_image(
+        self,
+        prompt: str,
+        output_path: Path,
+        model: str = "stablediffusion",
+        size: str = "512x512",
+        step: Optional[int] = None,
+    ) -> Path:
+        """Generate an image from a text prompt using Stable Diffusion.
+
+        Args:
+            prompt: Text description of the image to generate.
+                    Use '|' to separate positive and negative prompts.
+            output_path: Path to write the generated PNG file.
+            model: Image generation model name configured in LocalAI.
+            size: Image dimensions as 'WxH' (default: 512x512).
+            step: Number of diffusion steps (overrides model config if set).
+
+        Returns:
+            Path to the generated image file.
+        """
+        payload: dict = {"prompt": prompt, "model": model, "size": size}
+        if step is not None:
+            payload["step"] = step
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/images/generations",
+                json=payload,
+                headers=self._headers(),
+                timeout=300.0,  # image generation is slow
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Image generation timed out. Try fewer steps or smaller size.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Image generation error ({resp.status_code}): {resp.text[:300]}")
+
+        data = resp.json()
+
+        # Response may contain base64 data or a URL to the generated image
+        try:
+            images = data.get("data", [])
+            if not images:
+                raise RuntimeError(f"No images returned: {str(data)[:200]}")
+            item = images[0]
+            b64_data = item.get("b64_json")
+            url = item.get("url")
+        except (KeyError, IndexError, TypeError) as e:
+            raise RuntimeError(f"Unexpected image response: {str(data)[:200]}") from e
+
+        if b64_data:
+            import base64
+            image_bytes = base64.b64decode(b64_data)
+        elif url:
+            # LocalAI serves generated images from its own endpoint
+            img_resp = httpx.get(url, timeout=30.0)
+            if img_resp.status_code >= 400:
+                raise RuntimeError(f"Failed to download image from {url}: {img_resp.status_code}")
+            image_bytes = img_resp.content
+        else:
+            raise RuntimeError(f"No image data in response: {str(item)[:200]}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(image_bytes)
+        self.last_usage = {
+            "model": model,
+            "image_generation": True,
+            "size": size,
+            "output_bytes": len(image_bytes),
+        }
+        return output_path
+
     def _connect_error_message(self) -> str:
         """Build a diagnostic message when LocalAI is unreachable."""
         # Try to give a more specific hint by checking Docker state

@@ -16,6 +16,8 @@ backends:
     # Audio models: whisper for STT, piper for TTS
     whisper_model: "whisper-1"
     tts_model: "piper-tts"
+    # Image generation model (Stable Diffusion via stablediffusion-ggml backend)
+    image_model: "stablediffusion"
     # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
     # When false (default), always uses the primary model unless explicitly overridden.
     auto_route: false

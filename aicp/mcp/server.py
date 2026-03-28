@@ -152,6 +152,30 @@ def aicp_vision(
 
 
 @mcp.tool()
+def aicp_imagine(
+    prompt: str,
+    output_path: str = "/tmp/aicp_mcp_imagine.png",
+    size: str = "512x512",
+) -> str:
+    """Generate an image from a text prompt using local Stable Diffusion.
+
+    Args:
+        prompt: Text description of the image to generate. Use '|' to separate positive and negative prompts.
+        output_path: Where to write the PNG file (default: /tmp/aicp_mcp_imagine.png).
+        size: Image dimensions as 'WxH' (default: 512x512).
+
+    Returns:
+        Path to the generated image file.
+    """
+    backend = _get_backend()
+    cfg = get_backend_config(_config, "local")
+    model = cfg.get("image_model", "stablediffusion")
+    out = Path(output_path)
+    backend.generate_image(prompt, out, model=model, size=size)
+    return str(out)
+
+
+@mcp.tool()
 def aicp_embed(text: str) -> list[float]:
     """Generate an embedding vector for text using the local embedding model (nomic-embed).
 

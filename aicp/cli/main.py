@@ -261,6 +261,23 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Output path for --speak (default: /tmp/aicp_tts.wav)",
     )
+    # Image generation
+    parser.add_argument(
+        "--imagine",
+        metavar="PROMPT",
+        help="Generate an image from a text prompt using Stable Diffusion",
+    )
+    parser.add_argument(
+        "--imagine-output",
+        metavar="FILE",
+        help="Output path for --imagine (default: /tmp/aicp_imagine.png)",
+    )
+    parser.add_argument(
+        "--imagine-size",
+        metavar="WxH",
+        default="512x512",
+        help="Image size for --imagine (default: 512x512)",
+    )
     # MCP server
     parser.add_argument(
         "--mcp",
@@ -1327,8 +1344,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         run_stdio()
         return 0
 
-    # Normal mode: need a prompt (unless --transcribe or --vision which can work standalone)
-    if not args.prompt and not getattr(args, "transcribe", None) and not getattr(args, "vision", None):
+    # Normal mode: need a prompt (unless --transcribe, --vision, or --imagine which can work standalone)
+    if (not args.prompt
+            and not getattr(args, "transcribe", None)
+            and not getattr(args, "vision", None)
+            and not getattr(args, "imagine", None)):
         parser.print_help()
         return 1
 
@@ -1494,6 +1514,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 print_warning("No speech detected in audio.")
                 return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --imagine: generate image from text prompt
+    if getattr(args, "imagine", None) and actual_backend == "local":
+        img_prompt = args.imagine
+        img_size = getattr(args, "imagine_size", "512x512") or "512x512"
+        img_output = Path(args.imagine_output) if getattr(args, "imagine_output", None) else Path("/tmp/aicp_imagine.png")
+        img_model = get_backend_config(config, "local").get("image_model", "stablediffusion")
+
+        backend = backends["local"]
+        try:
+            with spinner("Generating image..."):
+                backend.generate_image(img_prompt, img_output, model=img_model, size=img_size)
+            console.print(f"  [green]Image saved to {img_output}[/]")
+            return 0
         except Exception as e:
             print_error(str(e))
             return 1

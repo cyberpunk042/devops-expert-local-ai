@@ -400,6 +400,27 @@ elif [[ -f "models/piper-tts.yaml" ]]; then
     log_skip "models/piper-tts.yaml already exists"
 fi
 
+# ── Image generation model (Stable Diffusion v1.5 GGUF) ───────────────────────
+SD_MODEL="stable-diffusion-v1-5-Q4_0.gguf"
+SD_URL="https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf"
+
+if [[ ! -f "models/$SD_MODEL" ]]; then
+    log_step "Downloading Stable Diffusion v1.5 GGUF (Q4_0, ~1.6 GB)"
+    curl -L --progress-bar -C - -o "models/$SD_MODEL" "$SD_URL"
+    log_ok "Downloaded models/$SD_MODEL"
+    STEPS_DONE+=("sd-download")
+else
+    log_skip "models/$SD_MODEL already exists"
+fi
+
+if [[ -f "models/$SD_MODEL" && ! -f "models/stablediffusion.yaml" ]]; then
+    log_step "Activating stablediffusion model config"
+    cp "config/stablediffusion.yaml.template" "models/stablediffusion.yaml"
+    log_ok "models/stablediffusion.yaml activated"
+elif [[ -f "models/stablediffusion.yaml" ]]; then
+    log_skip "models/stablediffusion.yaml already exists"
+fi
+
 # =============================================================================
 # SECTION 6 — Sync config/default.yaml model name
 # =============================================================================
