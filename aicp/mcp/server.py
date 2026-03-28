@@ -828,6 +828,51 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_embed_typed(text: str, embed_type: str = "query") -> str:
+    """Generate a typed embedding (query vs document) for asymmetric search.
+
+    Many embedding models produce different vectors for queries vs documents.
+    Use "query" when embedding search queries and "document" when indexing text.
+
+    Args:
+        text: The text to embed.
+        embed_type: "query" for search queries, "document" for indexed text.
+
+    Returns:
+        JSON with dimensions and first 10 values of the embedding vector.
+    """
+    backend = _get_backend()
+    vec = backend.embed_typed(text, embed_type=embed_type)
+    return json.dumps({
+        "type": embed_type,
+        "dimensions": len(vec),
+        "embedding": vec[:10],
+    }, indent=2)
+
+
+@mcp.tool()
+def aicp_embed_typed_batch(texts_json: str, embed_type: str = "document") -> str:
+    """Batch typed embeddings — index multiple documents at once.
+
+    Args:
+        texts_json: JSON array of strings to embed.
+        embed_type: "query" or "document" (default: document for indexing).
+
+    Returns:
+        JSON with count, dimensions, and first 5 values of each embedding.
+    """
+    backend = _get_backend()
+    texts = json.loads(texts_json)
+    vectors = backend.embed_typed_batch(texts, embed_type=embed_type)
+    return json.dumps({
+        "type": embed_type,
+        "count": len(vectors),
+        "dimensions": len(vectors[0]) if vectors else 0,
+        "embeddings": [v[:5] for v in vectors],
+    }, indent=2)
+
+
+@mcp.tool()
 def aicp_multimodal(messages_json: str, images_json: str, mode: str = "think") -> str:
     """Multi-turn visual chat with images inline in the message history.
 

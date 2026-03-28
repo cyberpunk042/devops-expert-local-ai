@@ -205,6 +205,105 @@ class LocalAIBackend(Backend):
         data = resp.json()
         return [item["embedding"] for item in data["data"]]
 
+    def embed_typed(
+        self,
+        text: str,
+        embed_type: str = "query",
+        model: Optional[str] = None,
+    ) -> list[float]:
+        """Generate a typed embedding (query vs document) for asymmetric search.
+
+        Many embedding models (e.g. nomic-embed, BGE, E5) produce different
+        vectors for queries vs documents. This distinction improves retrieval
+        accuracy in RAG pipelines.
+
+        Args:
+            text:       Text to embed.
+            embed_type: "query" for search queries, "document" for indexed text.
+            model:      Model override (default: embedding_model or self.model).
+
+        Returns:
+            Embedding vector as a list of floats.
+        """
+        if embed_type not in ("query", "document"):
+            raise ValueError(f"embed_type must be 'query' or 'document', got '{embed_type}'")
+
+        selected_model = model or self.embedding_model or self.model
+        payload: dict = {
+            "model": selected_model,
+            "input": text,
+            "type": embed_type,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/embeddings",
+                json=payload,
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Embedding error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        self.last_usage = {
+            "embedding_typed": True,
+            "type": embed_type,
+            "model": selected_model,
+        }
+        return data["data"][0]["embedding"]
+
+    def embed_typed_batch(
+        self,
+        texts: list[str],
+        embed_type: str = "document",
+        model: Optional[str] = None,
+    ) -> list[list[float]]:
+        """Batch typed embeddings — typically for indexing documents.
+
+        Args:
+            texts:      List of texts to embed.
+            embed_type: "query" or "document" (default: document for batch indexing).
+            model:      Model override.
+
+        Returns:
+            List of embedding vectors.
+        """
+        if embed_type not in ("query", "document"):
+            raise ValueError(f"embed_type must be 'query' or 'document', got '{embed_type}'")
+
+        selected_model = model or self.embedding_model or self.model
+        payload: dict = {
+            "model": selected_model,
+            "input": texts,
+            "type": embed_type,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/embeddings",
+                json=payload,
+                headers=self._headers(),
+                timeout=60.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Embedding error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        self.last_usage = {
+            "embedding_typed": True,
+            "type": embed_type,
+            "model": selected_model,
+            "count": len(texts),
+        }
+        return [item["embedding"] for item in data["data"]]
+
     def embed_image(
         self,
         image_path: Path,

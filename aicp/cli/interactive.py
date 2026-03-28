@@ -53,6 +53,7 @@ Slash commands:
   /logprobs <prompt>        Show response with per-token log probabilities
   /bestof [N] <prompt>      Generate N completions, pick the best (default: 3)
   /chat-image <path> <prompt> Multi-turn visual chat (image added to history)
+  /embed-typed <q|d> <text> Typed embedding (query vs document) for asymmetric search
   /help                     Show this help
   /exit                     Quit
 """
@@ -769,6 +770,31 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": result})
         except Exception as e:
             print(f"[error] Chat-image failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/embed-typed":
+        if not backend:
+            print("[error] Typed embeddings require a LocalAI backend.", file=sys.stderr)
+            return None
+        parts = arg.split(None, 1) if arg else []
+        if len(parts) < 2:
+            print("[error] Usage: /embed-typed <query|document> <text>", file=sys.stderr)
+            print("  Short: /embed-typed q <text> or /embed-typed d <text>", file=sys.stderr)
+            return None
+        type_arg = parts[0].lower()
+        text = parts[1]
+        type_map = {"q": "query", "query": "query", "d": "document", "document": "document", "doc": "document"}
+        embed_type = type_map.get(type_arg)
+        if not embed_type:
+            print(f"[error] Unknown type '{type_arg}'. Use: query (q) or document (d)", file=sys.stderr)
+            return None
+        try:
+            vec = backend.embed_typed(text, embed_type=embed_type)
+            print(f"  Type: {embed_type}")
+            print(f"  Dimensions: {len(vec)}")
+            print(f"  First 5: {vec[:5]}")
+        except Exception as e:
+            print(f"[error] Typed embedding failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
