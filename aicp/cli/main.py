@@ -437,8 +437,22 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         if not ok:
             all_ok = False
 
-    # Warn if configured LocalAI model is not actually loaded
+    # Health & readiness probes
     local_backend = backends.get("local")
+    if local_backend and isinstance(local_backend, LocalAIBackend):
+        health = local_backend.health_check()
+        ready = local_backend.is_ready()
+        if health.get("healthy"):
+            console.print(f"  Health:  [green]healthy[/]")
+        else:
+            err = health.get("error", "unhealthy")
+            console.print(f"  Health:  [red]{err}[/]")
+        if ready:
+            console.print(f"  Ready:   [green]ready[/]")
+        else:
+            console.print(f"  Ready:   [yellow]not ready (model may be loading)[/]")
+
+    # Warn if configured LocalAI model is not actually loaded
     if local_backend and local_backend.is_available():
         try:
             import httpx as _httpx
@@ -510,7 +524,24 @@ def _run_self_test() -> int:
             console.print(f"  [red]FAIL[/]  {label}: {exc}")
             failed += 1
 
-    # 1. API reachable
+    _st_backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+
+    # 1a. Health check
+    def _check_health():
+        h = _st_backend.health_check()
+        if not h.get("healthy"):
+            raise RuntimeError(h.get("error", "unhealthy"))
+        return True
+    _probe("Health check (/healthz)", _check_health)
+
+    # 1b. Readiness check
+    def _check_ready():
+        if not _st_backend.is_ready():
+            raise RuntimeError("not ready")
+        return True
+    _probe("Readiness check (/readyz)", _check_ready)
+
+    # 1c. API reachable
     def _check_api():
         resp = _httpx.get(f"{local_url}/v1/models", timeout=5.0)
         resp.raise_for_status()
@@ -642,14 +673,28 @@ def _run_self_test() -> int:
         return resp.json()
     _probe("Reranking (/v1/reranking)", _check_rerank)
 
-    # 13. Config completeness
+    # 13. Backends list
+    def _check_backends_list():
+        bl = _st_backend.backends_list()
+        if not bl:
+            return None  # endpoint may not exist
+        return len(bl)
+    _probe("Backends list (/api/backends)", _check_backends_list)
+
+    # 14. Feature detection
+    def _check_features():
+        srv = _st_backend.server_config()
+        return srv.get("features", []) or True
+    _probe("Feature detection (server_config)", _check_features)
+
+    # 15. Config completeness
     def _check_config():
         from aicp.config.loader import load_config
         cfg = load_config()
         local_cfg = cfg.get("backends", {}).get("local", {})
         required = ["base_url", "model", "embedding_model", "code_model",
                      "vision_model", "whisper_model", "tts_model", "image_model",
-                     "reranker_model"]
+                     "reranker_model", "sound_model"]
         missing = [k for k in required if not local_cfg.get(k)]
         if missing:
             raise RuntimeError(f"missing config keys: {', '.join(missing)}")
@@ -1535,6 +1580,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         console.print("[bold]System Status[/]\n")
 
+        # Health probes
+        _obs_backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+        health = _obs_backend.health_check()
+        ready = _obs_backend.is_ready()
+        h_tag = "[green]healthy[/]" if health.get("healthy") else f"[red]{health.get('error', 'unhealthy')}[/]"
+        r_tag = "[green]ready[/]" if ready else "[yellow]not ready[/]"
+        console.print(f"  Health:      {h_tag}")
+        console.print(f"  Readiness:   {r_tag}")
+        console.print()
+
         # LocalAI
         if lai["available"]:
             console.print(f"  LocalAI:     [green]ONLINE[/] ({lai['url']})")
@@ -1578,6 +1633,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                     if k not in ("enabled", "error"):
                         console.print(f"  {k}:  {v}")
             # Silently skip if P2P not enabled
+        except Exception:
+            pass
+
+        # Feature detection
+        try:
+            srv_cfg = _obs_backend.server_config()
+            features = srv_cfg.get("features", [])
+            if features:
+                console.print()
+                console.print(f"  Features:    {', '.join(features)}")
         except Exception:
             pass
 

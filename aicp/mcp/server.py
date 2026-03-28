@@ -589,6 +589,58 @@ def aicp_model_unload(model_name: str) -> str:
     return f"Unloaded: {model_name}" if success else f"Failed to unload: {model_name}"
 
 
+@mcp.tool()
+def aicp_health() -> str:
+    """Check LocalAI health and readiness status.
+
+    Returns:
+        JSON with healthy (bool), ready (bool), and status details.
+    """
+    backend = _get_backend()
+    health = backend.health_check()
+    ready = backend.is_ready()
+    return json.dumps({"healthy": health.get("healthy", False), "ready": ready, **health})
+
+
+@mcp.tool()
+def aicp_backends_list() -> str:
+    """List installed LocalAI backends (execution engines).
+
+    Returns:
+        JSON array of installed backends.
+    """
+    backend = _get_backend()
+    backends = backend.backends_list()
+    return json.dumps(backends)
+
+
+@mcp.tool()
+def aicp_server_config() -> str:
+    """Detect LocalAI server capabilities and features.
+
+    Returns:
+        JSON with health, readiness, loaded models, backends, and detected features.
+    """
+    backend = _get_backend()
+    config = backend.server_config()
+    return json.dumps(config)
+
+
+@mcp.tool()
+def aicp_model_delete(model_name: str) -> str:
+    """Delete/uninstall a model from LocalAI.
+
+    Args:
+        model_name: Name of the model to delete.
+
+    Returns:
+        Success or failure message.
+    """
+    backend = _get_backend()
+    success = backend.model_delete(model_name)
+    return f"Deleted: {model_name}" if success else f"Failed to delete: {model_name}"
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

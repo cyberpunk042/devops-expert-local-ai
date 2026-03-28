@@ -36,6 +36,8 @@ Slash commands:
   /complete <text>          Raw text completion (no chat template)
   /edit <instruction> | <text>  Edit text by instruction (e.g. fix grammar)
   /tokenize <text>          Count tokens in text
+  /health                   Check LocalAI health, readiness, and features
+  /backends                 List installed LocalAI backends
   /help                     Show this help
   /exit                     Quit
 """
@@ -323,6 +325,44 @@ def _handle_slash(
                 print(f"  IDs:    {result['tokens']}")
         except Exception as e:
             print(f"[error] Tokenize failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/health":
+        if not backend:
+            print("[error] Health commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        try:
+            health = backend.health_check()
+            ready = backend.is_ready()
+            h_status = "healthy" if health.get("healthy") else health.get("error", "unhealthy")
+            r_status = "ready" if ready else "not ready"
+            print(f"  Health:    {h_status}")
+            print(f"  Readiness: {r_status}")
+            srv = backend.server_config()
+            features = srv.get("features", [])
+            if features:
+                print(f"  Features:  {', '.join(features)}")
+            models = srv.get("models", [])
+            if models:
+                print(f"  Models:    {', '.join(models)}")
+        except Exception as e:
+            print(f"[error] Health check failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/backends":
+        if not backend:
+            print("[error] Backend commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        try:
+            bl = backend.backends_list()
+            if bl:
+                for b in bl:
+                    name = b if isinstance(b, str) else b.get("name", str(b))
+                    print(f"  - {name}")
+            else:
+                print("  No backends found (endpoint may not be available)")
+        except Exception as e:
+            print(f"[error] Backends list failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

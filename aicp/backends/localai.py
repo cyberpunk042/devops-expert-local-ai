@@ -1462,3 +1462,163 @@ class LocalAIBackend(Backend):
             return data["choices"][0]["text"]
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected edit response: {str(data)[:200]}")
+
+    # ── Health & Readiness ───────────────────────────────────────────────────
+
+    def health_check(self) -> dict:
+        """Check LocalAI health via /healthz. Returns {"healthy": bool, ...}."""
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/healthz",
+                headers=self._headers(),
+                timeout=5.0,
+            )
+            return {"healthy": resp.status_code == 200, "status_code": resp.status_code}
+        except httpx.ConnectError:
+            return {"healthy": False, "error": "connection refused"}
+        except httpx.TimeoutException:
+            return {"healthy": False, "error": "timeout"}
+
+    def is_ready(self) -> bool:
+        """Check if LocalAI is ready to serve via /readyz."""
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/readyz",
+                headers=self._headers(),
+                timeout=5.0,
+            )
+            return resp.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return False
+
+    # ── Backend Management ───────────────────────────────────────────────────
+
+    def backends_list(self) -> list[dict]:
+        """List installed backends via GET /api/backends."""
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/api/backends",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            if resp.status_code >= 400:
+                return []
+            data = resp.json()
+            return data if isinstance(data, list) else []
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return []
+
+    def backend_apply(self, backend_id: str) -> dict:
+        """Install a backend at runtime via POST /api/backends/apply."""
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/api/backends/apply",
+                json={"id": backend_id},
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Backend apply timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Backend apply error ({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
+    def backend_delete(self, backend_name: str) -> bool:
+        """Delete a backend via POST /api/backends/delete."""
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/api/backends/delete",
+                json={"name": backend_name},
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            return resp.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return False
+
+    def model_delete(self, model_name: str) -> bool:
+        """Delete/uninstall a model via POST /api/models/delete."""
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/api/models/delete",
+                json={"name": model_name},
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            return resp.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return False
+
+    # ── Server Configuration & Feature Detection ─────────────────────────────
+
+    def server_config(self) -> dict:
+        """Retrieve server configuration for feature detection."""
+        result: dict = {
+            "healthy": False,
+            "ready": False,
+            "models": [],
+            "backends": [],
+            "features": [],
+        }
+
+        # Health + readiness
+        result["healthy"] = self.health_check().get("healthy", False)
+        result["ready"] = self.is_ready()
+
+        if not result["healthy"]:
+            return result
+
+        # Models
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(),
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                result["models"] = [m["id"] for m in resp.json().get("data", [])]
+        except Exception:
+            pass
+
+        # Backends
+        result["backends"] = [
+            b if isinstance(b, str) else b.get("name", str(b))
+            for b in self.backends_list()
+        ]
+
+        # Feature detection — probe endpoints to see what's available
+        feature_probes = {
+            "embeddings": ("GET", "/v1/models"),  # if embedding model loaded
+            "reranking": ("POST", "/v1/reranking"),
+            "tokenize": ("POST", "/v1/tokenize"),
+            "edits": ("POST", "/v1/edits"),
+            "sound_generation": ("POST", "/v1/sound-generation"),
+            "stores": ("POST", "/stores/get"),
+            "p2p": ("GET", "/api/p2p/stats"),
+        }
+
+        for feature, (method, path) in feature_probes.items():
+            try:
+                if method == "GET":
+                    resp = httpx.get(
+                        f"{self.base_url}{path}",
+                        headers=self._headers(),
+                        timeout=3.0,
+                    )
+                else:
+                    resp = httpx.post(
+                        f"{self.base_url}{path}",
+                        json={},
+                        headers=self._headers(),
+                        timeout=3.0,
+                    )
+                # 404 = endpoint doesn't exist, anything else = feature exists
+                if resp.status_code != 404:
+                    result["features"].append(feature)
+            except Exception:
+                pass
+
+        return result

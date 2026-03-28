@@ -55,6 +55,8 @@ class TestSelfTestProbes:
     def test_all_pass(self):
         """When all endpoints respond correctly, self-test returns 0."""
         responses = {
+            "/healthz": {"json": {}},
+            "/readyz": {"json": {}},
             "/v1/models": {"json": {"data": [{"id": "hermes"}]}},
             "/v1/chat/completions": {"json": {"choices": [{"message": {"content": "hi"}}]}},
             "/v1/completions": {"json": {"choices": [{"text": "hello"}]}},
@@ -65,8 +67,11 @@ class TestSelfTestProbes:
             "/backend/monitor": {"json": {"state": 2}},
             "/stores/set": {"json": {}},
             "/stores/delete": {"json": {}},
+            "/stores/get": {"json": {}},
             "/api/p2p/stats": {"status": 404},
             "/v1/reranking": {"status": 404},
+            "/api/backends": {"json": ["llama-cpp"]},
+            "/v1/sound-generation": {"json": {}},
         }
         rc, output = self._run(responses)
         assert "PASS" in output
@@ -115,6 +120,8 @@ class TestSelfTestProbes:
     def test_skipped_probes(self):
         """Optional features (P2P, reranking) return SKIP not FAIL."""
         responses = {
+            "/healthz": {"json": {}},
+            "/readyz": {"json": {}},
             "/v1/models": {"json": {"data": [{"id": "hermes"}]}},
             "/v1/chat/completions": {"json": {"choices": [{"message": {"content": "hi"}}]}},
             "/v1/completions": {"json": {"choices": [{"text": "ok"}]}},
@@ -125,8 +132,11 @@ class TestSelfTestProbes:
             "/backend/monitor": {"status": 404},
             "/stores/set": {"status": 404},
             "/stores/delete": {"status": 404},
+            "/stores/get": {"status": 404},
             "/api/p2p/stats": {"status": 404},
             "/v1/reranking": {"status": 404},
+            "/api/backends": {"status": 404},
+            "/v1/sound-generation": {"status": 404},
         }
         rc, output = self._run(responses)
         assert "SKIP" in output
@@ -135,6 +145,8 @@ class TestSelfTestProbes:
     def test_return_code_zero_when_no_failures(self):
         """Return code 0 even with skips as long as no failures."""
         responses = {
+            "/healthz": {"json": {}},
+            "/readyz": {"json": {}},
             "/v1/models": {"json": {"data": [{"id": "hermes"}]}},
             "/v1/chat/completions": {"json": {"choices": [{"message": {"content": "ok"}}]}},
             "/v1/completions": {"json": {"choices": [{"text": "ok"}]}},
@@ -145,8 +157,11 @@ class TestSelfTestProbes:
             "/backend/monitor": {"json": {"state": 2}},
             "/stores/set": {"json": {}},
             "/stores/delete": {"json": {}},
+            "/stores/get": {"json": {}},
             "/api/p2p/stats": {"json": {"online_workers": 1}},
             "/v1/reranking": {"json": {"results": []}},
+            "/api/backends": {"json": ["llama-cpp"]},
+            "/v1/sound-generation": {"json": {}},
         }
         rc, output = self._run(responses)
         assert rc == 0
