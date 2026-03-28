@@ -224,6 +224,54 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show routing decision breakdown (why a backend was chosen)",
     )
+    # Knowledge base / RAG
+    parser.add_argument(
+        "--kb",
+        metavar="CMD",
+        help="Knowledge base: add <file/dir>, search <query>, list, status, delete <source>",
+    )
+    parser.add_argument(
+        "--kb-arg",
+        metavar="ARG",
+        help="Argument for --kb command (file path, query, or source name)",
+    )
+    parser.add_argument(
+        "--rag",
+        action="store_true",
+        help="Augment prompt with RAG context from the knowledge base",
+    )
+    parser.add_argument(
+        "--vision",
+        metavar="IMAGE",
+        help="Send an image to the vision model (path to image file)",
+    )
+    # Audio
+    parser.add_argument(
+        "--transcribe",
+        metavar="AUDIO",
+        help="Transcribe an audio file (wav, mp3, ogg, flac) using whisper",
+    )
+    parser.add_argument(
+        "--speak",
+        action="store_true",
+        help="Speak the LLM response using TTS (generates WAV file)",
+    )
+    parser.add_argument(
+        "--speak-output",
+        metavar="FILE",
+        help="Output path for --speak (default: /tmp/aicp_tts.wav)",
+    )
+    # Observability
+    parser.add_argument(
+        "--observe",
+        action="store_true",
+        help="Show live system status: GPU, LocalAI metrics, model info",
+    )
+    parser.add_argument(
+        "--bench",
+        action="store_true",
+        help="Run a quick benchmark: measure TTFT, tokens/sec, latency",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -244,6 +292,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             repeat_penalty=local_cfg.get("repeat_penalty"),
             embedding_model=local_cfg.get("embedding_model", ""),
             code_model=local_cfg.get("code_model", ""),
+            vision_model=local_cfg.get("vision_model", ""),
             auto_route=local_cfg.get("auto_route", False),
         ),
         "claude": ClaudeCodeBackend(
@@ -862,6 +911,162 @@ def _run_replay(record_id: str) -> int:
     return 0
 
 
+def _run_kb(
+    command: str,
+    arg: Optional[str],
+    project_path: Path,
+    config: Dict,
+    backends: Dict[str, Backend],
+) -> int:
+    """Handle --kb commands for knowledge base management."""
+    from aicp.config.loader import get_rag_config
+    from aicp.core.rag import RAGPipeline, VectorStore, build_rag_pipeline
+
+    rag_cfg = get_rag_config(config)
+    db_path_str = rag_cfg["db_path"]
+    db_path = Path(db_path_str) if Path(db_path_str).is_absolute() else project_path / db_path_str
+
+    # For commands that need the embedding backend
+    local_backend = backends.get("local")
+
+    if command == "status":
+        vs = VectorStore(db_path)
+        info = vs.stats(rag_cfg["store_name"])
+        vs.close()
+        console.print(f"[bold]Knowledge Base Status[/]")
+        console.print(f"  Store:    {info['store']}")
+        console.print(f"  Sources:  {info['total_sources']}")
+        console.print(f"  Chunks:   {info['total_chunks']}")
+        console.print(f"  DB path:  {db_path}")
+        console.print(f"  RAG enabled: {'[green]yes[/]' if rag_cfg['enabled'] else '[dim]no[/]'}")
+        return 0
+
+    if command == "list":
+        vs = VectorStore(db_path)
+        sources = vs.list_sources(rag_cfg["store_name"])
+        vs.close()
+        if not sources:
+            console.print("[dim]Knowledge base is empty. Add files with: aicp --kb add --kb-arg <path>[/]")
+            return 0
+        from rich.table import Table
+        t = Table(title="Knowledge Base Sources", show_header=True)
+        t.add_column("Source", style="bold")
+        t.add_column("Chunks", justify="right")
+        for s in sources:
+            t.add_row(s["source"], str(s["chunks"]))
+        console.print(t)
+        return 0
+
+    if command == "add":
+        if not arg:
+            print_error("Usage: aicp --kb add --kb-arg <file-or-directory>")
+            return 1
+        if not local_backend:
+            print_error("KB add requires the local backend (for embeddings)")
+            return 1
+
+        pipeline = build_rag_pipeline(
+            backend=local_backend,
+            db_path=db_path,
+            store_name=rag_cfg["store_name"],
+            chunk_size=rag_cfg["chunk_size"],
+            chunk_overlap=rag_cfg["chunk_overlap"],
+            top_k=rag_cfg["top_k"],
+            threshold=rag_cfg["threshold"],
+        )
+
+        target = Path(arg)
+        if not target.is_absolute():
+            target = project_path / target
+
+        if not target.exists():
+            print_error(f"Path not found: {target}")
+            return 1
+
+        files: List[Path] = []
+        if target.is_file():
+            files = [target]
+        else:
+            # Ingest all text files in the directory
+            for ext in ("*.py", "*.md", "*.txt", "*.yaml", "*.yml", "*.json", "*.toml", "*.rst", "*.sh"):
+                files.extend(target.rglob(ext))
+            # Filter out hidden dirs and common excludes
+            files = [
+                f for f in files
+                if not any(p.startswith(".") for p in f.relative_to(target).parts[:-1])
+                and "__pycache__" not in str(f)
+                and "node_modules" not in str(f)
+            ]
+
+        if not files:
+            print_error(f"No ingestible files found in {target}")
+            return 1
+
+        total_chunks = 0
+        with spinner(f"Ingesting {len(files)} file(s)..."):
+            for f in sorted(files):
+                try:
+                    n = pipeline.ingest_file(f)
+                    total_chunks += n
+                except Exception as e:
+                    print_warning(f"Skipped {f.name}: {e}")
+
+        console.print(f"[green]Ingested {len(files)} file(s), {total_chunks} chunks into KB[/]")
+        return 0
+
+    if command == "search":
+        if not arg:
+            print_error("Usage: aicp --kb search --kb-arg <query>")
+            return 1
+        if not local_backend:
+            print_error("KB search requires the local backend (for embeddings)")
+            return 1
+
+        pipeline = build_rag_pipeline(
+            backend=local_backend,
+            db_path=db_path,
+            store_name=rag_cfg["store_name"],
+            chunk_size=rag_cfg["chunk_size"],
+            chunk_overlap=rag_cfg["chunk_overlap"],
+            top_k=rag_cfg["top_k"],
+            threshold=rag_cfg["threshold"],
+        )
+
+        with spinner("Searching knowledge base..."):
+            results = pipeline.retrieve(arg)
+
+        if not results:
+            console.print("[dim]No relevant results found.[/]")
+            return 0
+
+        for i, r in enumerate(results, 1):
+            source = Path(r["source"]).name if "/" in r["source"] else r["source"]
+            console.print(f"\n[bold cyan]#{i}[/] [dim]({r['similarity']:.3f})[/] [yellow]{source}[/]")
+            # Show first 200 chars of the chunk
+            preview = r["text"][:200].replace("\n", " ")
+            if len(r["text"]) > 200:
+                preview += "..."
+            console.print(f"  {preview}")
+
+        return 0
+
+    if command == "delete":
+        if not arg:
+            print_error("Usage: aicp --kb delete --kb-arg <source>")
+            return 1
+        vs = VectorStore(db_path)
+        count = vs.delete_source(rag_cfg["store_name"], arg)
+        vs.close()
+        if count > 0:
+            console.print(f"[green]Deleted {count} chunks from source: {arg}[/]")
+        else:
+            print_warning(f"No chunks found for source: {arg}")
+        return 0
+
+    print_error(f"Unknown KB command: {command}. Use: add, search, list, status, delete")
+    return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -931,6 +1136,67 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error(f"Session not found: {args.session_delete}")
         return 0
 
+    # --observe: live system status (no config needed)
+    if getattr(args, "observe", False):
+        from aicp.core.observability import get_system_status
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        status = get_system_status(local_url)
+
+        lai = status["localai"]
+        gpu = status["gpu"]
+
+        console.print("[bold]System Status[/]\n")
+
+        # LocalAI
+        if lai["available"]:
+            console.print(f"  LocalAI:     [green]ONLINE[/] ({lai['url']})")
+            console.print(f"  Models:      {', '.join(lai['models']) or 'none'}")
+            if lai.get("goroutines"):
+                console.print(f"  Goroutines:  {int(lai['goroutines'])}")
+            if lai.get("memory_alloc_mb"):
+                console.print(f"  Memory:      {lai['memory_alloc_mb']} MiB allocated")
+            for method, stats in lai.get("api_calls", {}).items():
+                if stats.get("count", 0) > 0:
+                    console.print(f"  API {method}:    {stats['count']} calls, avg {stats['avg_ms']:.0f}ms")
+        else:
+            console.print(f"  LocalAI:     [red]OFFLINE[/]")
+
+        # GPU
+        console.print()
+        if gpu.get("available"):
+            console.print(f"  GPU:         {gpu['name']}")
+            console.print(f"  VRAM:        {gpu['memory_used_mb']}/{gpu['memory_total_mb']} MiB ({gpu['memory_used_pct']:.0f}%)")
+            console.print(f"  Utilization: {gpu['utilization_pct']}%")
+            console.print(f"  Temperature: {gpu['temperature_c']}°C")
+        else:
+            console.print(f"  GPU:         [dim]{gpu.get('error', 'unavailable')}[/]")
+
+        return 0
+
+    # --bench: quick performance benchmark (no config needed)
+    if getattr(args, "bench", False):
+        from aicp.core.observability import measure_request
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        console.print("[bold]Performance Benchmark[/]\n")
+
+        for run in range(3):
+            label = "cold" if run == 0 else f"warm {run}"
+            with spinner(f"Run {run + 1}/3 ({label})..."):
+                result = measure_request(local_url, model="hermes")
+
+            if result.get("error"):
+                print_error(f"Run {run + 1}: {result['error']}")
+                break
+
+            console.print(
+                f"  Run {run + 1}: "
+                f"total={result['total_ms']:.0f}ms  "
+                f"TTFT={result.get('ttft_ms', '?')}ms  "
+                f"gen={result['generation_ms']:.0f}ms  "
+                f"tok/s={result['tokens_per_sec']}"
+            )
+        return 0
+
     # Load config
     try:
         project_path = args.project.resolve() if hasattr(args, "project") and args.project else None
@@ -944,6 +1210,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     backends = _build_backends(config)
+
+    # --kb commands (knowledge base / RAG management)
+    if args.kb:
+        return _run_kb(args.kb, args.kb_arg, args.project.resolve(), config, backends)
 
     # --skill commands
     if args.skill:
@@ -1045,8 +1315,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print_response(r["result"])
         return 0 if all(not r["error"] for r in results) else 1
 
-    # Normal mode: need a prompt
-    if not args.prompt:
+    # Normal mode: need a prompt (unless --transcribe or --vision which can work standalone)
+    if not args.prompt and not getattr(args, "transcribe", None) and not getattr(args, "vision", None):
         parser.print_help()
         return 1
 
@@ -1133,6 +1403,33 @@ def main(argv: Optional[List[str]] = None) -> int:
             print_error(str(e))
             return 1
 
+    # --rag: augment prompt with knowledge base context
+    if getattr(args, "rag", False) and args.prompt:
+        from aicp.config.loader import get_rag_config
+        from aicp.core.rag import build_rag_pipeline
+
+        rag_cfg = get_rag_config(config)
+        db_path_str = rag_cfg["db_path"]
+        db_path = (
+            Path(db_path_str) if Path(db_path_str).is_absolute()
+            else args.project.resolve() / db_path_str
+        )
+        if db_path.exists():
+            local_backend = backends.get("local")
+            if local_backend:
+                pipeline = build_rag_pipeline(
+                    backend=local_backend,
+                    db_path=db_path,
+                    store_name=rag_cfg["store_name"],
+                    chunk_size=rag_cfg["chunk_size"],
+                    chunk_overlap=rag_cfg["chunk_overlap"],
+                    top_k=rag_cfg["top_k"],
+                    threshold=rag_cfg["threshold"],
+                )
+                args.prompt = pipeline.augment_prompt(
+                    args.prompt, max_context_chars=rag_cfg["max_context_chars"],
+                )
+
     # --json mode: force JSON output from LocalAI
     if getattr(args, "json", False) and actual_backend == "local":
         backend = backends["local"]
@@ -1154,6 +1451,66 @@ def main(argv: Optional[List[str]] = None) -> int:
             with spinner("Asking local (with tools)..."):
                 result = backend.execute_with_tools(
                     args.prompt, Mode(args.mode), args.project.resolve(),
+                )
+            print_response(result)
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --transcribe: audio-to-text via whisper
+    if getattr(args, "transcribe", None) and actual_backend == "local":
+        audio_path = Path(args.transcribe)
+        if not audio_path.is_absolute():
+            audio_path = args.project.resolve() / audio_path
+        if not audio_path.exists():
+            print_error(f"Audio file not found: {audio_path}")
+            return 1
+
+        backend = backends["local"]
+        try:
+            with spinner("Transcribing audio..."):
+                result = backend.transcribe(audio_path)
+            text = result.get("text", "").strip()
+            if text:
+                print_response(text)
+                # If --speak is also set, pipe through LLM then TTS
+                if not args.prompt:
+                    return 0
+                # If prompt is provided, use transcription as context
+                args.prompt = f"Audio transcription: {text}\n\n{args.prompt}"
+            else:
+                print_warning("No speech detected in audio.")
+                return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --vision mode: send image to vision model
+    if getattr(args, "vision", None) and actual_backend == "local":
+        import base64
+        image_path = Path(args.vision)
+        if not image_path.is_absolute():
+            image_path = args.project.resolve() / image_path
+        if not image_path.exists():
+            print_error(f"Image not found: {image_path}")
+            return 1
+
+        # Detect MIME type
+        suffix = image_path.suffix.lower()
+        mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+        mime = mime_map.get(suffix, "image/png")
+
+        image_data = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        prompt = args.prompt or "Describe this image in detail."
+
+        backend = backends["local"]
+        try:
+            with spinner("Analyzing image with vision model..."):
+                result = backend.execute_vision(
+                    prompt, image_data, Mode(args.mode), args.project.resolve(),
+                    image_mime=mime,
                 )
             print_response(result)
             return 0
@@ -1249,6 +1606,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         from aicp.guardrails.response import scan_response_secrets
         for warning in scan_response_secrets(result):
             print_warning(f"SECRET LEAK RISK: {warning}")
+
+        # --speak: convert LLM response to audio via TTS
+        if getattr(args, "speak", False) and actual_backend == "local" and result:
+            tts_output = Path(args.speak_output) if getattr(args, "speak_output", None) else Path("/tmp/aicp_tts.wav")
+            try:
+                with spinner("Generating speech..."):
+                    backends["local"].speak(result, tts_output)
+                console.print(f"  [dim]Audio saved to {tts_output}[/]")
+            except Exception as e:
+                print_warning(f"TTS failed: {e}")
 
         return 0
     except Exception as e:

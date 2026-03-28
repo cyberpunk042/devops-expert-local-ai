@@ -42,6 +42,7 @@ class LocalAIBackend(Backend):
         repeat_penalty: Optional[float] = None,
         embedding_model: str = "",
         code_model: str = "",
+        vision_model: str = "",
         auto_route: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -54,6 +55,7 @@ class LocalAIBackend(Backend):
         self.repeat_penalty = repeat_penalty
         self.embedding_model = embedding_model
         self.code_model = code_model
+        self.vision_model = vision_model
         self.auto_route = auto_route
 
     @property
@@ -174,6 +176,7 @@ class LocalAIBackend(Backend):
         return False
 
     def execute(self, prompt: str, mode: Mode, project_path: Path) -> str:
+        t_start = time.perf_counter()
         system = self._system_prompt(mode, project_path)
         selected_model = self._select_model(prompt)
         payload: dict = {
@@ -186,6 +189,7 @@ class LocalAIBackend(Backend):
             **self._sampling_params(),
         }
         headers = self._headers()
+        t_prep = time.perf_counter()
 
         last_error: Optional[str] = None
         response = None
@@ -235,12 +239,24 @@ class LocalAIBackend(Backend):
         except Exception:
             return response.text
 
+        t_response = time.perf_counter()
+
         # Capture usage metadata for observability
         usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        gen_ms = (t_response - t_prep) * 1000
         self.last_usage = {
             "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "prep_ms": round((t_prep - t_start) * 1000, 1),
+            "generation_ms": round(gen_ms, 1),
+            "total_ms": round((t_response - t_start) * 1000, 1),
+            "tokens_per_sec": (
+                round(completion_tokens / (gen_ms / 1000), 1)
+                if completion_tokens and gen_ms > 0 else None
+            ),
         }
 
         try:
@@ -305,6 +321,164 @@ class LocalAIBackend(Backend):
                 f"LocalAI timed out at {self.base_url}. "
                 "The model may still be loading. Check logs: make local-logs"
             )
+
+    def execute_vision(
+        self,
+        prompt: str,
+        image_data: str,
+        mode: Mode,
+        project_path: Path,
+        image_mime: str = "image/png",
+    ) -> str:
+        """Execute a vision request with an image.
+
+        Args:
+            prompt: Text prompt describing what to do with the image.
+            image_data: Base64-encoded image data.
+            image_mime: MIME type of the image (default: image/png).
+            mode: Permission mode.
+            project_path: Project directory for context.
+
+        Returns:
+            Model response text.
+        """
+        model = self.vision_model or self.model
+        system = self._system_prompt(mode, project_path)
+        data_url = f"data:{image_mime};base64,{image_data}"
+
+        payload: dict = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            "max_tokens": self.max_tokens,
+            **self._sampling_params(),
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=180.0,  # vision requests are slower
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                f"Vision request timed out at {self.base_url}. "
+                "The model may still be loading (vision models take longer)."
+            )
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI vision error ({resp.status_code}): {resp.text[:300]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "model": data.get("model", model) if isinstance(data, dict) else model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "vision": True,
+        }
+
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected vision response: {str(data)[:200]}")
+
+    def transcribe(
+        self,
+        audio_path: Path,
+        model: str = "whisper-1",
+        language: str = "en",
+        response_format: str = "json",
+    ) -> dict:
+        """Transcribe an audio file using the whisper backend.
+
+        Args:
+            audio_path: Path to the audio file (wav, mp3, ogg, flac, etc.).
+            model: Whisper model name configured in LocalAI.
+            language: Language hint for transcription.
+            response_format: Output format (json, text, srt, vtt).
+
+        Returns:
+            Dict with 'text' key containing the transcription.
+        """
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        with open(audio_path, "rb") as f:
+            files = {"file": (audio_path.name, f, "audio/wav")}
+            data = {"model": model, "language": language, "response_format": response_format}
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/v1/audio/transcriptions",
+                    files=files,
+                    data=data,
+                    headers=self._headers(),
+                    timeout=120.0,
+                )
+            except httpx.ConnectError:
+                raise RuntimeError(self._connect_error_message())
+            except httpx.TimeoutException:
+                raise RuntimeError("Transcription timed out. Audio file may be too long.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Transcription error ({resp.status_code}): {resp.text[:300]}")
+
+        result = resp.json()
+        self.last_usage = {"model": model, "audio_file": audio_path.name, "transcription": True}
+        return result
+
+    def speak(
+        self,
+        text: str,
+        output_path: Path,
+        model: str = "piper-tts",
+    ) -> Path:
+        """Generate speech audio from text using the TTS backend.
+
+        Args:
+            text: Text to synthesize.
+            output_path: Path to write the WAV file.
+            model: TTS model name configured in LocalAI.
+
+        Returns:
+            Path to the generated audio file.
+        """
+        payload = {"model": model, "input": text}
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/tts",
+                json=payload,
+                headers=self._headers(),
+                timeout=60.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("TTS timed out. Text may be too long.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"TTS error ({resp.status_code}): {resp.text[:300]}")
+
+        # Check if we got audio (not JSON error)
+        content_type = resp.headers.get("content-type", "")
+        if "json" in content_type:
+            raise RuntimeError(f"TTS returned error: {resp.text[:300]}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(resp.content)
+        self.last_usage = {"model": model, "tts": True, "output_bytes": len(resp.content)}
+        return output_path
 
     def _connect_error_message(self) -> str:
         """Build a diagnostic message when LocalAI is unreachable."""

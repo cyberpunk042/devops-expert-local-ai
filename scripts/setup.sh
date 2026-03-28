@@ -326,6 +326,80 @@ if [[ -f "models/$CODE_GGUF" ]]; then
     fi
 fi
 
+# LLaVA vision model
+LLAVA_GGUF="llava-v1.6-vicuna-7b.Q4_K_M.gguf"
+LLAVA_MMPROJ="mmproj-llava-v1.6-vicuna-7b-f16.gguf"
+LLAVA_MODEL_URL="https://huggingface.co/cjpais/llava-v1.6-vicuna-7b-gguf/resolve/main/llava-v1.6-vicuna-7b.Q4_K_M.gguf"
+LLAVA_MMPROJ_URL="https://huggingface.co/cjpais/llava-v1.6-vicuna-7b-gguf/resolve/main/mmproj-model-f16.gguf"
+
+if [[ ! -f "models/$LLAVA_GGUF" ]]; then
+    log_step "Downloading LLaVA 1.6 Vicuna 7B Q4_K_M (~3.9GB)..."
+    wget -q --show-progress -O "models/$LLAVA_GGUF" "$LLAVA_MODEL_URL"
+    log_ok "Downloaded $LLAVA_GGUF"
+else
+    log_skip "models/$LLAVA_GGUF already exists"
+fi
+
+if [[ ! -f "models/$LLAVA_MMPROJ" ]]; then
+    log_step "Downloading LLaVA mmproj (CLIP projector, ~600MB)..."
+    wget -q --show-progress -O "models/$LLAVA_MMPROJ" "$LLAVA_MMPROJ_URL"
+    log_ok "Downloaded $LLAVA_MMPROJ"
+else
+    log_skip "models/$LLAVA_MMPROJ already exists"
+fi
+
+if [[ -f "models/$LLAVA_GGUF" && -f "models/$LLAVA_MMPROJ" ]]; then
+    if [[ ! -f "models/llava.yaml" ]]; then
+        log_step "Activating llava model config"
+        cp "config/llava.yaml.template" "models/llava.yaml"
+        log_ok "models/llava.yaml activated"
+    else
+        log_skip "models/llava.yaml already exists"
+    fi
+fi
+
+# ── Audio models (whisper STT + piper TTS) ────────────────────────────────────
+WHISPER_MODEL="ggml-base.bin"
+WHISPER_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+PIPER_VOICE="en_US-lessac-medium.onnx"
+PIPER_VOICE_JSON="en_US-lessac-medium.onnx.json"
+PIPER_VOICE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+PIPER_JSON_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+
+if [[ ! -f "models/$WHISPER_MODEL" ]]; then
+    log_step "Downloading Whisper base model (~142MB)..."
+    curl -L --progress-bar -C - -o "models/$WHISPER_MODEL" "$WHISPER_URL"
+    log_ok "Downloaded $WHISPER_MODEL"
+else
+    log_skip "models/$WHISPER_MODEL already exists"
+fi
+
+if [[ ! -f "models/$PIPER_VOICE" ]]; then
+    log_step "Downloading Piper TTS voice (~61MB)..."
+    curl -L --progress-bar -C - -o "models/$PIPER_VOICE" "$PIPER_VOICE_URL"
+    curl -L --progress-bar -C - -o "models/$PIPER_VOICE_JSON" "$PIPER_JSON_URL"
+    log_ok "Downloaded $PIPER_VOICE"
+else
+    log_skip "models/$PIPER_VOICE already exists"
+fi
+
+# Activate audio model configs
+if [[ -f "models/$WHISPER_MODEL" && ! -f "models/whisper-1.yaml" ]]; then
+    log_step "Activating whisper-1 model config"
+    cp "config/whisper-1.yaml.template" "models/whisper-1.yaml"
+    log_ok "models/whisper-1.yaml activated"
+elif [[ -f "models/whisper-1.yaml" ]]; then
+    log_skip "models/whisper-1.yaml already exists"
+fi
+
+if [[ -f "models/$PIPER_VOICE" && ! -f "models/piper-tts.yaml" ]]; then
+    log_step "Activating piper-tts model config"
+    cp "config/piper-tts.yaml.template" "models/piper-tts.yaml"
+    log_ok "models/piper-tts.yaml activated"
+elif [[ -f "models/piper-tts.yaml" ]]; then
+    log_skip "models/piper-tts.yaml already exists"
+fi
+
 # =============================================================================
 # SECTION 6 — Sync config/default.yaml model name
 # =============================================================================
@@ -383,13 +457,23 @@ fi
 # =============================================================================
 log_head "LocalAI container"
 
-# Ensure backend is extracted before building the image
-if [[ ! -f "$REPO_ROOT/backends/cuda12-llama-cpp/run.sh" ]]; then
-    log_step "Extracting CUDA backend from quay.io (first time only)..."
-    bash "$REPO_ROOT/scripts/extract-backend.sh"
+# Ensure all backends are extracted before building the image
+# extract-backend.sh handles all three: cuda12-llama-cpp, whisper, piper
+BACKENDS_NEEDED=0
+for backend_dir in cuda12-llama-cpp whisper piper; do
+    [[ ! -d "$REPO_ROOT/backends/$backend_dir" ]] && BACKENDS_NEEDED=1
+done
+
+if [[ "$BACKENDS_NEEDED" -eq 1 || "$FORCE" -eq 1 ]]; then
+    log_step "Extracting backends from quay.io OCI images..."
+    if [[ "$FORCE" -eq 1 ]]; then
+        bash "$REPO_ROOT/scripts/extract-backend.sh" --force
+    else
+        bash "$REPO_ROOT/scripts/extract-backend.sh"
+    fi
     STEPS_DONE+=("backend-extract")
 else
-    log_skip "Backend already extracted at backends/cuda12-llama-cpp/"
+    log_skip "All backends already extracted (cuda12-llama-cpp, whisper, piper)"
 fi
 
 # Check if image already exists

@@ -2,6 +2,13 @@
 # To upgrade: change the version tag here, then run: make setup-force
 FROM localai/localai:v4.0.0-gpu-nvidia-cuda-12
 
-# Backend extracted from quay.io OCI image via scripts/extract-backend.sh.
-# Run `make extract-backend` if backends/cuda12-llama-cpp/ does not exist.
-COPY backends/cuda12-llama-cpp /backends/cuda12-llama-cpp
+# Backends extracted from quay.io OCI images via scripts/extract-backend.sh.
+# Staged to /aicp-backends/ at build time, then copied into the /backends
+# volume at runtime by entrypoint.sh (the base image declares /backends
+# as a VOLUME, so build-time COPY into /backends/ is overridden at runtime).
+COPY backends/cuda12-llama-cpp /aicp-backends/cuda12-llama-cpp
+COPY backends/whisper /aicp-backends/whisper
+COPY backends/piper /aicp-backends/piper
+
+COPY scripts/entrypoint.sh /aicp-entrypoint.sh
+ENTRYPOINT ["/aicp-entrypoint.sh"]

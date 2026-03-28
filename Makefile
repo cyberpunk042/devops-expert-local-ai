@@ -3,7 +3,7 @@
         test test-all check lint format type-check auto-config benchmark update \
         model-download models-list model-list-remote agent-up agent-down \
         install-aliases install-service uninstall-service db-rebuild \
-        install-nvidia-toolkit extract-backend extract-backend-force help
+        install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
 
 SETUP_SCRIPT := scripts/setup.sh
 PORT         ?= 8090
@@ -25,8 +25,9 @@ help:
 	@echo "  make install-nvidia-toolkit  Install NVIDIA Container Toolkit (GPU → Docker)"
 	@echo ""
 	@echo "LOCALAI"
-	@echo "  make extract-backend         Extract CUDA backend from quay.io (idempotent)"
-	@echo "  make extract-backend-force   Re-extract backend even if it exists"
+	@echo "  make extract-backend         Extract all backends from quay.io (idempotent)"
+	@echo "  make extract-backend-force   Re-extract all backends"
+	@echo "  make extract-backend-only BACKEND=whisper  Extract one backend"
 	@echo "  make local-up                Start LocalAI container"
 	@echo "  make local-down              Stop LocalAI container"
 	@echo "  make local-status            Container + API status"
@@ -94,6 +95,10 @@ extract-backend:
 
 extract-backend-force:
 	@bash scripts/extract-backend.sh --force
+
+extract-backend-only:
+	@test -n "$(BACKEND)" || (echo "ERROR: set BACKEND=<cuda12-llama-cpp|whisper|piper>"; exit 1)
+	@bash scripts/extract-backend.sh --only $(BACKEND)
 
 # =============================================================================
 # LocalAI management (day-to-day)

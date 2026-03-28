@@ -12,6 +12,10 @@ backends:
     # Multi-model: specialized models for different task types
     embedding_model: "nomic-embed"
     code_model: "codellama"
+    vision_model: "llava"
+    # Audio models: whisper for STT, piper for TTS
+    whisper_model: "whisper-1"
+    tts_model: "piper-tts"
     # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
     # When false (default), always uses the primary model unless explicitly overridden.
     auto_route: false
@@ -28,6 +32,18 @@ backends:
     max_turns: 10
     timeout: 300
     # max_budget_usd: 1.00  # uncomment to set a cost cap
+
+rag:
+  enabled: false
+  # SQLite database path for vector store (relative to project or absolute)
+  db_path: ".aicp/rag.db"
+  store_name: "default"
+  chunk_size: 512
+  chunk_overlap: 64
+  top_k: 5
+  threshold: 0.3
+  # Max characters of retrieved context injected into prompts
+  max_context_chars: 3000
 
 guardrails:
   forbidden_patterns:

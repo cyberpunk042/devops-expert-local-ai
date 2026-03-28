@@ -152,6 +152,7 @@ def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = N
             repeat_penalty=local_cfg.get("repeat_penalty"),
             embedding_model=local_cfg.get("embedding_model", ""),
             code_model=local_cfg.get("code_model", ""),
+            vision_model=local_cfg.get("vision_model", ""),
             auto_route=local_cfg.get("auto_route", False),
         ),
         "claude": ClaudeCodeBackend(

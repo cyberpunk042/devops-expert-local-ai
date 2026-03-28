@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from aicp.core.metrics import aggregate
+from aicp.core.observability import scrape_prometheus
 
 
 def run_dashboard(local_url: str) -> int:
@@ -142,16 +143,22 @@ def _localai_panel(local_url: str) -> Panel:
         table.add_row("Requests today", str(today_req))
         table.add_row("Requests total", str(total_req))
 
-        # /system endpoint is optional — not present in all LocalAI versions
-        try:
-            sys_resp = httpx.get(f"{local_url}/system", timeout=2.0)
-            if sys_resp.status_code == 200:
-                system = sys_resp.json()
-                backends = system.get("backends", [])
-                if backends:
-                    table.add_row("Backends", ", ".join(backends))
-        except Exception:
-            pass  # /system not available — skip gracefully
+        # Live Prometheus metrics from LocalAI /metrics
+        prom = scrape_prometheus(local_url, timeout=2.0)
+        if prom.get("available"):
+            goroutines = prom.get("go_goroutines")
+            alloc = prom.get("go_memstats_alloc_bytes")
+            if goroutines is not None:
+                table.add_row("Goroutines", str(int(goroutines)))
+            if alloc is not None:
+                table.add_row("Memory", f"{alloc / (1024*1024):.1f} MiB")
+            api = prom.get("api_calls", {})
+            for method, stats in api.items():
+                if stats.get("count", 0) > 0:
+                    table.add_row(
+                        f"API {method}",
+                        f"{stats['count']} calls, avg {stats['avg_ms']:.0f}ms",
+                    )
 
         return Panel(table, title="LocalAI")
 

@@ -1,24 +1,34 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Extract the CUDA 12 llama-cpp backend from the upstream OCI image.
+# Extract LocalAI backends from upstream OCI images.
 #
-# This is the proven method to get a working GPU backend without the bloated
-# AIO image. The backend is extracted once and baked into the Docker image
-# via COPY in Dockerfile.localai.
+# Backends are extracted once and staged in backends/ for the Docker build.
+# The entrypoint.sh copies them into the /backends volume at container start
+# (the base image declares /backends as a Docker volume).
 #
 # Usage:
-#   bash scripts/extract-backend.sh            # idempotent — skips if exists
+#   bash scripts/extract-backend.sh            # extract all (idempotent)
 #   bash scripts/extract-backend.sh --force    # re-extract even if exists
+#   bash scripts/extract-backend.sh --only whisper  # extract one backend
 # =============================================================================
 set -euo pipefail
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-BACKEND_IMAGE="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-llama-cpp"
-CONTAINER_NAME="aicp-backend-extract"
-TMP_DIR="/tmp/aicp-backend-raw"
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_DIR="$REPO_ROOT/backends/cuda12-llama-cpp"
+
+# ── Backend catalog ──────────────────────────────────────────────────────────
+# Each backend: IMAGE_TAG → local directory name
+declare -A BACKEND_IMAGES=(
+    [cuda12-llama-cpp]="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-llama-cpp"
+    [whisper]="quay.io/go-skynet/local-ai-backends:latest-gpu-nvidia-cuda-12-whisper"
+    [piper]="quay.io/go-skynet/local-ai-backends:latest-piper"
+)
+
+# Files that indicate a backend is already extracted (idempotency check)
+declare -A BACKEND_MARKER=(
+    [cuda12-llama-cpp]="llama-cpp-grpc"
+    [whisper]="whisper"
+    [piper]="piper"
+)
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -36,58 +46,77 @@ die()       { log_fail "$*"; exit 1; }
 
 # ── Args ──────────────────────────────────────────────────────────────────────
 FORCE=0
+ONLY=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --force) FORCE=1; shift ;;
+        --only)  ONLY="$2"; shift 2 ;;
         *)       die "Unknown argument: $1" ;;
     esac
 done
 
-# ── Idempotency check ────────────────────────────────────────────────────────
-if [[ -f "$BACKEND_DIR/run.sh" && -f "$BACKEND_DIR/llama-cpp-grpc" && "$FORCE" -eq 0 ]]; then
-    log_skip "Backend already exists at $BACKEND_DIR (use --force to re-extract)"
-    exit 0
-fi
-
-# ── Prerequisites ─────────────────────────────────────────────────────────────
 command -v docker >/dev/null 2>&1 || die "docker is required but not found"
 
-# ── Cleanup from previous failed runs ────────────────────────────────────────
-docker rm "$CONTAINER_NAME" 2>/dev/null || true
-rm -rf "$TMP_DIR"
+# ── Extract a single backend ─────────────────────────────────────────────────
+extract_backend() {
+    local name="$1"
+    local image="${BACKEND_IMAGES[$name]}"
+    local marker="${BACKEND_MARKER[$name]}"
+    local backend_dir="$REPO_ROOT/backends/$name"
+    local container_name="aicp-extract-$name"
+    local tmp_dir="/tmp/aicp-backend-$name"
 
-# ── Step 1: Pull the backend image ───────────────────────────────────────────
-log_step "Pulling backend image: $BACKEND_IMAGE"
-docker pull "$BACKEND_IMAGE"
+    # Idempotency check
+    if [[ -f "$backend_dir/$marker" && "$FORCE" -eq 0 ]]; then
+        log_skip "backends/$name/ already extracted (use --force to re-extract)"
+        return 0
+    fi
 
-# ── Step 2: Create temporary container and extract filesystem ─────────────────
-log_step "Extracting backend from OCI image"
-docker create --name "$CONTAINER_NAME" --entrypoint /bin/true "$BACKEND_IMAGE" >/dev/null
-docker cp "$CONTAINER_NAME":/ "$TMP_DIR"
+    log_step "Pulling $name backend: $image"
+    docker pull "$image"
 
-# ── Step 3: Copy backend files to target directory ────────────────────────────
-log_step "Installing backend to $BACKEND_DIR"
-rm -rf "$BACKEND_DIR"
-mkdir -p "$BACKEND_DIR/lib"
+    log_step "Extracting $name backend"
+    docker rm "$container_name" 2>/dev/null || true
+    rm -rf "$tmp_dir"
+    docker create --name "$container_name" --entrypoint /bin/true "$image" >/dev/null
+    docker cp "$container_name":/ "$tmp_dir"
 
-# All binaries (avx, avx2, avx512, fallback, grpc, rpc-server) + run.sh
-for f in "$TMP_DIR"/llama-cpp-* "$TMP_DIR"/run.sh; do
-    [ -f "$f" ] && cp "$f" "$BACKEND_DIR/"
-done
+    # Install to backends directory
+    rm -rf "$backend_dir"
+    mkdir -p "$backend_dir"
 
-# CUDA runtime libraries
-cp -r "$TMP_DIR/lib/"*         "$BACKEND_DIR/lib/"
+    # Copy everything except Docker metadata dirs
+    for item in "$tmp_dir"/*; do
+        base=$(basename "$item")
+        case "$base" in
+            dev|etc|proc|sys|.dockerenv) continue ;;
+            *) cp -r "$item" "$backend_dir/" ;;
+        esac
+    done
 
-# Make all binaries executable
-chmod +x "$BACKEND_DIR"/llama-cpp-* "$BACKEND_DIR/run.sh"
+    # Make binaries executable
+    find "$backend_dir" -maxdepth 1 -type f -name "*.sh" -exec chmod +x {} +
+    find "$backend_dir" -maxdepth 1 -type f ! -name "*.so" ! -name "*.so.*" ! -name "*.json" \
+        ! -name "*.yaml" ! -name "*.txt" -exec chmod +x {} + 2>/dev/null || true
 
-# ── Step 4: Cleanup ──────────────────────────────────────────────────────────
-log_step "Cleaning up"
-docker rm "$CONTAINER_NAME" >/dev/null
-rm -rf "$TMP_DIR"
+    # Cleanup
+    docker rm "$container_name" >/dev/null
+    rm -rf "$tmp_dir"
 
-# ── Done ──────────────────────────────────────────────────────────────────────
-FILE_COUNT=$(find "$BACKEND_DIR" -type f | wc -l)
-DIR_SIZE=$(du -sh "$BACKEND_DIR" | cut -f1)
-log_ok "Backend extracted: $FILE_COUNT files, $DIR_SIZE total"
-log_ok "Ready for: docker compose build"
+    local file_count dir_size
+    file_count=$(find "$backend_dir" -type f | wc -l)
+    dir_size=$(du -sh "$backend_dir" | cut -f1)
+    log_ok "backends/$name/ extracted: $file_count files, $dir_size"
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+if [[ -n "$ONLY" ]]; then
+    [[ -v BACKEND_IMAGES[$ONLY] ]] || die "Unknown backend: $ONLY. Available: ${!BACKEND_IMAGES[*]}"
+    extract_backend "$ONLY"
+else
+    for name in cuda12-llama-cpp whisper piper; do
+        extract_backend "$name"
+    done
+fi
+
+log_ok "All backends ready for: docker compose build"

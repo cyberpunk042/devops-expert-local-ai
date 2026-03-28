@@ -117,3 +117,21 @@ def get_backend_config(config: Dict[str, Any], backend_name: str) -> Dict[str, A
     if backend_name not in backends:
         raise ValueError(f"No config for backend: {backend_name}")
     return backends[backend_name]
+
+
+def get_rag_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract RAG configuration with defaults."""
+    defaults = {
+        "enabled": False,
+        "db_path": ".aicp/rag.db",
+        "store_name": "default",
+        "chunk_size": 512,
+        "chunk_overlap": 64,
+        "top_k": 5,
+        "threshold": 0.3,
+        "max_context_chars": 3000,
+    }
+    rag = config.get("rag", {})
+    if not isinstance(rag, dict):
+        return defaults
+    return {**defaults, **rag}
