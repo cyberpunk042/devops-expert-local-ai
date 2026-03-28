@@ -286,12 +286,18 @@ def _handle_slash(
             print("[error] Usage: /complete <text to continue>", file=sys.stderr)
             return None
         try:
-            result = backend.complete(arg)
-            print(f"\nai> {result}\n")
+            # Stream by default in interactive mode
+            print("\nai> ", end="", flush=True)
+            full = []
+            for chunk in backend.complete_stream(arg):
+                print(chunk, end="", flush=True)
+                full.append(chunk)
+            print("\n")
+            result = "".join(full)
             messages.append({"role": "user", "content": f"[complete] {arg}"})
             messages.append({"role": "assistant", "content": result})
         except Exception as e:
-            print(f"[error] Completion failed: {e}", file=sys.stderr)
+            print(f"\n[error] Completion failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/edit":

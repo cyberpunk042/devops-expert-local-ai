@@ -781,6 +781,97 @@ class LocalAIBackend(Backend):
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
 
+    def complete_stream(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list[str]] = None,
+    ) -> Iterator[str]:
+        """Streaming raw text completion via /v1/completions.
+
+        Yields text chunks as they arrive. Usage::
+
+            for chunk in backend.complete_stream("Once upon a time"):
+                print(chunk, end="", flush=True)
+        """
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "prompt": prompt,
+            "max_tokens": max_tokens or self.max_tokens,
+            "stream": True,
+            **self._sampling_params(),
+        }
+        if stop:
+            payload["stop"] = stop
+
+        try:
+            with httpx.stream(
+                "POST",
+                f"{self.base_url}/v1/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code >= 400:
+                    raise RuntimeError(
+                        f"Completion error ({resp.status_code}): {resp.read().decode()[:200]}"
+                    )
+                for line in resp.iter_lines():
+                    line = line.strip()
+                    if not line or line == "data: [DONE]":
+                        continue
+                    if line.startswith("data: "):
+                        try:
+                            data = json.loads(line[6:])
+                            text = data["choices"][0].get("text", "")
+                            if text:
+                                yield text
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Streaming completion timed out.")
+
+    def tokenize_batch(self, texts: list[str], model: Optional[str] = None) -> list[dict]:
+        """Tokenize multiple texts in one batch.
+
+        Args:
+            texts:  List of strings to tokenize.
+            model:  Model to use (defaults to self.model).
+
+        Returns:
+            List of {tokens: [...], count: N} dicts, one per input text.
+        """
+        results = []
+        for text in texts:
+            results.append(self.tokenize(text, model=model))
+        return results
+
+    # ── Mode-Aware Sampling ──────────────────────────────────────────────────
+
+    # Default temperature overrides per permission mode.
+    # Think = more focused, Edit = moderate creativity, Act = deterministic.
+    _MODE_SAMPLING: dict = {
+        "think": {"temperature": 0.7},
+        "edit":  {"temperature": 0.4},
+        "act":   {"temperature": 0.1},
+    }
+
+    def sampling_params_for_mode(self, mode: Mode) -> dict:
+        """Return sampling params with mode-aware defaults applied.
+
+        Explicit config values (self.temperature etc.) always take precedence.
+        Mode defaults only fill in when nothing is explicitly set.
+        """
+        base = self._sampling_params()
+        mode_defaults = self._MODE_SAMPLING.get(mode.value, {})
+        # Only apply mode defaults for keys NOT already set explicitly
+        for key, value in mode_defaults.items():
+            if key not in base:
+                base[key] = value
+        return base
+
     def _connect_error_message(self) -> str:
         """Build a diagnostic message when LocalAI is unreachable."""
         # Try to give a more specific hint by checking Docker state

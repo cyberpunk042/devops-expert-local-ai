@@ -2025,9 +2025,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if getattr(args, "complete", False) and actual_backend == "local" and args.prompt:
         backend = backends["local"]
         try:
-            with spinner("Completing text..."):
-                result = backend.complete(args.prompt)
-            print_response(result)
+            if getattr(args, "stream", False):
+                for chunk in backend.complete_stream(args.prompt):
+                    sys.stdout.write(chunk)
+                    sys.stdout.flush()
+                sys.stdout.write("\n")
+            else:
+                with spinner("Completing text..."):
+                    result = backend.complete(args.prompt)
+                print_response(result)
             return 0
         except Exception as e:
             print_error(str(e))

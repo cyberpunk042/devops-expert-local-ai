@@ -291,7 +291,7 @@ class TestInteractiveSoundComplete:
         from aicp.cli.interactive import _handle_slash
 
         backend = MagicMock()
-        backend.complete.return_value = "world!"
+        backend.complete_stream.return_value = iter(["world!"])
 
         result = _handle_slash(
             "/complete Hello world",
@@ -299,7 +299,7 @@ class TestInteractiveSoundComplete:
         )
 
         assert result is None
-        backend.complete.assert_called_once_with("Hello world")
+        backend.complete_stream.assert_called_once()
         output = capsys.readouterr().out
         assert "world!" in output
 
@@ -327,7 +327,7 @@ class TestInteractiveSoundComplete:
         from aicp.cli.interactive import _handle_slash
 
         backend = MagicMock()
-        backend.complete.side_effect = RuntimeError("connection refused")
+        backend.complete_stream.side_effect = RuntimeError("connection refused")
 
         _handle_slash(
             "/complete test text",

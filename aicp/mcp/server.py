@@ -590,6 +590,22 @@ def aicp_model_unload(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_tokenize_batch(texts: str) -> str:
+    """Tokenize multiple texts at once. Provide texts separated by newlines.
+
+    Args:
+        texts: Newline-separated texts to tokenize.
+
+    Returns:
+        JSON array of {tokens: [...], count: N} for each input text.
+    """
+    backend = _get_backend()
+    text_list = [t for t in texts.split("\n") if t.strip()]
+    results = backend.tokenize_batch(text_list)
+    return json.dumps(results)
+
+
+@mcp.tool()
 def aicp_health() -> str:
     """Check LocalAI health and readiness status.
 
