@@ -3,7 +3,7 @@
         test test-all check lint format type-check auto-config benchmark update \
         model-download models-list model-list-remote agent-up agent-down \
         install-aliases install-service uninstall-service db-rebuild \
-        install-nvidia-toolkit help
+        install-nvidia-toolkit extract-backend extract-backend-force help
 
 SETUP_SCRIPT := scripts/setup.sh
 PORT         ?= 8090
@@ -25,6 +25,8 @@ help:
 	@echo "  make install-nvidia-toolkit  Install NVIDIA Container Toolkit (GPU → Docker)"
 	@echo ""
 	@echo "LOCALAI"
+	@echo "  make extract-backend         Extract CUDA backend from quay.io (idempotent)"
+	@echo "  make extract-backend-force   Re-extract backend even if it exists"
 	@echo "  make local-up                Start LocalAI container"
 	@echo "  make local-down              Stop LocalAI container"
 	@echo "  make local-status            Container + API status"
@@ -82,6 +84,16 @@ check-prereqs:
 
 install-nvidia-toolkit:
 	@bash scripts/install-nvidia-toolkit.sh
+
+# =============================================================================
+# Backend extraction (run before first docker build)
+# =============================================================================
+
+extract-backend:
+	@bash scripts/extract-backend.sh
+
+extract-backend-force:
+	@bash scripts/extract-backend.sh --force
 
 # =============================================================================
 # LocalAI management (day-to-day)

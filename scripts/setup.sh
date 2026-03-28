@@ -343,6 +343,15 @@ fi
 # =============================================================================
 log_head "LocalAI container"
 
+# Ensure backend is extracted before building the image
+if [[ ! -f "$REPO_ROOT/backends/cuda12-llama-cpp/run.sh" ]]; then
+    log_step "Extracting CUDA backend from quay.io (first time only)..."
+    bash "$REPO_ROOT/scripts/extract-backend.sh"
+    STEPS_DONE+=("backend-extract")
+else
+    log_skip "Backend already extracted at backends/cuda12-llama-cpp/"
+fi
+
 # Check if image already exists
 IMAGE_EXISTS=0
 docker image inspect aicp-localai:latest >/dev/null 2>&1 && IMAGE_EXISTS=1
