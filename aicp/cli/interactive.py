@@ -46,6 +46,8 @@ Slash commands:
   /embed-image <path>       Generate embedding for an image (CLIP-style)
   /lora load <model> <path> Load a LoRA adapter onto a model
   /lora list                List models with LoRA adapters
+  /config [model]           Show model config (context_size, gpu_layers, …)
+  /config set <key> <value> Update a model parameter at runtime
   /help                     Show this help
   /exit                     Quit
 """
@@ -574,6 +576,63 @@ def _handle_slash(
             return None
 
         print("[error] Usage: /lora load <model> <adapter_path> | /lora list", file=sys.stderr)
+        return None
+
+    if cmd == "/config":
+        if not backend:
+            print("[error] Config commands require a LocalAI backend.", file=sys.stderr)
+            return None
+        parts = arg.split(None, 2) if arg else []
+
+        if parts and parts[0] == "set":
+            if len(parts) < 3:
+                print("[error] Usage: /config set <key> <value>", file=sys.stderr)
+                print("  Keys: context_size, gpu_layers, threads, batch_size, f16, mmap", file=sys.stderr)
+                return None
+            key, raw_val = parts[1], parts[2]
+            valid_keys = {"context_size", "gpu_layers", "threads", "batch_size", "f16", "mmap"}
+            if key not in valid_keys:
+                print(f"[error] Unknown config key '{key}'. Valid: {', '.join(sorted(valid_keys))}", file=sys.stderr)
+                return None
+            # Parse value
+            if key in ("f16", "mmap"):
+                val = raw_val.lower() in ("true", "1", "yes")
+            else:
+                try:
+                    val = int(raw_val)
+                except ValueError:
+                    print(f"[error] '{key}' must be an integer.", file=sys.stderr)
+                    return None
+            try:
+                result = backend.model_config_update(**{key: val})
+                print(f"  Config updated: {key} = {val}")
+            except Exception as e:
+                print(f"[error] Config update failed: {e}", file=sys.stderr)
+            return None
+
+        # /config [model_name] — read config
+        model_name = parts[0] if parts else None
+        try:
+            cfg = backend.model_config(model_name)
+            # Display key fields
+            display_keys = [
+                "context_size", "gpu_layers", "threads", "batch_size",
+                "f16", "mmap", "backend", "name",
+            ]
+            print("  Model configuration:")
+            for k in display_keys:
+                if k in cfg:
+                    print(f"    {k}: {cfg[k]}")
+            # Show any extra keys not in the display list
+            extra = {k: v for k, v in cfg.items() if k not in display_keys and not k.startswith("_")}
+            if extra:
+                for k, v in sorted(extra.items()):
+                    val_str = str(v)
+                    if len(val_str) > 80:
+                        val_str = val_str[:77] + "..."
+                    print(f"    {k}: {val_str}")
+        except Exception as e:
+            print(f"[error] Config read failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

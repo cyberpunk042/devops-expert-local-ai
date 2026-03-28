@@ -2221,6 +2221,98 @@ class LocalAIBackend(Backend):
             raise RuntimeError(f"LoRA load error ({resp.status_code}): {resp.text[:200]}")
         return resp.json()
 
+    # ── Model Configuration API ────────────────────────────────────────────
+
+    def model_config(self, model_name: Optional[str] = None) -> dict:
+        """Read the current runtime configuration for a model.
+
+        Queries /models/<name> for context_size, gpu_layers, threads, etc.
+        Defaults to self.model if no name given.
+
+        Args:
+            model_name: Model to query (default: self.model).
+
+        Returns:
+            Dict with the model's configuration.
+        """
+        name = model_name or self.model
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/models/{name}",
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code == 404:
+            raise RuntimeError(f"Model '{name}' not found.")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Model config error ({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
+    def model_config_update(
+        self,
+        model_name: Optional[str] = None,
+        *,
+        context_size: Optional[int] = None,
+        gpu_layers: Optional[int] = None,
+        threads: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        f16: Optional[bool] = None,
+        mmap: Optional[bool] = None,
+    ) -> dict:
+        """Update runtime model parameters without restarting LocalAI.
+
+        Uses POST /models/apply to change context_size, gpu_layers, threads, etc.
+        Only non-None parameters are sent to the server.
+
+        Args:
+            model_name:   Model to update (default: self.model).
+            context_size: Context window size (e.g. 2048, 4096, 8192).
+            gpu_layers:   Number of layers to offload to GPU (-1 = all).
+            threads:      Number of CPU threads for inference.
+            batch_size:   Batch size for prompt processing.
+            f16:          Use float16 memory.
+            mmap:         Memory-map the model file.
+
+        Returns:
+            Server response dict.
+        """
+        name = model_name or self.model
+        params: dict = {"id": name}
+
+        if context_size is not None:
+            params["context_size"] = context_size
+        if gpu_layers is not None:
+            params["gpu_layers"] = gpu_layers
+        if threads is not None:
+            params["threads"] = threads
+        if batch_size is not None:
+            params["batch_size"] = batch_size
+        if f16 is not None:
+            params["f16"] = f16
+        if mmap is not None:
+            params["mmap"] = mmap
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/models/apply",
+                json=params,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Model config update timed out.")
+
+        if resp.status_code == 404:
+            raise RuntimeError("Model configuration endpoint not available on this LocalAI version.")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Model config update error ({resp.status_code}): {resp.text[:200]}")
+        return resp.json()
+
     def lora_list(self, model_name: Optional[str] = None) -> list[dict]:
         """List models that have LoRA adapters configured.
 

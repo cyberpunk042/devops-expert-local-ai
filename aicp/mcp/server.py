@@ -825,6 +825,72 @@ def aicp_model_delete(model_name: str) -> str:
     return f"Deleted: {model_name}" if success else f"Failed to delete: {model_name}"
 
 
+@mcp.tool()
+def aicp_model_config(model_name: str = "") -> str:
+    """Read runtime configuration for a model (context_size, gpu_layers, threads, etc.).
+
+    Shows the current settings the model is running with. Useful for checking
+    VRAM allocation before adjusting parameters.
+
+    Args:
+        model_name: Model to query (empty string = default model).
+
+    Returns:
+        JSON object with the model's configuration.
+    """
+    backend = _get_backend()
+    cfg = backend.model_config(model_name or None)
+    return json.dumps(cfg, indent=2)
+
+
+@mcp.tool()
+def aicp_model_config_update(
+    context_size: int = 0,
+    gpu_layers: int = -999,
+    threads: int = 0,
+    batch_size: int = 0,
+    f16: str = "",
+    mmap: str = "",
+    model_name: str = "",
+) -> str:
+    """Update model runtime parameters without restarting LocalAI.
+
+    Adjust context window, GPU offload, threads, etc. at runtime.
+    Critical for VRAM optimization on consumer GPUs.
+    Only non-default parameters are sent to the server.
+
+    Args:
+        context_size: Context window size (e.g. 2048, 4096). 0 = no change.
+        gpu_layers: GPU layers to offload (-1 = all). -999 = no change.
+        threads: CPU threads. 0 = no change.
+        batch_size: Batch size for prompt processing. 0 = no change.
+        f16: Use float16 ("true"/"false"). Empty = no change.
+        mmap: Memory-map model file ("true"/"false"). Empty = no change.
+        model_name: Model to update (empty = default model).
+
+    Returns:
+        Server response as JSON.
+    """
+    backend = _get_backend()
+    kwargs: dict = {}
+    if model_name:
+        kwargs["model_name"] = model_name
+    if context_size > 0:
+        kwargs["context_size"] = context_size
+    if gpu_layers != -999:
+        kwargs["gpu_layers"] = gpu_layers
+    if threads > 0:
+        kwargs["threads"] = threads
+    if batch_size > 0:
+        kwargs["batch_size"] = batch_size
+    if f16:
+        kwargs["f16"] = f16.lower() in ("true", "1", "yes")
+    if mmap:
+        kwargs["mmap"] = mmap.lower() in ("true", "1", "yes")
+    result = backend.model_config_update(**kwargs)
+    return json.dumps(result, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
