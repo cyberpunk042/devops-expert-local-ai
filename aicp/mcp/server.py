@@ -828,6 +828,36 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_warmup(model_name: str = "") -> str:
+    """Pre-load a model into VRAM to avoid cold-start latency.
+
+    Sends a minimal inference to trigger model loading. On SINGLE_ACTIVE_BACKEND,
+    this will swap the currently loaded model for the requested one.
+
+    Args:
+        model_name: Model to warm up (empty = default model).
+
+    Returns:
+        JSON with loaded status, model name, and duration.
+    """
+    backend = _get_backend()
+    result = backend.model_warmup(model_name or None)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_models_loaded() -> str:
+    """List all currently loaded model IDs in LocalAI.
+
+    Returns:
+        JSON array of loaded model ID strings.
+    """
+    backend = _get_backend()
+    models = backend.models_loaded()
+    return json.dumps(models, indent=2)
+
+
+@mcp.tool()
 def aicp_embed_typed(text: str, embed_type: str = "query") -> str:
     """Generate a typed embedding (query vs document) for asymmetric search.
 

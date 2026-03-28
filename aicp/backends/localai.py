@@ -2664,6 +2664,123 @@ class LocalAIBackend(Backend):
             raise RuntimeError(f"LoRA load error ({resp.status_code}): {resp.text[:200]}")
         return resp.json()
 
+    # ── Model Warm-up & Preloading ─────────────────────────────────────────
+
+    def model_loaded(self, model_name: Optional[str] = None) -> bool:
+        """Check if a model is currently loaded in LocalAI.
+
+        Queries /v1/models and checks if the model appears in the list.
+
+        Args:
+            model_name: Model to check (default: self.model).
+
+        Returns:
+            True if the model is loaded and ready.
+        """
+        name = model_name or self.model
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(),
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                ids = [m.get("id", "") for m in resp.json().get("data", [])]
+                return name in ids
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+        return False
+
+    def model_warmup(
+        self,
+        model_name: Optional[str] = None,
+        timeout: float = 120.0,
+    ) -> dict:
+        """Warm up a model by triggering a minimal inference request.
+
+        Sends a tiny prompt to force the model to load into VRAM.
+        On SINGLE_ACTIVE_BACKEND=true, this will unload the current model
+        and load the requested one.
+
+        Args:
+            model_name: Model to warm up (default: self.model).
+            timeout:    Maximum seconds to wait for the model to load.
+
+        Returns:
+            Dict with loaded (bool), model, duration_ms, and tokens_generated.
+        """
+        name = model_name or self.model
+        t_start = time.perf_counter()
+
+        # Check if already loaded
+        if self.model_loaded(name):
+            return {
+                "loaded": True,
+                "model": name,
+                "duration_ms": 0,
+                "already_loaded": True,
+            }
+
+        # Trigger load with a minimal inference
+        payload: dict = {
+            "model": name,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "temperature": 0,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=timeout,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            return {
+                "loaded": False,
+                "model": name,
+                "duration_ms": round((time.perf_counter() - t_start) * 1000),
+                "error": f"Timed out after {timeout}s",
+            }
+
+        duration_ms = round((time.perf_counter() - t_start) * 1000)
+
+        if resp.status_code >= 400:
+            return {
+                "loaded": False,
+                "model": name,
+                "duration_ms": duration_ms,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+
+        return {
+            "loaded": True,
+            "model": name,
+            "duration_ms": duration_ms,
+            "already_loaded": False,
+        }
+
+    def models_loaded(self) -> list[str]:
+        """List all currently loaded model IDs.
+
+        Returns:
+            List of model ID strings from /v1/models.
+        """
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(),
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                return [m.get("id", "") for m in resp.json().get("data", [])]
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+        return []
+
     # ── Model Configuration API ────────────────────────────────────────────
 
     def model_config(self, model_name: Optional[str] = None) -> dict:

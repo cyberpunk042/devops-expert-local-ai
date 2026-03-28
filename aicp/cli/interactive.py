@@ -54,6 +54,8 @@ Slash commands:
   /bestof [N] <prompt>      Generate N completions, pick the best (default: 3)
   /chat-image <path> <prompt> Multi-turn visual chat (image added to history)
   /embed-typed <q|d> <text> Typed embedding (query vs document) for asymmetric search
+  /warmup [model]           Pre-load a model into VRAM (avoid cold-start latency)
+  /loaded                   List currently loaded models
   /help                     Show this help
   /exit                     Quit
 """
@@ -795,6 +797,40 @@ def _handle_slash(
             print(f"  First 5: {vec[:5]}")
         except Exception as e:
             print(f"[error] Typed embedding failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/warmup":
+        if not backend:
+            print("[error] Warmup requires a LocalAI backend.", file=sys.stderr)
+            return None
+        model_name = arg.strip() if arg else None
+        try:
+            print(f"  Warming up {model_name or backend.model}...")
+            result = backend.model_warmup(model_name)
+            if result.get("already_loaded"):
+                print(f"  Already loaded: {result['model']}")
+            elif result.get("loaded"):
+                print(f"  Loaded: {result['model']} ({result['duration_ms']}ms)")
+            else:
+                print(f"  Failed to load: {result.get('error', 'unknown')}", file=sys.stderr)
+        except Exception as e:
+            print(f"[error] Warmup failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/loaded":
+        if not backend:
+            print("[error] Loaded command requires a LocalAI backend.", file=sys.stderr)
+            return None
+        try:
+            models = backend.models_loaded()
+            if models:
+                print("  Loaded models:")
+                for m in models:
+                    print(f"    - {m}")
+            else:
+                print("  No models currently loaded.")
+        except Exception as e:
+            print(f"[error] Failed to list loaded models: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
