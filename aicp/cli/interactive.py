@@ -32,6 +32,8 @@ Slash commands:
   /tools <prompt>           Agentic mode: LLM can call tools (file, grep, KB, system)
   /store set <text>         Store text in working memory (ephemeral)
   /store find <query>       Search working memory by similarity
+  /sound <prompt>           Generate sound/music from text description
+  /complete <text>          Raw text completion (no chat template)
   /help                     Show this help
   /exit                     Quit
 """
@@ -257,6 +259,35 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": result})
         except Exception as e:
             print(f"[error] Tool-use failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/sound":
+        if not arg:
+            print("[error] Usage: /sound <description>", file=sys.stderr)
+            print("  Example: /sound a gentle piano melody with rain", file=sys.stderr)
+            return None
+        try:
+            sound_model = config.get("backends", {}).get("local", {}).get("sound_model", "transformers-musicgen")
+            out = Path("/tmp/aicp_interactive_sound.wav")
+            backend.generate_sound(arg, out, model=sound_model)
+            print(f"  [sound saved to {out}]")
+            messages.append({"role": "user", "content": f"[Generated sound: {arg}]"})
+            messages.append({"role": "assistant", "content": f"Sound generated and saved to {out}"})
+        except Exception as e:
+            print(f"[error] Sound generation failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/complete":
+        if not arg:
+            print("[error] Usage: /complete <text to continue>", file=sys.stderr)
+            return None
+        try:
+            result = backend.complete(arg)
+            print(f"\nai> {result}\n")
+            messages.append({"role": "user", "content": f"[complete] {arg}"})
+            messages.append({"role": "assistant", "content": result})
+        except Exception as e:
+            print(f"[error] Completion failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

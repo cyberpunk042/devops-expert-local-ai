@@ -649,6 +649,111 @@ class LocalAIBackend(Backend):
         }
         return output_path
 
+    def generate_sound(
+        self,
+        prompt: str,
+        output_path: Path,
+        model: str = "transformers-musicgen",
+        duration: Optional[float] = None,
+    ) -> Path:
+        """Generate sound/music from a text description.
+
+        Uses LocalAI's /v1/sound-generation endpoint (ElevenLabs-compatible).
+
+        Args:
+            prompt:      Text description of the sound to generate.
+            output_path: Path to write the generated audio file.
+            model:       Sound generation model name.
+            duration:    Optional duration in seconds.
+
+        Returns:
+            Path to the generated audio file.
+        """
+        payload: dict = {"model": model, "input": prompt}
+        if duration is not None:
+            payload["duration"] = duration
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/sound-generation",
+                json=payload,
+                headers=self._headers(),
+                timeout=300.0,  # generation can be slow
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Sound generation timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Sound generation error ({resp.status_code}): {resp.text[:200]}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(resp.content)
+        self.last_usage = {
+            "model": model,
+            "sound_generation": True,
+            "output_bytes": len(resp.content),
+        }
+        return output_path
+
+    def complete(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list[str]] = None,
+    ) -> str:
+        """Raw text completion via /v1/completions (no chat template).
+
+        Better for code infill, text continuation, and tasks where
+        chat framing adds unwanted overhead.
+
+        Args:
+            prompt:     The text to complete.
+            max_tokens: Maximum tokens to generate (default: self.max_tokens).
+            stop:       Optional stop sequences.
+
+        Returns:
+            The completed text.
+        """
+        payload: dict = {
+            "model": self._select_model(prompt),
+            "prompt": prompt,
+            "max_tokens": max_tokens or self.max_tokens,
+            **self._sampling_params(),
+        }
+        if stop:
+            payload["stop"] = stop
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Completion request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Completion error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "completion": True,
+        }
+
+        try:
+            return data["choices"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
+
     def _connect_error_message(self) -> str:
         """Build a diagnostic message when LocalAI is unreachable."""
         # Try to give a more specific hint by checking Docker state

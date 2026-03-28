@@ -139,6 +139,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable function calling with built-in tools (file_read, grep, shell)",
     )
     parser.add_argument(
+        "--complete",
+        action="store_true",
+        help="Use raw text completion (/v1/completions) instead of chat — no chat template overhead",
+    )
+    parser.add_argument(
+        "--sound",
+        metavar="PROMPT",
+        help="Generate sound/music from a text description (e.g. 'a gentle piano melody')",
+    )
+    parser.add_argument(
         "--agent",
         nargs="?",
         const="9100",
@@ -1685,6 +1695,33 @@ def main(argv: Optional[List[str]] = None) -> int:
                 result = backend.execute_grammar(
                     args.prompt, grammar_str, Mode(args.mode), args.project.resolve(),
                 )
+            print_response(result)
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --sound: generate sound/music from text description
+    if getattr(args, "sound", None) and actual_backend == "local":
+        backend = backends["local"]
+        local_cfg = config.get("backends", {}).get("local", {})
+        sound_model = local_cfg.get("sound_model", "transformers-musicgen")
+        out = Path("/tmp/aicp_sound.wav")
+        try:
+            with spinner(f"Generating sound ({sound_model})..."):
+                backend.generate_sound(args.sound, out, model=sound_model)
+            console.print(f"[green]Sound saved to:[/] {out}")
+            return 0
+        except Exception as e:
+            print_error(str(e))
+            return 1
+
+    # --complete: raw text completion (no chat template)
+    if getattr(args, "complete", False) and actual_backend == "local" and args.prompt:
+        backend = backends["local"]
+        try:
+            with spinner("Completing text..."):
+                result = backend.complete(args.prompt)
             print_response(result)
             return 0
         except Exception as e:

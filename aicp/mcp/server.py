@@ -411,6 +411,52 @@ def aicp_kb_search(query: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
+def aicp_sound(
+    prompt: str,
+    output_path: str = "/tmp/aicp_mcp_sound.wav",
+) -> str:
+    """Generate sound or music from a text description using a local model.
+
+    Args:
+        prompt: Description of the sound to generate (e.g. "a gentle piano melody with rain").
+        output_path: Where to write the audio file (default: /tmp/aicp_mcp_sound.wav).
+
+    Returns:
+        Path to the generated audio file.
+    """
+    backend = _get_backend()
+    cfg = get_backend_config(_config, "local")
+    model = cfg.get("sound_model", "transformers-musicgen")
+    out = Path(output_path)
+    backend.generate_sound(prompt, out, model=model)
+    return str(out)
+
+
+@mcp.tool()
+def aicp_complete(
+    prompt: str,
+    max_tokens: int = 512,
+    stop: str = "",
+) -> str:
+    """Raw text completion using /v1/completions (no chat template overhead).
+
+    Better than chat for code infill, text continuation, and single-shot generation
+    where chat framing is unnecessary.
+
+    Args:
+        prompt: The text to complete.
+        max_tokens: Maximum tokens to generate (default: 512).
+        stop: Comma-separated stop sequences (e.g. "\\n,###").
+
+    Returns:
+        The completed text.
+    """
+    backend = _get_backend()
+    stop_list = [s.strip() for s in stop.split(",") if s.strip()] if stop else None
+    return backend.complete(prompt, max_tokens=max_tokens, stop=stop_list)
+
+
+@mcp.tool()
 def aicp_model_gallery(search: str = "") -> str:
     """Browse LocalAI's model gallery — see what's available to install.
 
