@@ -704,6 +704,29 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
 
 
 @mcp.tool()
+def aicp_batch(prompts: str, mode: str = "think", max_workers: int = 4) -> str:
+    """Execute multiple prompts concurrently and return all results.
+
+    Useful for RAG pipelines, evaluation suites, and bulk analysis.
+    Each prompt runs in parallel using a thread pool.
+
+    Args:
+        prompts: JSON array of prompt strings (e.g. '["prompt1", "prompt2"]').
+        mode: Permission mode (think/edit/act).
+        max_workers: Max concurrent requests (default: 4).
+
+    Returns:
+        JSON array of results with prompt, response, error, and duration_ms.
+    """
+    from pathlib import Path as _Path
+    from aicp.core.modes import Mode as _Mode
+    prompt_list = json.loads(prompts)
+    backend = _get_backend()
+    results = backend.execute_batch(prompt_list, _Mode(mode), _Path("."), max_workers=max_workers)
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
 def aicp_metrics() -> str:
     """Get live Prometheus metrics, GPU status, and API call stats from LocalAI.
 

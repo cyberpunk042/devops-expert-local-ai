@@ -886,6 +886,92 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
+    # ── Batch / Concurrent Execution ────────────────────────────────────────
+
+    def execute_batch(
+        self,
+        prompts: list[str],
+        mode: Mode,
+        project_path: Path,
+        max_workers: int = 4,
+        stop: Optional[list[str]] = None,
+    ) -> list[dict]:
+        """Execute multiple prompts concurrently and collect results.
+
+        Uses a thread pool to run prompts in parallel.  Each result dict
+        contains ``prompt``, ``response``, ``error`` (if failed), and
+        ``duration_ms``.
+
+        Args:
+            prompts:     List of prompt strings.
+            mode:        Permission mode for all prompts.
+            project_path: Project directory for context.
+            max_workers: Max concurrent requests (default: 4).
+            stop:        Optional stop sequences applied to all prompts.
+
+        Returns:
+            List of result dicts in the same order as the input prompts.
+        """
+        import time as _time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_one(idx: int, prompt: str) -> dict:
+            t0 = _time.perf_counter()
+            try:
+                resp = self.execute(prompt, mode, project_path, stop=stop)
+                return {
+                    "index": idx,
+                    "prompt": prompt,
+                    "response": resp,
+                    "error": None,
+                    "duration_ms": round((_time.perf_counter() - t0) * 1000, 1),
+                }
+            except Exception as e:
+                return {
+                    "index": idx,
+                    "prompt": prompt,
+                    "response": None,
+                    "error": str(e),
+                    "duration_ms": round((_time.perf_counter() - t0) * 1000, 1),
+                }
+
+        results: list[dict] = [{}] * len(prompts)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_run_one, i, p): i for i, p in enumerate(prompts)}
+            for future in as_completed(futures):
+                result = future.result()
+                results[result["index"]] = result
+        return results
+
+    def embed_batch_concurrent(
+        self,
+        texts: list[str],
+        max_workers: int = 4,
+    ) -> list[list[float]]:
+        """Embed multiple texts concurrently.
+
+        Unlike ``embed_batch`` which sends all texts in one request,
+        this method runs individual embed calls in parallel — useful
+        when the backend doesn't support true batch embedding or when
+        texts are very long.
+
+        Args:
+            texts:       List of strings to embed.
+            max_workers: Max concurrent requests (default: 4).
+
+        Returns:
+            List of embedding vectors in the same order as input.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: list[Optional[list[float]]] = [None] * len(texts)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(self.embed, t): i for i, t in enumerate(texts)}
+            for future in as_completed(futures):
+                idx = futures[future]
+                results[idx] = future.result()
+        return results  # type: ignore[return-value]
+
     # ── Mode-Aware Sampling ──────────────────────────────────────────────────
 
     # Default temperature overrides per permission mode.

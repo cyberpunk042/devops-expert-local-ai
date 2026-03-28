@@ -41,6 +41,7 @@ Slash commands:
   /health                   Check LocalAI health, readiness, and features
   /backends                 List installed LocalAI backends
   /metrics                  Live Prometheus metrics, GPU, and API call stats
+  /batch <p1> | <p2> | ...  Run multiple prompts concurrently (pipe-separated)
   /help                     Show this help
   /exit                     Quit
 """
@@ -466,6 +467,37 @@ def _handle_slash(
                 print(f"  GPU:         {gpu.get('name', '?')} — {used}/{total} MiB, {gpu.get('utilization_pct', '?')}% util, {gpu.get('temperature_c', '?')}°C")
         except Exception as e:
             print(f"[error] Metrics failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/batch":
+        if not backend:
+            print("[error] Batch requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /batch <prompt1> | <prompt2> | ...", file=sys.stderr)
+            print("  Run multiple prompts concurrently (pipe-separated).", file=sys.stderr)
+            return None
+        prompts = [p.strip() for p in arg.split("|") if p.strip()]
+        if len(prompts) < 2:
+            print("[error] Provide at least 2 prompts separated by |", file=sys.stderr)
+            return None
+        try:
+            print(f"\n  Running {len(prompts)} prompts concurrently...\n")
+            results = backend.execute_batch(prompts, mode, project_path)
+            for r in results:
+                idx = r.get("index", "?")
+                prompt = r.get("prompt", "")[:60]
+                dur = r.get("duration_ms", 0)
+                if r.get("error"):
+                    print(f"  [{idx+1}] ERROR ({dur} ms): {r['error']}")
+                else:
+                    resp = r.get("response", "")
+                    print(f"  [{idx+1}] ({dur} ms) {prompt}")
+                    print(f"  ai> {resp}\n")
+                    messages.append({"role": "user", "content": f"[batch] {prompt}"})
+                    messages.append({"role": "assistant", "content": resp})
+        except Exception as e:
+            print(f"[error] Batch failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
