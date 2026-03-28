@@ -72,6 +72,8 @@ class TestSelfTestProbes:
             "/v1/reranking": {"status": 404},
             "/api/backends": {"json": ["llama-cpp"]},
             "/v1/sound-generation": {"json": {}},
+            "/v1/audio/vad": {"json": {}},
+            "/v1/detection": {"json": {}},
         }
         rc, output = self._run(responses)
         assert "PASS" in output
@@ -137,6 +139,8 @@ class TestSelfTestProbes:
             "/v1/reranking": {"status": 404},
             "/api/backends": {"status": 404},
             "/v1/sound-generation": {"status": 404},
+            "/v1/audio/vad": {"status": 404},
+            "/v1/detection": {"status": 404},
         }
         rc, output = self._run(responses)
         assert "SKIP" in output
@@ -162,6 +166,8 @@ class TestSelfTestProbes:
             "/v1/reranking": {"json": {"results": []}},
             "/api/backends": {"json": ["llama-cpp"]},
             "/v1/sound-generation": {"json": {}},
+            "/v1/audio/vad": {"json": {}},
+            "/v1/detection": {"json": {}},
         }
         rc, output = self._run(responses)
         assert rc == 0

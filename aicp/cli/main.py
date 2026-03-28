@@ -333,6 +333,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate all AICP features: config, models, endpoints, tools",
     )
+    parser.add_argument(
+        "--capabilities",
+        action="store_true",
+        help="Show all AICP capabilities: endpoints, tools, slash commands, models",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -688,7 +693,23 @@ def _run_self_test() -> int:
         return srv.get("features", []) or True
     _probe("Feature detection (server_config)", _check_features)
 
-    # 15. Config completeness
+    # 17. VAD endpoint
+    def _check_vad():
+        resp = _httpx.post(f"{local_url}/v1/audio/vad", data={}, timeout=5.0)
+        if resp.status_code == 404:
+            return None
+        return True
+    _probe("Voice activity detection (/v1/audio/vad)", _check_vad)
+
+    # 18. Object detection endpoint
+    def _check_detection():
+        resp = _httpx.post(f"{local_url}/v1/detection", data={}, timeout=5.0)
+        if resp.status_code == 404:
+            return None
+        return True
+    _probe("Object detection (/v1/detection)", _check_detection)
+
+    # 19. Config completeness
     def _check_config():
         from aicp.config.loader import load_config
         cfg = load_config()
@@ -702,7 +723,7 @@ def _run_self_test() -> int:
         return len(required)
     _probe("Config completeness (all model keys)", _check_config)
 
-    # 14. Python imports (all modules)
+    # 20. Python imports (all modules)
     def _check_imports():
         import importlib
         modules = [
@@ -717,15 +738,15 @@ def _run_self_test() -> int:
         return len(modules)
     _probe("Python module imports", _check_imports)
 
-    # 15. MCP tool count (count aicp_* functions in server module)
+    # 21. MCP tool count (count aicp_* functions in server module)
     def _check_mcp_tools():
         import aicp.mcp.server as srv
         tool_fns = [n for n in dir(srv) if n.startswith("aicp_") and callable(getattr(srv, n))]
         count = len(tool_fns)
-        if count < 20:
-            raise RuntimeError(f"expected ≥20 MCP tools, found {count}")
+        if count < 30:
+            raise RuntimeError(f"expected ≥30 MCP tools, found {count}")
         return count
-    _probe(f"MCP tool registry (≥20 tools)", _check_mcp_tools)
+    _probe(f"MCP tool registry (≥30 tools)", _check_mcp_tools)
 
     # Summary
     console.print()
@@ -740,6 +761,125 @@ def _run_self_test() -> int:
     console.print()
 
     return 1 if failed else 0
+
+
+def _run_capabilities() -> int:
+    """Show all AICP capabilities."""
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console.print("[bold]AICP Capabilities Report[/]\n")
+
+    # ── LocalAI Endpoints ────────────────────────────────────────────────
+    endpoints = [
+        ("POST", "/v1/chat/completions", "Chat (+ streaming, tools, grammar, JSON)"),
+        ("POST", "/v1/completions", "Raw text completion (+ streaming)"),
+        ("POST", "/v1/embeddings", "Text embeddings (single + batch)"),
+        ("POST", "/v1/audio/transcriptions", "Speech-to-text (Whisper)"),
+        ("POST", "/v1/audio/speech", "Text-to-speech (Piper)"),
+        ("POST", "/v1/audio/vad", "Voice activity detection"),
+        ("POST", "/v1/sound-generation", "Sound/music generation"),
+        ("POST", "/v1/images/generations", "Image generation (Stable Diffusion)"),
+        ("POST", "/v1/edits", "Text editing by instruction"),
+        ("POST", "/v1/tokenize", "Tokenization (single + batch)"),
+        ("POST", "/v1/reranking", "Cross-encoder reranking"),
+        ("POST", "/v1/detection", "Object detection"),
+        ("GET",  "/v1/models", "Model listing"),
+        ("GET",  "/models/available", "Model gallery"),
+        ("POST", "/models/apply", "Model install"),
+        ("GET",  "/models/jobs/{uuid}", "Job tracking"),
+        ("POST", "/api/models/delete", "Model delete"),
+        ("POST", "/backend/shutdown", "Unload model from GPU"),
+        ("POST", "/backend/monitor", "Backend state + memory"),
+        ("GET",  "/api/backends", "List installed backends"),
+        ("POST", "/api/backends/apply", "Install backend"),
+        ("POST", "/api/backends/delete", "Delete backend"),
+        ("POST", "/stores/set", "Vector store set"),
+        ("POST", "/stores/get", "Vector store get"),
+        ("POST", "/stores/find", "Vector store search"),
+        ("POST", "/stores/delete", "Vector store delete"),
+        ("GET",  "/api/p2p/stats", "P2P cluster stats"),
+        ("GET",  "/api/p2p/workers", "P2P worker list"),
+        ("GET",  "/healthz", "Health check"),
+        ("GET",  "/readyz", "Readiness check"),
+    ]
+
+    t = Table(title="LocalAI Endpoints", show_header=True)
+    t.add_column("Method", style="cyan", width=6)
+    t.add_column("Endpoint", style="bold")
+    t.add_column("Description")
+    for method, path, desc in endpoints:
+        t.add_row(method, path, desc)
+    console.print(t)
+    console.print(f"\n  [bold]{len(endpoints)}[/] endpoints integrated\n")
+
+    # ── MCP Tools ────────────────────────────────────────────────────────
+    try:
+        import aicp.mcp.server as srv
+        tool_fns = sorted(n for n in dir(srv) if n.startswith("aicp_") and callable(getattr(srv, n)))
+        console.print(f"[bold]MCP Tools[/] ({len(tool_fns)} tools)")
+        for fn_name in tool_fns:
+            doc = getattr(srv, fn_name).__doc__ or ""
+            first_line = doc.strip().split("\n")[0] if doc else ""
+            console.print(f"  [cyan]{fn_name}[/]  {first_line}")
+        console.print()
+    except Exception:
+        console.print("  [yellow]Could not load MCP tools[/]\n")
+
+    # ── Slash Commands ───────────────────────────────────────────────────
+    from aicp.cli.interactive import _SLASH_HELP
+    console.print("[bold]Interactive Slash Commands[/]")
+    for line in _SLASH_HELP.strip().split("\n"):
+        if line.strip().startswith("/"):
+            console.print(f"  [cyan]{line.strip()}[/]")
+    # Count them
+    cmd_count = sum(1 for l in _SLASH_HELP.split("\n") if l.strip().startswith("/"))
+    console.print(f"\n  [bold]{cmd_count}[/] slash commands\n")
+
+    # ── LLM-Callable Tools ───────────────────────────────────────────────
+    try:
+        from aicp.core.tools import ALL_TOOLS
+        console.print(f"[bold]LLM-Callable Tools[/] ({len(ALL_TOOLS)} tools)")
+        for tool in ALL_TOOLS:
+            name = tool.get("function", {}).get("name", "?")
+            desc = tool.get("function", {}).get("description", "")
+            short = desc.split(".")[0] if desc else ""
+            console.print(f"  [cyan]{name}[/]  {short}")
+        console.print()
+    except Exception:
+        console.print("  [yellow]Could not load LLM tools[/]\n")
+
+    # ── Execution Modes ──────────────────────────────────────────────────
+    console.print("[bold]Execution Modes[/]")
+    console.print("  [cyan]think[/]  Read, analyze, plan. No writes.")
+    console.print("  [cyan]edit[/]   Modify files in controlled scope.")
+    console.print("  [cyan]act[/]    Run commands, workflows, tools.")
+    console.print()
+
+    # ── Mode Sampling Profiles ───────────────────────────────────────────
+    console.print("[bold]Mode Sampling Defaults[/]")
+    for mode_name, params in LocalAIBackend._MODE_SAMPLING.items():
+        console.print(f"  [cyan]{mode_name}[/]  {params}")
+    console.print()
+
+    # ── Models Configured ────────────────────────────────────────────────
+    try:
+        cfg = load_config()
+        local_cfg = get_backend_config(cfg, "local")
+        model_keys = [
+            "model", "embedding_model", "code_model", "vision_model",
+            "whisper_model", "tts_model", "image_model", "reranker_model",
+            "sound_model",
+        ]
+        console.print("[bold]Configured Models[/]")
+        for key in model_keys:
+            val = local_cfg.get(key, "[dim]not set[/]")
+            console.print(f"  {key}: [cyan]{val}[/]")
+        console.print()
+    except Exception:
+        pass
+
+    return 0
 
 
 def _run_stats() -> int:
@@ -1652,6 +1792,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --self-test: validate all features (no config needed)
     if getattr(args, "self_test", False):
         return _run_self_test()
+
+    # --capabilities: show all integrated features
+    if getattr(args, "capabilities", False):
+        return _run_capabilities()
 
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):

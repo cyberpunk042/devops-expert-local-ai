@@ -1,6 +1,6 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
         local-up local-up-multi local-down local-status local-logs \
-        test test-all check lint format type-check auto-config benchmark self-test update \
+        test test-all check lint format type-check auto-config benchmark self-test capabilities update \
         model-download models-list model-list-remote agent-up agent-down \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
@@ -44,6 +44,7 @@ help:
 	@echo "  make auto-config             GPU-aware model config optimiser"
 	@echo "  make benchmark               Benchmark the default model"
 	@echo "  make self-test               Validate all AICP features against live LocalAI"
+	@echo "  make capabilities            Show all AICP capabilities and integrations"
 	@echo ""
 	@echo "MODELS"
 	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
@@ -165,6 +166,9 @@ benchmark:
 
 self-test:
 	.venv/bin/aicp --self-test
+
+capabilities:
+	.venv/bin/aicp --capabilities
 
 # =============================================================================
 # Model management
