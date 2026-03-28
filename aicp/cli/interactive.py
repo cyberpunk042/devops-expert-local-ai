@@ -48,6 +48,7 @@ Slash commands:
   /lora list                List models with LoRA adapters
   /config [model]           Show model config (context_size, gpu_layers, …)
   /config set <key> <value> Update a model parameter at runtime
+  /json <prompt>            Force JSON output (structured responses)
   /help                     Show this help
   /exit                     Quit
 """
@@ -633,6 +634,23 @@ def _handle_slash(
                     print(f"    {k}: {val_str}")
         except Exception as e:
             print(f"[error] Config read failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/json":
+        if not backend:
+            print("[error] JSON mode requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /json <prompt>", file=sys.stderr)
+            print("  Example: /json List the 3 largest planets as {name, diameter_km}", file=sys.stderr)
+            return None
+        try:
+            result = backend.execute_json(arg, mode, project_path)
+            print(f"\n{json.dumps(result, indent=2)}\n")
+            messages.append({"role": "user", "content": f"[JSON mode] {arg}"})
+            messages.append({"role": "assistant", "content": json.dumps(result)})
+        except Exception as e:
+            print(f"[error] JSON mode failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

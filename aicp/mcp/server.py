@@ -826,6 +826,28 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_json(prompt: str, schema: str = "", mode: str = "think") -> str:
+    """Force the LLM to output valid JSON (structured output mode).
+
+    Uses response_format={"type": "json_object"} to guarantee parseable JSON.
+    Great for data extraction, structured responses, and tool pipelines.
+
+    Args:
+        prompt: The user prompt (should describe the desired JSON structure).
+        schema: Optional JSON Schema as a string to guide the model's output.
+        mode: Permission mode (think/edit/act).
+
+    Returns:
+        The model's JSON response (pretty-printed).
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    schema_dict = json.loads(schema) if schema else None
+    result = backend.execute_json(prompt, m, Path("."), schema=schema_dict)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
 def aicp_model_config(model_name: str = "") -> str:
     """Read runtime configuration for a model (context_size, gpu_layers, threads, etc.).
 

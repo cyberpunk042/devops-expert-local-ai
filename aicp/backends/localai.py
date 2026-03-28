@@ -995,6 +995,85 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
+    # ── JSON Mode / Structured Output ────────────────────────────────────────
+
+    def execute_json(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        schema: Optional[dict] = None,
+    ) -> dict:
+        """Execute a prompt with JSON mode — forces valid JSON output.
+
+        Uses response_format={"type": "json_object"} to guarantee the LLM
+        returns parseable JSON. Optionally validates against a JSON Schema.
+
+        Args:
+            prompt:       The user prompt (should mention JSON in the instruction).
+            mode:         Permission mode for sampling profile.
+            project_path: Project root for context building.
+            schema:       Optional JSON Schema dict to include in the system prompt
+                          so the model knows the expected structure.
+
+        Returns:
+            Parsed JSON dict from the model's response.
+        """
+        system = self._system_prompt(mode, project_path)
+        if schema:
+            schema_str = json.dumps(schema, indent=2)
+            system += f"\n\nRespond with valid JSON matching this schema:\n{schema_str}"
+
+        selected_model = self._select_model(prompt)
+        payload: dict = {
+            "model": selected_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.max_tokens,
+            "response_format": {"type": "json_object"},
+            **self.sampling_params_for_mode(mode),
+        }
+        headers = self._headers()
+
+        try:
+            response = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                f"LocalAI timed out at {self.base_url}.\n"
+                "The model may still be loading. Check logs: make local-logs"
+            )
+
+        if response.status_code >= 400:
+            raise RuntimeError(f"LocalAI error ({response.status_code}): {response.text[:200]}")
+
+        data = response.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "json_mode": True,
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Model returned invalid JSON: {e}\nContent: {content[:200]}")
+
     # ── Batch / Concurrent Execution ────────────────────────────────────────
 
     def execute_batch(
@@ -1132,45 +1211,6 @@ class LocalAIBackend(Backend):
             f"  {hint}\n"
             f"  Check status with: make local-status"
         )
-
-    def execute_json(
-        self, prompt: str, mode: Mode, project_path: Path,
-        schema: Optional[dict] = None,
-    ) -> dict:
-        """Execute and return a parsed JSON response.
-
-        Uses response_format: json_object to guarantee valid JSON output.
-        If schema is provided, it is included in the system prompt to guide structure.
-        """
-        system = self._system_prompt(mode, project_path)
-        if schema:
-            system += f"\n\nRespond with JSON matching this schema:\n{json.dumps(schema, indent=2)}"
-        else:
-            system += "\n\nRespond with valid JSON only. No markdown, no explanation."
-
-        payload: dict = {
-            "model": self._select_model(prompt),
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.max_tokens,
-            "response_format": {"type": "json_object"},
-            **self.sampling_params_for_mode(mode),
-        }
-
-        resp = httpx.post(
-            f"{self.base_url}/v1/chat/completions",
-            json=payload,
-            headers=self._headers(),
-            timeout=120.0,
-        )
-        if resp.status_code >= 400:
-            raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
-
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return json.loads(content)
 
     def execute_grammar(
         self,
