@@ -1010,6 +1010,92 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
+    # ── N Completions / Best-of-N ───────────────────────────────────────────
+
+    def execute_n(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        n: int = 3,
+        seed: Optional[int] = None,
+    ) -> list[dict]:
+        """Generate multiple candidate responses for the same prompt.
+
+        Uses the ``n`` parameter to get several completions in one request.
+        Useful for best-of-N ranking, diversity sampling, and evaluation.
+
+        Args:
+            prompt:       The user prompt.
+            mode:         Permission mode for sampling profile.
+            project_path: Project root for context building.
+            n:            Number of completions to generate (1-10).
+            seed:         Optional seed for reproducible output.
+
+        Returns:
+            List of dicts, each with keys: index, text, finish_reason.
+        """
+        n = max(1, min(n, 10))
+        system = self._system_prompt(mode, project_path)
+        selected_model = self._select_model(prompt)
+        payload: dict = {
+            "model": selected_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.max_tokens,
+            "n": n,
+            **self.sampling_params_for_mode(mode),
+        }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                f"LocalAI timed out at {self.base_url}.\n"
+                "The model may still be loading. Check logs: make local-logs"
+            )
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "n_completions": n,
+            "model": data.get("model", self.model) if isinstance(data, dict) else self.model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+
+        choices = data.get("choices", [])
+        results = []
+        for choice in choices:
+            try:
+                results.append({
+                    "index": choice.get("index", len(results)),
+                    "text": choice["message"]["content"],
+                    "finish_reason": choice.get("finish_reason", "stop"),
+                })
+            except (KeyError, TypeError):
+                continue
+
+        if not results:
+            raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
+
+        return results
+
     # ── Logprobs / Token Probabilities ──────────────────────────────────────
 
     def execute_logprobs(

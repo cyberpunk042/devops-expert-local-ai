@@ -51,6 +51,7 @@ Slash commands:
   /json <prompt>            Force JSON output (structured responses)
   /seed [number]            Set/show seed for reproducible inference (clear = random)
   /logprobs <prompt>        Show response with per-token log probabilities
+  /bestof [N] <prompt>      Generate N completions, pick the best (default: 3)
   /help                     Show this help
   /exit                     Quit
 """
@@ -697,6 +698,41 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": result["text"]})
         except Exception as e:
             print(f"[error] Logprobs failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/bestof":
+        if not backend:
+            print("[error] Best-of-N requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /bestof [N] <prompt>", file=sys.stderr)
+            print("  Example: /bestof 5 Write a haiku about coding", file=sys.stderr)
+            return None
+        # Parse optional leading integer
+        parts = arg.split(None, 1)
+        try:
+            n = int(parts[0])
+            prompt_text = parts[1] if len(parts) > 1 else ""
+        except ValueError:
+            n = 3
+            prompt_text = arg
+        if not prompt_text:
+            print("[error] Usage: /bestof [N] <prompt>", file=sys.stderr)
+            return None
+        try:
+            results = backend.execute_n(prompt_text, mode, project_path, n=n)
+            print(f"\n  Generated {len(results)} completions:\n")
+            for r in results:
+                idx = r["index"] + 1
+                text = r["text"]
+                # Truncate long responses for display
+                display = text[:200] + "..." if len(text) > 200 else text
+                print(f"  [{idx}] {display}\n")
+            # Use first result as the conversation response
+            messages.append({"role": "user", "content": f"[Best-of-{n}] {prompt_text}"})
+            messages.append({"role": "assistant", "content": results[0]["text"]})
+        except Exception as e:
+            print(f"[error] Best-of-N failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

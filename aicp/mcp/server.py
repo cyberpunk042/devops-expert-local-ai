@@ -828,6 +828,29 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_bestof(prompt: str, n: int = 3, mode: str = "think", seed: int = -1) -> str:
+    """Generate N candidate completions for the same prompt (best-of-N).
+
+    Returns multiple responses so you can pick the best one, compare
+    diversity, or run evaluation pipelines.
+
+    Args:
+        prompt: The user prompt.
+        n: Number of completions to generate (1-10, default: 3).
+        mode: Permission mode (think/edit/act).
+        seed: Seed for reproducible output (-1 = random).
+
+    Returns:
+        JSON array of {index, text, finish_reason} objects.
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    s = seed if seed >= 0 else None
+    results = backend.execute_n(prompt, m, Path("."), n=n, seed=s)
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
 def aicp_logprobs(prompt: str, top_logprobs: int = 5, mode: str = "think", seed: int = -1) -> str:
     """Get response with per-token log probabilities (confidence scores).
 
