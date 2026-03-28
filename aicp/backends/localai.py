@@ -1623,6 +1623,55 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
+    def detokenize(self, tokens: list[int], model: Optional[str] = None) -> str:
+        """Convert token IDs back to text via /v1/detokenize.
+
+        Args:
+            tokens: List of token IDs to convert back to text.
+            model:  Model whose tokenizer to use (default: self.model).
+
+        Returns:
+            The decoded text string.
+        """
+        payload: dict = {
+            "tokens": tokens,
+            "model": model or self.model,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/detokenize",
+                json=payload,
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Detokenize error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        self.last_usage = {
+            "detokenize": True,
+            "token_count": len(tokens),
+            "model": model or self.model,
+        }
+        return data.get("content", data.get("text", ""))
+
+    def token_count(self, text: str, model: Optional[str] = None) -> int:
+        """Quick token count without returning token IDs.
+
+        Args:
+            text:  Text to count tokens for.
+            model: Model whose tokenizer to use (default: self.model).
+
+        Returns:
+            Number of tokens.
+        """
+        result = self.tokenize(text, model=model)
+        return result["count"]
+
     # ── N Completions / Best-of-N ───────────────────────────────────────────
 
     def execute_n(

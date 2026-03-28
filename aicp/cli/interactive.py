@@ -39,6 +39,8 @@ Slash commands:
   /complete <text>          Raw text completion (no chat template)
   /edit <instruction> | <text>  Edit text by instruction (e.g. fix grammar)
   /tokenize <text>          Count tokens in text
+  /detokenize <id1> <id2> ...  Convert token IDs back to text
+  /token-count <text>      Quick token count (no IDs)
   /vad <audio_path>         Detect voice segments in audio file
   /detect <image_path>      Detect objects in image
   /health                   Check LocalAI health, readiness, and features
@@ -480,6 +482,37 @@ def _handle_slash(
                 print(f"  IDs:    {result['tokens']}")
         except Exception as e:
             print(f"[error] Tokenize failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/detokenize":
+        if not backend:
+            print("[error] Detokenize requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /detokenize <id1> <id2> ...", file=sys.stderr)
+            return None
+        try:
+            token_ids = [int(t) for t in arg.split()]
+            text = backend.detokenize(token_ids)
+            print(f"  Text ({len(token_ids)} tokens): {text}")
+        except ValueError:
+            print("[error] Token IDs must be integers.", file=sys.stderr)
+        except Exception as e:
+            print(f"[error] Detokenize failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/token-count":
+        if not backend:
+            print("[error] Token count requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /token-count <text>", file=sys.stderr)
+            return None
+        try:
+            count = backend.token_count(arg)
+            print(f"  Token count: {count}")
+        except Exception as e:
+            print(f"[error] Token count failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/vad":

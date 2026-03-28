@@ -1296,6 +1296,49 @@ def aicp_transcribe_detailed(
 
 
 # ---------------------------------------------------------------------------
+# Tokenization & Detokenization (M94)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_detokenize(tokens_json: str, model: str = "") -> str:
+    """Convert token IDs back to text via detokenization.
+
+    Args:
+        tokens_json: JSON array of integer token IDs.
+        model: Model whose tokenizer to use (empty = default).
+
+    Returns:
+        JSON with the decoded text and token count.
+    """
+    backend = _get_backend()
+    tokens = json.loads(tokens_json)
+    m = model or None
+    text = backend.detokenize(tokens, model=m)
+    return json.dumps({
+        "text": text,
+        "token_count": len(tokens),
+    }, indent=2)
+
+
+@mcp.tool()
+def aicp_token_count(text: str, model: str = "") -> str:
+    """Quick token count for a text string.
+
+    Args:
+        text: The text to count tokens for.
+        model: Model whose tokenizer to use (empty = default).
+
+    Returns:
+        JSON with the token count.
+    """
+    backend = _get_backend()
+    m = model or None
+    count = backend.token_count(text, model=m)
+    return json.dumps({"count": count, "text_length": len(text)}, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
