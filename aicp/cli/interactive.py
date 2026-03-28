@@ -42,6 +42,7 @@ Slash commands:
   /backends                 List installed LocalAI backends
   /metrics                  Live Prometheus metrics, GPU, and API call stats
   /batch <p1> | <p2> | ...  Run multiple prompts concurrently (pipe-separated)
+  /infill <prefix> | <suffix>  Fill-in-the-middle code completion (Copilot-style)
   /help                     Show this help
   /exit                     Quit
 """
@@ -498,6 +499,27 @@ def _handle_slash(
                     messages.append({"role": "assistant", "content": resp})
         except Exception as e:
             print(f"[error] Batch failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/infill":
+        if not backend:
+            print("[error] Infill requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg or "|" not in arg:
+            print("[error] Usage: /infill <prefix> | <suffix>", file=sys.stderr)
+            print("  Example: /infill def fibonacci(n): | print(fibonacci(10))", file=sys.stderr)
+            return None
+        parts = arg.split("|", 1)
+        prefix = parts[0].strip()
+        suffix = parts[1].strip()
+        try:
+            result = backend.infill(prefix, suffix)
+            print(f"\n  {prefix}[bold]{result}[/]{suffix}\n" if False else
+                  f"\n  {prefix}\033[1m{result}\033[0m{suffix}\n")
+            messages.append({"role": "user", "content": f"[infill] {prefix}⟨…⟩{suffix}"})
+            messages.append({"role": "assistant", "content": result})
+        except Exception as e:
+            print(f"[error] Infill failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

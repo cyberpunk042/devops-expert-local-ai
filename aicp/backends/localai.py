@@ -871,6 +871,70 @@ class LocalAIBackend(Backend):
         except httpx.TimeoutException:
             raise RuntimeError("Streaming completion timed out.")
 
+    def infill(
+        self,
+        prefix: str,
+        suffix: str,
+        max_tokens: Optional[int] = None,
+        stop: Optional[list[str]] = None,
+        model: Optional[str] = None,
+    ) -> str:
+        """Fill-in-the-Middle (FIM) code completion.
+
+        Generates text that fits between a prefix and suffix — the technique
+        behind Copilot-style code completion.  Uses /v1/completions with
+        the ``prefix`` / ``suffix`` parameters that llama.cpp supports.
+
+        Args:
+            prefix:     Code/text before the cursor.
+            suffix:     Code/text after the cursor.
+            max_tokens: Maximum tokens to generate (default: self.max_tokens).
+            stop:       Optional stop sequences.
+            model:      Model override (default: code_model or self.model).
+
+        Returns:
+            The generated infill text.
+        """
+        selected_model = model or self.code_model or self.model
+        payload: dict = {
+            "model": selected_model,
+            "prompt": prefix,
+            "suffix": suffix,
+            "max_tokens": max_tokens or self.max_tokens,
+            **self._sampling_params(),
+        }
+        if stop:
+            payload["stop"] = stop
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=120.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("Infill request timed out.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Infill error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "model": selected_model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "infill": True,
+        }
+
+        try:
+            return data["choices"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
+
     def tokenize_batch(self, texts: list[str], model: Optional[str] = None) -> list[dict]:
         """Tokenize multiple texts in one batch.
 

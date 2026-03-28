@@ -704,6 +704,25 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
 
 
 @mcp.tool()
+def aicp_infill(prefix: str, suffix: str, max_tokens: int = 256) -> str:
+    """Fill-in-the-Middle (FIM) code completion — Copilot-style.
+
+    Generates code/text that fits between a prefix and suffix.
+    Best used with a code model (e.g. codellama).
+
+    Args:
+        prefix: Code/text before the cursor position.
+        suffix: Code/text after the cursor position.
+        max_tokens: Maximum tokens to generate (default: 256).
+
+    Returns:
+        The generated infill text.
+    """
+    backend = _get_backend()
+    return backend.infill(prefix, suffix, max_tokens=max_tokens)
+
+
+@mcp.tool()
 def aicp_batch(prompts: str, mode: str = "think", max_workers: int = 4) -> str:
     """Execute multiple prompts concurrently and return all results.
 
