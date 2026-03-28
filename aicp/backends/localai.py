@@ -217,7 +217,7 @@ class LocalAIBackend(Backend):
                 {"role": "user", "content": prompt},
             ],
             "max_tokens": self.max_tokens,
-            **self._sampling_params(),
+            **self.sampling_params_for_mode(mode),
         }
         headers = self._headers()
         t_prep = time.perf_counter()
@@ -315,7 +315,7 @@ class LocalAIBackend(Backend):
             ],
             "max_tokens": self.max_tokens,
             "stream": True,
-            **self._sampling_params(),
+            **self.sampling_params_for_mode(mode),
         }
         headers = self._headers()
 
@@ -390,7 +390,7 @@ class LocalAIBackend(Backend):
                 },
             ],
             "max_tokens": self.max_tokens,
-            **self._sampling_params(),
+            **self.sampling_params_for_mode(mode),
         }
 
         try:
@@ -923,7 +923,7 @@ class LocalAIBackend(Backend):
             ],
             "max_tokens": self.max_tokens,
             "response_format": {"type": "json_object"},
-            **self._sampling_params(),
+            **self.sampling_params_for_mode(mode),
         }
 
         resp = httpx.post(
@@ -970,7 +970,7 @@ class LocalAIBackend(Backend):
             ],
             "max_tokens": self.max_tokens,
             "grammar": grammar,
-            **self._sampling_params(),
+            **self.sampling_params_for_mode(mode),
         }
 
         try:
@@ -1047,7 +1047,7 @@ class LocalAIBackend(Backend):
                 "model": selected_model,
                 "messages": messages,
                 "max_tokens": self.max_tokens,
-                **self._sampling_params(),
+                **self.sampling_params_for_mode(mode),
             }
 
             resp = httpx.post(
@@ -1090,6 +1090,7 @@ class LocalAIBackend(Backend):
         tools: Optional[list[dict]] = None,
         max_rounds: int = 5,
         tool_choice: str = "auto",
+        grammar: Optional[str] = None,
     ) -> str:
         """Execute with OpenAI-compatible native function calling.
 
@@ -1105,6 +1106,7 @@ class LocalAIBackend(Backend):
             tools:        OpenAI-format tool definitions. Auto-selected if None.
             max_rounds:   Maximum tool-call/response loops.
             tool_choice:  "auto", "none", or {"type":"function","function":{"name":"fn"}}.
+            grammar:      Optional GBNF grammar to constrain the final text response.
         """
         from aicp.core.tools import execute_tool, get_tools_for_mode
 
@@ -1126,8 +1128,10 @@ class LocalAIBackend(Backend):
                 "max_tokens": self.max_tokens,
                 "tools": tools,
                 "tool_choice": tool_choice,
-                **self._sampling_params(),
+                **self.sampling_params_for_mode(mode),
             }
+            if grammar:
+                payload["grammar"] = grammar
 
             try:
                 resp = httpx.post(

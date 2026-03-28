@@ -2225,7 +2225,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 resp = _httpx.post(
                     f"{local_backend.base_url}/v1/chat/completions",
                     json={"model": local_backend.model, "messages": messages,
-                          "max_tokens": local_backend.max_tokens},
+                          "max_tokens": local_backend.max_tokens,
+                          **local_backend.sampling_params_for_mode(Mode(args.mode))},
                     timeout=120.0,
                 )
                 resp.raise_for_status()
