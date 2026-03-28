@@ -1255,6 +1255,47 @@ def aicp_tts_voices(model: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Speech-to-Text — Detailed Transcription (M93)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_transcribe_detailed(
+    audio_path: str,
+    language: str = "",
+    timestamp_granularities: str = "segment",
+    temperature: float = 0.0,
+    model: str = "",
+) -> str:
+    """Transcribe audio with verbose output including timestamps.
+
+    Returns word-level and/or segment-level timestamps along with the
+    full transcription text, detected language, and duration.
+
+    Args:
+        audio_path: Path to audio file (wav, mp3, ogg, flac, etc.).
+        language: Language hint (ISO 639-1, e.g. "en", "fr"). Empty = auto-detect.
+        timestamp_granularities: Comma-separated: "word", "segment", or "word,segment".
+        temperature: Sampling temperature for transcription (0.0-1.0).
+        model: Whisper model override (empty = default).
+
+    Returns:
+        JSON with text, language, duration, segments, and/or words.
+    """
+    backend = _get_backend()
+    m = model or None
+    granularities = [g.strip() for g in timestamp_granularities.split(",") if g.strip()]
+    result = backend.transcribe_detailed(
+        Path(audio_path),
+        model=m or "",
+        language=language,
+        timestamp_granularities=granularities,
+        temperature=temperature,
+    )
+    return json.dumps(result, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

@@ -23,6 +23,7 @@ _SLASH_HELP = """\
 Slash commands:
   /vision <path> [prompt]   Analyze an image (default: describe it)
   /transcribe <path>        Transcribe audio → use as next message
+  /transcribe-detail <path> [lang]  Verbose transcription with timestamps
   /speak                    Speak the last AI response via TTS
   /tts [voice] [speed] <text>  Generate speech via OpenAI-compatible TTS API
   /voices                   List available TTS voices
@@ -127,6 +128,57 @@ def _handle_slash(
                 return text  # inject as user message
             else:
                 print("[warning] No speech detected.", file=sys.stderr)
+        except Exception as e:
+            print(f"[error] Transcription failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/transcribe-detail":
+        if not backend:
+            print("[error] Transcription requires a LocalAI backend.", file=sys.stderr)
+            return None
+        parts = arg.split(None, 1) if arg else []
+        if not parts:
+            print("[error] Usage: /transcribe-detail <audio-path> [language]", file=sys.stderr)
+            return None
+        audio_path = Path(parts[0])
+        language = parts[1].strip() if len(parts) > 1 else ""
+        if not audio_path.exists():
+            print(f"[error] Audio file not found: {audio_path}", file=sys.stderr)
+            return None
+        try:
+            whisper_model = local_cfg.get("whisper_model", "whisper-1")
+            result = backend.transcribe_detailed(
+                audio_path, model=whisper_model, language=language,
+                timestamp_granularities=["word", "segment"],
+            )
+            text = result.get("text", "").strip()
+            lang = result.get("language", "?")
+            duration = result.get("duration", 0)
+            print(f"\n  Language: {lang}  Duration: {duration:.1f}s")
+            print(f"  Text: {text}\n")
+            # Show segments if available
+            segments = result.get("segments", [])
+            if segments:
+                print(f"  Segments ({len(segments)}):")
+                for s in segments[:20]:
+                    start = s.get("start", 0)
+                    end = s.get("end", 0)
+                    stxt = s.get("text", "").strip()
+                    print(f"    [{start:.1f}s-{end:.1f}s] {stxt}")
+                if len(segments) > 20:
+                    print(f"    ... and {len(segments) - 20} more")
+            # Show words if available
+            words = result.get("words", [])
+            if words:
+                print(f"\n  Words ({len(words)}):")
+                shown = words[:30]
+                for w in shown:
+                    ws = w.get("start", 0)
+                    we = w.get("end", 0)
+                    wt = w.get("word", "")
+                    print(f"    [{ws:.2f}s-{we:.2f}s] {wt}")
+                if len(words) > 30:
+                    print(f"    ... and {len(words) - 30} more")
         except Exception as e:
             print(f"[error] Transcription failed: {e}", file=sys.stderr)
         return None

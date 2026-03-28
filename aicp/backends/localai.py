@@ -861,6 +861,80 @@ class LocalAIBackend(Backend):
         self.last_usage = {"model": model, "audio_file": audio_path.name, "transcription": True}
         return result
 
+    def transcribe_detailed(
+        self,
+        audio_path: Path,
+        model: str = "",
+        language: str = "",
+        timestamp_granularities: Optional[list[str]] = None,
+        temperature: float = 0.0,
+    ) -> dict:
+        """Transcribe audio with verbose output including timestamps.
+
+        Uses the OpenAI-compatible ``verbose_json`` response format to get
+        word-level and/or segment-level timestamps.
+
+        Args:
+            audio_path:              Path to audio file.
+            model:                   Whisper model override.
+            language:                Language hint (ISO 639-1, e.g. "en", "fr").
+            timestamp_granularities: List of "word" and/or "segment" (default: ["segment"]).
+            temperature:             Sampling temperature for transcription (0.0-1.0).
+
+        Returns:
+            Dict with 'text', 'language', 'duration', 'words' and/or 'segments'.
+        """
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        granularities = timestamp_granularities or ["segment"]
+        selected_model = model or self.whisper_model
+
+        with open(audio_path, "rb") as f:
+            files = {"file": (audio_path.name, f, "audio/wav")}
+            data: dict = {
+                "model": selected_model,
+                "response_format": "verbose_json",
+                "temperature": str(temperature),
+            }
+            if language:
+                data["language"] = language
+            # OpenAI API accepts timestamp_granularities[] as repeated form fields
+            for g in granularities:
+                data.setdefault("timestamp_granularities[]", [])
+                if isinstance(data["timestamp_granularities[]"], list):
+                    data["timestamp_granularities[]"] = g  # httpx sends last value
+            # For multiple granularities, use the array form
+            if len(granularities) > 1:
+                data["timestamp_granularities[]"] = granularities
+
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/v1/audio/transcriptions",
+                    files=files,
+                    data=data,
+                    headers=self._headers(),
+                    timeout=120.0,
+                )
+            except httpx.ConnectError:
+                raise RuntimeError(self._connect_error_message())
+            except httpx.TimeoutException:
+                raise RuntimeError("Transcription timed out. Audio file may be too long.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Transcription error ({resp.status_code}): {resp.text[:300]}")
+
+        result = resp.json()
+        self.last_usage = {
+            "transcription_detailed": True,
+            "model": selected_model,
+            "audio_file": audio_path.name,
+            "language": result.get("language", language),
+            "duration": result.get("duration"),
+            "granularities": granularities,
+        }
+        return result
+
     def speak(
         self,
         text: str,
