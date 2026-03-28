@@ -903,6 +903,104 @@ class LocalAIBackend(Backend):
         self.last_usage = {"model": model, "tts": True, "output_bytes": len(resp.content)}
         return output_path
 
+    def tts(
+        self,
+        text: str,
+        output_path: Path,
+        voice: str = "",
+        speed: float = 1.0,
+        response_format: str = "wav",
+        model: str = "",
+    ) -> Path:
+        """Generate speech using the OpenAI-compatible /v1/audio/speech endpoint.
+
+        Supports voice selection, speed control, and output format.
+
+        Args:
+            text:            Text to synthesize.
+            output_path:     Path to write the audio file.
+            voice:           Voice name (model-dependent, e.g. "en-us-amy-low").
+            speed:           Playback speed multiplier (0.25-4.0, default 1.0).
+            response_format: Output format: "wav", "mp3", "opus", "flac" (default "wav").
+            model:           TTS model override (default: self.tts_model).
+
+        Returns:
+            Path to the generated audio file.
+        """
+        selected_model = model or self.tts_model
+        speed = max(0.25, min(speed, 4.0))
+        payload: dict = {
+            "model": selected_model,
+            "input": text,
+            "response_format": response_format,
+            "speed": speed,
+        }
+        if voice:
+            payload["voice"] = voice
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/audio/speech",
+                json=payload,
+                headers=self._headers(),
+                timeout=60.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError("TTS timed out. Text may be too long.")
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"TTS error ({resp.status_code}): {resp.text[:300]}")
+
+        content_type = resp.headers.get("content-type", "")
+        if "json" in content_type:
+            raise RuntimeError(f"TTS returned error: {resp.text[:300]}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(resp.content)
+        self.last_usage = {
+            "tts": True,
+            "model": selected_model,
+            "voice": voice or "(default)",
+            "speed": speed,
+            "format": response_format,
+            "output_bytes": len(resp.content),
+        }
+        return output_path
+
+    def tts_voices(self, model: str = "") -> list[str]:
+        """List available TTS voices by querying the models endpoint.
+
+        This is a best-effort introspection — not all backends expose voice lists.
+        Falls back to an empty list on error.
+
+        Args:
+            model: TTS model to query (default: self.tts_model).
+
+        Returns:
+            List of voice identifiers, or empty list if unavailable.
+        """
+        selected_model = model or self.tts_model
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/models/{selected_model}",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return []
+
+        if resp.status_code >= 400:
+            return []
+
+        data = resp.json()
+        # LocalAI may expose voices in config or metadata
+        voices = data.get("voices", [])
+        if not voices:
+            voices = data.get("metadata", {}).get("voices", [])
+        return voices
+
     def voice_pipeline(
         self,
         audio_input: Path,

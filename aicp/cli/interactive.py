@@ -24,6 +24,8 @@ Slash commands:
   /vision <path> [prompt]   Analyze an image (default: describe it)
   /transcribe <path>        Transcribe audio → use as next message
   /speak                    Speak the last AI response via TTS
+  /tts [voice] [speed] <text>  Generate speech via OpenAI-compatible TTS API
+  /voices                   List available TTS voices
   /imagine <prompt>         Generate an image (saved to /tmp/aicp_imagine.png)
   /voice <path>             Voice pipeline: audio in → LLM → audio out
   /kb search <query>        Search the knowledge base (with reranking)
@@ -146,6 +148,59 @@ def _handle_slash(
             print(f"  [audio saved to {out}]")
         except Exception as e:
             print(f"[error] TTS failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/tts":
+        if not backend:
+            print("[error] TTS requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg:
+            print("[error] Usage: /tts [voice] [speed] <text>", file=sys.stderr)
+            print("  Example: /tts Hello world", file=sys.stderr)
+            print("  Example: /tts en-us-amy-low 1.0 Hello world", file=sys.stderr)
+            return None
+        # Parse optional voice and speed prefix
+        parts = arg.split(None, 2)
+        voice = ""
+        speed = 1.0
+        text = arg
+        # Heuristic: if first token looks like a voice name (contains '-') and
+        # there are more tokens, treat it as voice
+        if len(parts) >= 2 and "-" in parts[0]:
+            voice = parts[0]
+            # Check if second token is a float (speed)
+            try:
+                speed = float(parts[1])
+                text = parts[2] if len(parts) > 2 else ""
+            except ValueError:
+                text = " ".join(parts[1:])
+        try:
+            if not text:
+                print("[error] No text to speak.", file=sys.stderr)
+                return None
+            out = Path("/tmp/aicp_tts_output.wav")
+            backend.tts(text, out, voice=voice, speed=speed)
+            info = f"voice={voice or '(default)'}, speed={speed}"
+            size = out.stat().st_size
+            print(f"  [TTS saved to {out}] ({size:,} bytes, {info})")
+        except Exception as e:
+            print(f"[error] TTS failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/voices":
+        if not backend:
+            print("[error] Voices requires a LocalAI backend.", file=sys.stderr)
+            return None
+        try:
+            voices = backend.tts_voices()
+            if voices:
+                print(f"\n  Available voices ({len(voices)}):")
+                for v in voices:
+                    print(f"    • {v}")
+            else:
+                print("  No voice list available (backend may not expose this).")
+        except Exception as e:
+            print(f"[error] Voices query failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/imagine":

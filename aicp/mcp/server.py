@@ -1196,6 +1196,65 @@ def aicp_nearest_neighbors(query: str, documents_json: str, top_k: int = 5) -> s
 
 
 # ---------------------------------------------------------------------------
+# Text-to-Speech (M92)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_tts(
+    text: str,
+    output_path: str = "/tmp/aicp_mcp_tts.wav",
+    voice: str = "",
+    speed: float = 1.0,
+    response_format: str = "wav",
+    model: str = "",
+) -> str:
+    """Generate speech audio from text using the OpenAI-compatible TTS API.
+
+    Args:
+        text: Text to synthesize into speech.
+        output_path: File path to write the audio output.
+        voice: Voice name (model-dependent, e.g. "en-us-amy-low"). Empty = default.
+        speed: Playback speed multiplier (0.25-4.0, default 1.0).
+        response_format: Audio format: "wav", "mp3", "opus", "flac".
+        model: TTS model override (empty = default).
+
+    Returns:
+        JSON with output path and file size.
+    """
+    backend = _get_backend()
+    m = model or None
+    v = voice or ""
+    out = Path(output_path)
+    backend.tts(text, out, voice=v, speed=speed, response_format=response_format, model=m or "")
+    return json.dumps({
+        "output_path": str(out),
+        "size_bytes": out.stat().st_size,
+        "voice": v or "(default)",
+        "speed": speed,
+        "format": response_format,
+    }, indent=2)
+
+
+@mcp.tool()
+def aicp_tts_voices(model: str = "") -> str:
+    """List available TTS voices for a model.
+
+    Note: not all backends expose voice lists.
+
+    Args:
+        model: TTS model to query (empty = default).
+
+    Returns:
+        JSON array of voice identifiers.
+    """
+    backend = _get_backend()
+    m = model or None
+    voices = backend.tts_voices(model=m or "")
+    return json.dumps(voices, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
