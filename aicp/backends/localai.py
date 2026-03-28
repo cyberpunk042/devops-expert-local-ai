@@ -304,6 +304,102 @@ class LocalAIBackend(Backend):
         }
         return [item["embedding"] for item in data["data"]]
 
+    def embed_dims(
+        self,
+        text: str,
+        dimensions: int,
+        model: Optional[str] = None,
+    ) -> list[float]:
+        """Generate a truncated embedding with a specific number of dimensions.
+
+        Uses the ``dimensions`` parameter (Matryoshka embedding support) to
+        get a shorter vector. Useful for trading accuracy for speed/memory.
+
+        Args:
+            text:       Text to embed.
+            dimensions: Target number of dimensions (e.g. 256, 512, 768).
+            model:      Model override (default: embedding_model or self.model).
+
+        Returns:
+            Embedding vector truncated to the requested dimensions.
+        """
+        selected_model = model or self.embedding_model or self.model
+        payload: dict = {
+            "model": selected_model,
+            "input": text,
+            "dimensions": dimensions,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/embeddings",
+                json=payload,
+                headers=self._headers(),
+                timeout=30.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Embedding error ({resp.status_code}): {resp.text[:200]}")
+
+        data = resp.json()
+        self.last_usage = {
+            "embedding_dims": True,
+            "dimensions": dimensions,
+            "model": selected_model,
+        }
+        return data["data"][0]["embedding"]
+
+    @staticmethod
+    def cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two embedding vectors.
+
+        Args:
+            a: First embedding vector.
+            b: Second embedding vector.
+
+        Returns:
+            Similarity score between -1.0 and 1.0 (1.0 = identical).
+        """
+        if len(a) != len(b):
+            raise ValueError(f"Vector dimensions must match: {len(a)} != {len(b)}")
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def nearest_neighbors(
+        self,
+        query: str,
+        documents: list[str],
+        top_k: int = 5,
+    ) -> list[dict]:
+        """Find the most similar documents to a query using embeddings.
+
+        Embeds the query and all documents, then ranks by cosine similarity.
+
+        Args:
+            query:     The search query text.
+            documents: List of document texts to search.
+            top_k:     Number of top results to return.
+
+        Returns:
+            List of {index, text, score} dicts, sorted by score descending.
+        """
+        query_vec = self.embed(query)
+        doc_vecs = self.embed_batch(documents) if documents else []
+
+        results = []
+        for i, (doc, vec) in enumerate(zip(documents, doc_vecs)):
+            score = self.cosine_similarity(query_vec, vec)
+            results.append({"index": i, "text": doc, "score": round(score, 4)})
+
+        results.sort(key=lambda r: r["score"], reverse=True)
+        return results[:top_k]
+
     def embed_image(
         self,
         image_path: Path,

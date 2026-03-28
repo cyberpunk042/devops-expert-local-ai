@@ -1126,6 +1126,76 @@ def aicp_model_config_update(
 
 
 # ---------------------------------------------------------------------------
+# Embedding Dimensions & Similarity (M91)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_embed_dims(text: str, dimensions: int, model: str = "") -> str:
+    """Generate a truncated embedding with a specific number of dimensions.
+
+    Uses Matryoshka embedding support to produce shorter vectors, trading
+    accuracy for speed and memory savings.
+
+    Args:
+        text: The text to embed.
+        dimensions: Target number of dimensions for the embedding.
+        model: Embedding model (empty = default).
+
+    Returns:
+        JSON with dimensions and first 10 values of the embedding vector.
+    """
+    backend = _get_backend()
+    m = model or None
+    vec = backend.embed_dims(text, dimensions, model=m)
+    return json.dumps({
+        "requested_dimensions": dimensions,
+        "actual_dimensions": len(vec),
+        "embedding": vec[:10],
+    }, indent=2)
+
+
+@mcp.tool()
+def aicp_similarity(text_a: str, text_b: str) -> str:
+    """Compute cosine similarity between two texts using embeddings.
+
+    Embeds both texts and returns their cosine similarity score.
+
+    Args:
+        text_a: First text.
+        text_b: Second text.
+
+    Returns:
+        JSON with the similarity score (-1.0 to 1.0).
+    """
+    backend = _get_backend()
+    vec_a = backend.embed(text_a)
+    vec_b = backend.embed(text_b)
+    score = LocalAIBackend.cosine_similarity(vec_a, vec_b)
+    return json.dumps({"similarity": round(score, 6)}, indent=2)
+
+
+@mcp.tool()
+def aicp_nearest_neighbors(query: str, documents_json: str, top_k: int = 5) -> str:
+    """Find the most similar documents to a query using embeddings.
+
+    Embeds the query and all documents, ranks by cosine similarity.
+
+    Args:
+        query: The query text to search for.
+        documents_json: JSON array of document strings to search through.
+        top_k: Number of top results to return.
+
+    Returns:
+        JSON array of {index, text, similarity} ranked by similarity.
+    """
+    backend = _get_backend()
+    docs = json.loads(documents_json)
+    results = backend.nearest_neighbors(query, docs, top_k=top_k)
+    return json.dumps(results, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

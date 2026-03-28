@@ -58,6 +58,8 @@ Slash commands:
   /loaded                   List currently loaded models
   /complete-lp <text>       Raw completion with token log probabilities
   /complete-n [N] <text>    Generate N raw text completions (default: 3)
+  /similarity <t1> | <t2>  Cosine similarity between two texts
+  /neighbors <query> | <d1> | <d2> ...  Find nearest documents to query
   /help                     Show this help
   /exit                     Quit
 """
@@ -882,6 +884,50 @@ def _handle_slash(
                 print(f"  [{idx}] {display}\n")
         except Exception as e:
             print(f"[error] Complete-n failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/similarity":
+        if not backend:
+            print("[error] Similarity requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg or "|" not in arg:
+            print("[error] Usage: /similarity <text1> | <text2>", file=sys.stderr)
+            return None
+        parts = arg.split("|", 1)
+        text1, text2 = parts[0].strip(), parts[1].strip()
+        if not text1 or not text2:
+            print("[error] Both texts are required.", file=sys.stderr)
+            return None
+        try:
+            vec1 = backend.embed(text1)
+            vec2 = backend.embed(text2)
+            score = backend.cosine_similarity(vec1, vec2)
+            print(f"  Cosine similarity: {score:.4f}")
+            print(f"  Dimensions: {len(vec1)}")
+        except Exception as e:
+            print(f"[error] Similarity failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/neighbors":
+        if not backend:
+            print("[error] Neighbors requires a LocalAI backend.", file=sys.stderr)
+            return None
+        if not arg or "|" not in arg:
+            print("[error] Usage: /neighbors <query> | <doc1> | <doc2> | ...", file=sys.stderr)
+            return None
+        parts = [p.strip() for p in arg.split("|")]
+        query = parts[0]
+        docs = [p for p in parts[1:] if p]
+        if not query or not docs:
+            print("[error] Need a query and at least one document.", file=sys.stderr)
+            return None
+        try:
+            results = backend.nearest_neighbors(query, docs)
+            print(f"\n  Query: {query}\n")
+            for r in results:
+                print(f"    {r['score']:.4f}  {r['text'][:80]}")
+        except Exception as e:
+            print(f"[error] Neighbors failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":
