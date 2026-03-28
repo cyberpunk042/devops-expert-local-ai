@@ -257,12 +257,32 @@ def _handle_slash(
         if not arg:
             print("[error] Usage: /tools <prompt>", file=sys.stderr)
             print("  The LLM will autonomously call tools to answer your prompt.", file=sys.stderr)
+            print("  Add --stream for streaming output.", file=sys.stderr)
             return None
+        # Check for --stream flag
+        stream_flag = False
+        clean_arg = arg
+        if clean_arg.startswith("--stream "):
+            stream_flag = True
+            clean_arg = clean_arg[len("--stream "):].strip()
+        elif clean_arg.endswith(" --stream"):
+            stream_flag = True
+            clean_arg = clean_arg[:-(len(" --stream"))].strip()
         try:
-            result = backend.execute_with_native_tools(arg, mode, project_path)
-            print(f"\nai> {result}\n")
-            messages.append({"role": "user", "content": f"[tools] {arg}"})
-            messages.append({"role": "assistant", "content": result})
+            if stream_flag:
+                print("\nai> ", end="", flush=True)
+                full = ""
+                for chunk in backend.execute_with_tools_stream(clean_arg, mode, project_path):
+                    print(chunk, end="", flush=True)
+                    full += chunk
+                print("\n")
+                messages.append({"role": "user", "content": f"[tools-stream] {clean_arg}"})
+                messages.append({"role": "assistant", "content": full})
+            else:
+                result = backend.execute_with_native_tools(clean_arg, mode, project_path)
+                print(f"\nai> {result}\n")
+                messages.append({"role": "user", "content": f"[tools] {clean_arg}"})
+                messages.append({"role": "assistant", "content": result})
         except Exception as e:
             print(f"[error] Tool-use failed: {e}", file=sys.stderr)
         return None

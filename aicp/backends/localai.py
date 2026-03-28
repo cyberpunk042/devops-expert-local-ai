@@ -1203,6 +1203,151 @@ class LocalAIBackend(Backend):
         last_content = messages[-1].get("content", "")
         return last_content or "(tool loop exhausted)"
 
+    def execute_with_tools_stream(
+        self,
+        prompt: str,
+        mode: Mode,
+        project_path: Path,
+        tools: Optional[list[dict]] = None,
+        max_rounds: int = 5,
+        tool_choice: str = "auto",
+    ) -> Iterator[str]:
+        """Streaming tool calls — yields text chunks, executes tools mid-stream.
+
+        Uses SSE streaming with OpenAI-compatible ``tools`` parameter.
+        When the model emits ``delta.tool_calls`` instead of ``delta.content``,
+        the tool call is accumulated, executed, and the result fed back for
+        the next round.  Text chunks are yielded as they arrive.
+
+        Usage::
+            for chunk in backend.execute_with_tools_stream(prompt, mode, path):
+                print(chunk, end="", flush=True)
+        """
+        from aicp.core.tools import execute_tool, get_tools_for_mode
+
+        if tools is None:
+            tools = get_tools_for_mode(mode.value)
+
+        system = self._system_prompt(mode, project_path)
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        selected_model = self._select_model(prompt)
+        headers = self._headers()
+
+        for _round in range(max_rounds):
+            payload: dict = {
+                "model": selected_model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                "tools": tools,
+                "tool_choice": tool_choice,
+                "stream": True,
+                **self.sampling_params_for_mode(mode),
+            }
+
+            # Accumulate streamed tool calls and content
+            accumulated_content = ""
+            # tool_calls_acc: {index: {"id": ..., "function": {"name": ..., "arguments": ...}}}
+            tool_calls_acc: dict[int, dict] = {}
+
+            try:
+                with httpx.stream(
+                    "POST",
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=120.0,
+                ) as resp:
+                    if resp.status_code >= 400:
+                        raise RuntimeError(
+                            f"LocalAI error ({resp.status_code}): {resp.read().decode()[:200]}"
+                        )
+                    for line in resp.iter_lines():
+                        line = line.strip()
+                        if not line or line == "data: [DONE]":
+                            continue
+                        if not line.startswith("data: "):
+                            continue
+                        try:
+                            data = json.loads(line[6:])
+                            delta = data["choices"][0].get("delta", {})
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                        # ── Text content chunk ──
+                        text_chunk = delta.get("content", "")
+                        if text_chunk:
+                            accumulated_content += text_chunk
+                            yield text_chunk
+
+                        # ── Tool call chunks ──
+                        tc_deltas = delta.get("tool_calls", [])
+                        for tc_delta in tc_deltas:
+                            idx = tc_delta.get("index", 0)
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {
+                                    "id": tc_delta.get("id", f"call_{_round}_{idx}"),
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            fn_delta = tc_delta.get("function", {})
+                            if "name" in fn_delta:
+                                tool_calls_acc[idx]["function"]["name"] += fn_delta["name"]
+                            if "arguments" in fn_delta:
+                                tool_calls_acc[idx]["function"]["arguments"] += fn_delta["arguments"]
+
+            except httpx.ConnectError:
+                raise RuntimeError(self._connect_error_message())
+            except httpx.TimeoutException:
+                raise RuntimeError(
+                    f"LocalAI timed out at {self.base_url}. "
+                    "The model may still be loading. Check logs: make local-logs"
+                )
+
+            # ── Process accumulated tool calls ──
+            if tool_calls_acc:
+                # Build the assistant message with tool_calls
+                assistant_msg: dict = {"role": "assistant", "content": accumulated_content or None}
+                assistant_msg["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+                messages.append(assistant_msg)
+
+                for tc in assistant_msg["tool_calls"]:
+                    fn = tc["function"]
+                    tool_call_id = tc.get("id", f"call_{_round}")
+                    result = execute_tool(
+                        fn["name"],
+                        fn.get("arguments", "{}"),
+                        project_path,
+                        backend=self,
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result,
+                    })
+                continue  # next round
+
+            # ── No tool calls — also check for <tool_call> tags in content ──
+            tag_calls = self._parse_tool_calls(accumulated_content)
+            if tag_calls:
+                messages.append({"role": "assistant", "content": accumulated_content})
+                for tc in tag_calls:
+                    args = tc.get("arguments") or tc.get("parameters") or {}
+                    result = execute_tool(tc["name"], json.dumps(args), project_path, backend=self)
+                    messages.append({
+                        "role": "user",
+                        "content": f"Tool result for {tc['name']}:\n{result}",
+                    })
+                continue  # next round
+
+            # No tool calls at all — we're done
+            return
+
+        # Exhausted all rounds
+        return
+
     @staticmethod
     def _parse_tool_calls(content: str) -> list[dict]:
         """Extract tool calls from <tool_call>JSON</tool_call> tags.

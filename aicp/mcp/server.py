@@ -676,6 +676,29 @@ def aicp_server_config() -> str:
 
 
 @mcp.tool()
+def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
+    """Execute a prompt with streaming tool calls — the LLM can call tools autonomously.
+
+    Combines streaming output with multi-turn tool execution.  The model
+    decides which tools to call, executes them, and produces a final answer.
+
+    Args:
+        prompt: Task or question for the LLM.
+        mode: Permission mode (think/edit/act).
+
+    Returns:
+        The final text response after all tool rounds complete.
+    """
+    from pathlib import Path as _Path
+    from aicp.core.modes import Mode as _Mode
+    backend = _get_backend()
+    chunks = list(backend.execute_with_tools_stream(
+        prompt, _Mode(mode), _Path("."),
+    ))
+    return "".join(chunks)
+
+
+@mcp.tool()
 def aicp_model_delete(model_name: str) -> str:
     """Delete/uninstall a model from LocalAI.
 
