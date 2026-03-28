@@ -828,6 +828,29 @@ def aicp_model_delete(model_name: str) -> str:
 
 
 @mcp.tool()
+def aicp_multimodal(messages_json: str, images_json: str, mode: str = "think") -> str:
+    """Multi-turn visual chat with images inline in the message history.
+
+    Unlike aicp_chat which is text-only, this supports images at any point
+    in the conversation. Use {img:0}, {img:1} placeholders in message content.
+
+    Args:
+        messages_json: JSON array of {role, content} message objects.
+                       Use {img:N} placeholders where images should appear.
+        images_json:   JSON array of {data, mime} objects (base64-encoded images).
+        mode:          Permission mode (think/edit/act).
+
+    Returns:
+        The model's response text.
+    """
+    backend = _get_backend()
+    m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+    msgs = json.loads(messages_json)
+    imgs = json.loads(images_json)
+    return backend.execute_multimodal(msgs, imgs, m, Path("."))
+
+
+@mcp.tool()
 def aicp_bestof(prompt: str, n: int = 3, mode: str = "think", seed: int = -1) -> str:
     """Generate N candidate completions for the same prompt (best-of-N).
 

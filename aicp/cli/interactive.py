@@ -52,6 +52,7 @@ Slash commands:
   /seed [number]            Set/show seed for reproducible inference (clear = random)
   /logprobs <prompt>        Show response with per-token log probabilities
   /bestof [N] <prompt>      Generate N completions, pick the best (default: 3)
+  /chat-image <path> <prompt> Multi-turn visual chat (image added to history)
   /help                     Show this help
   /exit                     Quit
 """
@@ -733,6 +734,41 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": results[0]["text"]})
         except Exception as e:
             print(f"[error] Best-of-N failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/chat-image":
+        if not backend:
+            print("[error] Chat-image requires a LocalAI backend.", file=sys.stderr)
+            return None
+        parts = arg.split(None, 1) if arg else []
+        if len(parts) < 2:
+            print("[error] Usage: /chat-image <image_path> <prompt>", file=sys.stderr)
+            print("  Images are added to conversation history for multi-turn visual chat.", file=sys.stderr)
+            return None
+        img_path = Path(parts[0])
+        prompt_text = parts[1]
+        if not img_path.exists():
+            print(f"[error] Image not found: {img_path}", file=sys.stderr)
+            return None
+        try:
+            suffix = img_path.suffix.lower()
+            mime_map = {
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+            }
+            mime = mime_map.get(suffix, "image/png")
+            image_b64 = base64.b64encode(img_path.read_bytes()).decode("ascii")
+            # Build multimodal message with {img:0} placeholder
+            chat_messages = list(messages) + [
+                {"role": "user", "content": f"{{img:0}} {prompt_text}"},
+            ]
+            images = [{"data": image_b64, "mime": mime}]
+            result = backend.execute_multimodal(chat_messages, images, mode, project_path)
+            print(f"\nai> {result}\n")
+            messages.append({"role": "user", "content": f"[Image: {img_path.name}] {prompt_text}"})
+            messages.append({"role": "assistant", "content": result})
+        except Exception as e:
+            print(f"[error] Chat-image failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/grammar":

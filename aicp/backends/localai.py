@@ -518,6 +518,110 @@ class LocalAIBackend(Backend):
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected vision response: {str(data)[:200]}")
 
+    def execute_multimodal(
+        self,
+        messages: list[dict],
+        images: list[dict],
+        mode: Mode,
+        project_path: Path,
+        seed: Optional[int] = None,
+    ) -> str:
+        """Multi-turn chat with inline images in the message array.
+
+        Unlike execute_vision() which is single-shot, this method supports
+        full conversation history with images at any position. Each image
+        is referenced by a placeholder ``{img:N}`` in message content,
+        replaced with the actual base64 data URL.
+
+        Args:
+            messages:     Chat messages list [{role, content}, ...].
+                          Use ``{img:0}``, ``{img:1}`` etc. as placeholders
+                          for images in the content field.
+            images:       List of image dicts [{data: base64_str, mime: "image/png"}, ...].
+            mode:         Permission mode for sampling profile.
+            project_path: Project root for context building.
+            seed:         Optional seed for reproducible output.
+
+        Returns:
+            The model's response text.
+        """
+        model = self.vision_model or self.model
+        system = self._system_prompt(mode, project_path)
+
+        # Build the API messages with multimodal content
+        api_messages: list[dict] = [{"role": "system", "content": system}]
+
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            # Check if this message references any images
+            has_images = any(f"{{img:{i}}}" in content for i in range(len(images)))
+
+            if has_images and role == "user":
+                # Build multimodal content array
+                parts: list[dict] = []
+                remaining = content
+                for i, img in enumerate(images):
+                    placeholder = f"{{img:{i}}}"
+                    if placeholder in remaining:
+                        # Split text around placeholder
+                        before, remaining = remaining.split(placeholder, 1)
+                        if before.strip():
+                            parts.append({"type": "text", "text": before.strip()})
+                        data_url = f"data:{img.get('mime', 'image/png')};base64,{img['data']}"
+                        parts.append({"type": "image_url", "image_url": {"url": data_url}})
+                if remaining.strip():
+                    parts.append({"type": "text", "text": remaining.strip()})
+                if not parts:
+                    parts.append({"type": "text", "text": content})
+                api_messages.append({"role": role, "content": parts})
+            else:
+                api_messages.append({"role": role, "content": content})
+
+        payload: dict = {
+            "model": model,
+            "messages": api_messages,
+            "max_tokens": self.max_tokens,
+            **self.sampling_params_for_mode(mode),
+        }
+        effective_seed = seed if seed is not None else self.seed
+        if effective_seed is not None:
+            payload["seed"] = effective_seed
+
+        try:
+            resp = httpx.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=180.0,
+            )
+        except httpx.ConnectError:
+            raise RuntimeError(self._connect_error_message())
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                f"Multimodal request timed out at {self.base_url}. "
+                "Vision models take longer to process images."
+            )
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LocalAI multimodal error ({resp.status_code}): {resp.text[:300]}")
+
+        data = resp.json()
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        self.last_usage = {
+            "model": data.get("model", model) if isinstance(data, dict) else model,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "multimodal": True,
+            "images": len(images),
+        }
+
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Unexpected multimodal response: {str(data)[:200]}")
+
     def transcribe(
         self,
         audio_path: Path,
