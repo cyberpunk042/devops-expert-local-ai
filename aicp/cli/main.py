@@ -261,6 +261,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Output path for --speak (default: /tmp/aicp_tts.wav)",
     )
+    # MCP server
+    parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Start AICP as an MCP server (stdio transport, for Claude Code integration)",
+    )
     # Observability
     parser.add_argument(
         "--observe",
@@ -1314,6 +1320,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif r.get("result"):
                 print_response(r["result"])
         return 0 if all(not r["error"] for r in results) else 1
+
+    # --mcp: start MCP server (stdio transport)
+    if getattr(args, "mcp", False):
+        from aicp.mcp.server import run_stdio
+        run_stdio()
+        return 0
 
     # Normal mode: need a prompt (unless --transcribe or --vision which can work standalone)
     if not args.prompt and not getattr(args, "transcribe", None) and not getattr(args, "vision", None):

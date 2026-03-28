@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "aicp": {
+      "type": "stdio",
+      "command": "/home/jfortin/devops-expert-local-ai/.venv/bin/aicp-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
