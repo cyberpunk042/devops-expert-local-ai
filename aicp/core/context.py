@@ -22,9 +22,12 @@ def build_project_context(project_path: Path, max_chars: int = 2000) -> str:
     sections = []
     total = 0
 
-    # Directory tree (depth 2)
+    # Directory tree (depth 2), truncated to fit budget
     tree = _dir_tree(project_path, max_depth=2)
     if tree:
+        budget = max_chars // 2  # reserve half for key files
+        if len(tree) > budget:
+            tree = tree[:budget] + "\n... (truncated)"
         section = f"Project structure:\n{tree}"
         sections.append(section)
         total += len(section)

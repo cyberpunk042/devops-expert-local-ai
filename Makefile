@@ -67,6 +67,9 @@ help:
 	@echo "  make fleet-copy HOST=<ip>    SCP fleet config + token to remote node"
 	@echo "  make fleet-firewall          Show firewall rules (Windows/ESET/Linux)"
 	@echo "  make p2p-token               Fetch P2P token from LocalAI + save to .env"
+	@echo "  make wsl-forward             Forward agent+P2P ports from WSL to LAN"
+	@echo "  make wsl-forward-check       Check current WSL port forwards"
+	@echo "  make wsl-forward-remove      Remove all AICP WSL port forwards"
 	@echo ""
 	@echo "MAINTENANCE"
 	@echo "  make update                  git pull + pip install"
@@ -139,6 +142,7 @@ local-up-p2p:
 	@for i in $$(seq 1 36); do \
 		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
 			echo "LocalAI P2P ready at http://localhost:$(PORT)"; \
+			echo "  Next: run 'make p2p-token' to fetch the P2P token for fleet distribution"; \
 			exit 0; \
 		fi; \
 		echo "  waiting... ($$i/36)"; \

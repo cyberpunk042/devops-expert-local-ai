@@ -18,7 +18,6 @@
 services:
   localai:
     ports:
-      - "8090:8080"
       - "9876:9876"
     environment:
       # ── P2P ──

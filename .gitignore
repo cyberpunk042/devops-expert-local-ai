@@ -38,3 +38,4 @@ models/*.bin
 models/*.safetensors
 models/*.pt
 /backends/
+.aicp/agent.pid
