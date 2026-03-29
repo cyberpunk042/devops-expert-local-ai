@@ -102,12 +102,20 @@ class LocalAIBackend(Backend):
     def name(self) -> str:
         return "local"
 
-    def is_available(self) -> bool:
-        try:
-            resp = httpx.get(f"{self.base_url}/v1/models", timeout=3.0)
-            return resp.status_code == 200
-        except (httpx.ConnectError, httpx.TimeoutException, OSError):
-            return False
+    def is_available(self, retries: int = 3, delay: float = 2.0) -> bool:
+        import time
+
+        for attempt in range(retries):
+            try:
+                resp = httpx.get(f"{self.base_url}/v1/models", timeout=3.0)
+                return resp.status_code == 200
+            except (httpx.ConnectError, httpx.TimeoutException, OSError):
+                return False
+            except httpx.ReadError:
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                    continue
+                return False
 
     def status_detail(self) -> str:
         try:
