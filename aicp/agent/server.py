@@ -184,9 +184,12 @@ def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = N
 def _cli_main() -> None:
     """Entry point for aicp-agent CLI."""
     import argparse
+    import os
     parser = argparse.ArgumentParser(prog="aicp-agent", description="AICP agent daemon")
     parser.add_argument("--port", "-p", type=int, default=9100, help="Port (default: 9100)")
     parser.add_argument("--token", "-t", default="", help="Auth token")
     parser.add_argument("--config", type=Path, default=None, help="Config file")
     args = parser.parse_args()
-    run_agent(port=args.port, token=args.token, config_path=args.config)
+    # CLI --token takes precedence, then env var, then empty (no auth)
+    token = args.token or os.environ.get("AICP_AGENT_SECRET", "")
+    run_agent(port=args.port, token=token, config_path=args.config)

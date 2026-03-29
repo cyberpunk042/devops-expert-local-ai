@@ -2,6 +2,7 @@
         local-up local-up-multi local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities update \
         model-download models-list model-list-remote agent-up agent-down \
+        fleet-init fleet-join fleet-status fleet-test fleet-copy \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
 
@@ -56,6 +57,13 @@ help:
 	@echo "  make agent-down              Stop aicp-agent daemon"
 	@echo "  make install-service         Install aicp-agent as systemd user service"
 	@echo "  make uninstall-service       Remove systemd service"
+	@echo ""
+	@echo "FLEET (multi-machine)"
+	@echo "  make fleet-init              Generate fleet token + register this node"
+	@echo "  make fleet-join HOST=<ip>    Add a remote machine to the fleet"
+	@echo "  make fleet-status            Check connectivity of all fleet nodes"
+	@echo "  make fleet-test              Run a test task on each node"
+	@echo "  make fleet-copy HOST=<ip>    SCP fleet config + token to remote node"
 	@echo ""
 	@echo "MAINTENANCE"
 	@echo "  make update                  git pull + pip install"
@@ -198,8 +206,15 @@ model-list-remote:
 
 agent-up:
 	@mkdir -p .aicp
-	@.venv/bin/aicp-agent & echo $$! > .aicp/agent.pid
-	@echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100"
+	@AGENT_TOKEN=$$(grep '^AICP_AGENT_SECRET=' .env 2>/dev/null | cut -d= -f2-); \
+	if [ -n "$$AGENT_TOKEN" ]; then \
+		AICP_AGENT_SECRET=$$AGENT_TOKEN .venv/bin/aicp-agent & echo $$! > .aicp/agent.pid; \
+		echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (token from .env)"; \
+	else \
+		.venv/bin/aicp-agent & echo $$! > .aicp/agent.pid; \
+		echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (no token — open access)"; \
+		echo "  Warning: Run 'make fleet-init' to generate a shared secret."; \
+	fi
 	@echo "Stop with: make agent-down"
 
 agent-down:
@@ -211,12 +226,35 @@ agent-down:
 	fi
 
 # =============================================================================
+# Fleet (multi-machine)
+# =============================================================================
+
+fleet-init:
+	@bash scripts/fleet.sh init
+
+fleet-join:
+	@bash scripts/fleet.sh join
+
+fleet-status:
+	@bash scripts/fleet.sh status
+
+fleet-test:
+	@bash scripts/fleet.sh test
+
+fleet-copy:
+	@bash scripts/fleet.sh copy
+
+# =============================================================================
 # Maintenance
 # =============================================================================
 
 update:
 	git pull
-	uv pip install --python .venv/bin/python -e ".[dev]"
+	@if command -v uv >/dev/null 2>&1; then \
+		uv pip install --python .venv/bin/python -e ".[dev]"; \
+	else \
+		.venv/bin/python -m pip install --quiet -e ".[dev]"; \
+	fi
 	@echo "Updated. If LocalAI config changed: make setup-local-only"
 
 install-aliases:

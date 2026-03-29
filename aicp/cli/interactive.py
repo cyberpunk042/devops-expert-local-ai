@@ -65,6 +65,8 @@ Slash commands:
   /complete-n [N] <text>    Generate N raw text completions (default: 3)
   /similarity <t1> | <t2>  Cosine similarity between two texts
   /neighbors <query> | <d1> | <d2> ...  Find nearest documents to query
+  /fleet                    Show fleet status (all nodes)
+  /fleet-run <prompt>       Run a task on the best available fleet node
   /help                     Show this help
   /exit                     Quit
 """
@@ -85,6 +87,56 @@ def _handle_slash(
 
     if cmd == "/help":
         print(_SLASH_HELP)
+        return None
+
+    if cmd == "/fleet":
+        try:
+            from aicp.core.cluster import load_fleet_config, check_cluster
+            nodes = load_fleet_config()
+            if not nodes:
+                print("  No fleet configured. Run: make fleet-init", file=sys.stderr)
+                return None
+            nodes = check_cluster(nodes)
+            print(f"\n  Fleet: {len(nodes)} node(s)\n")
+            for n in nodes:
+                status = "\033[0;32m●\033[0m online" if n.online else "\033[0;31m●\033[0m offline"
+                print(f"    {n.name} ({n.host}:{n.port})  {status}")
+                if n.gpus:
+                    for g in n.gpus:
+                        print(f"      GPU: {g.get('name', '?')} — {g.get('vram_free_mb', '?')}MB free / {g.get('vram_total_mb', '?')}MB")
+                if n.models:
+                    names = [m.get("name", "?") for m in n.models]
+                    print(f"      Models: {', '.join(names)}")
+            print()
+        except Exception as e:
+            print(f"[error] Fleet status failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/fleet-run":
+        if not arg:
+            print("[error] Usage: /fleet-run <prompt>", file=sys.stderr)
+            return None
+        try:
+            from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node, execute_remote
+            nodes = load_fleet_config()
+            if not nodes:
+                print("  No fleet configured. Run: make fleet-init", file=sys.stderr)
+                return None
+            nodes = check_cluster(nodes)
+            best = find_best_node(nodes)
+            if not best:
+                print("[error] No fleet nodes are online.", file=sys.stderr)
+                return None
+            print(f"  Routing to: {best.name} ({best.host}:{best.port})")
+            result = execute_remote(best, arg, mode=str(mode.value), backend="local")
+            text = result.get("result", "")
+            duration = result.get("duration_seconds", 0)
+            print(f"  [{best.name}, {duration}s]\n")
+            print(text)
+            messages.append({"role": "user", "content": arg})
+            messages.append({"role": "assistant", "content": text})
+        except Exception as e:
+            print(f"[error] Fleet-run failed: {e}", file=sys.stderr)
         return None
 
     if not backend:

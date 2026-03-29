@@ -89,10 +89,18 @@ GPU_DOCKER_OK=0  # set to 1 by check_nvidia_toolkit if passthrough works
 # =============================================================================
 log_head "Checking prerequisites"
 
+USE_UV=0
 check_python() {
-    log_step "Python (uv manages version)"
-    command -v uv >/dev/null 2>&1 || die "uv not found. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh"
-    log_ok "uv $(uv --version)"
+    log_step "Python environment"
+    if command -v uv >/dev/null 2>&1; then
+        USE_UV=1
+        log_ok "uv $(uv --version) (fast path)"
+    elif command -v python3 >/dev/null 2>&1; then
+        PY_VER=$(python3 --version 2>&1)
+        log_ok "$PY_VER (using python3 + pip)"
+    else
+        die "Neither uv nor python3 found. Install Python 3.11+ or uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
 }
 
 check_docker() {
@@ -157,10 +165,17 @@ if [[ "$MODE" == "full" || "$MODE" == "claude" ]]; then
         log_skip "Virtual environment (.venv exists)"
         STEPS_SKIPPED+=("venv")
     else
-        log_step "Creating virtual environment (Python 3.11)"
-        [[ -d .venv ]] && rm -rf .venv
-        uv venv --python 3.11 .venv
-        log_ok ".venv created (Python 3.11)"
+        if [[ "$USE_UV" -eq 1 ]]; then
+            log_step "Creating virtual environment via uv (Python 3.11)"
+            [[ -d .venv ]] && rm -rf .venv
+            uv venv --python 3.11 .venv
+            log_ok ".venv created (Python 3.11 via uv)"
+        else
+            log_step "Creating virtual environment via python3 -m venv"
+            [[ -d .venv ]] && rm -rf .venv
+            python3 -m venv .venv
+            log_ok ".venv created ($(. .venv/bin/activate && python3 --version))"
+        fi
         STEPS_DONE+=("venv")
     fi
 
@@ -168,7 +183,11 @@ if [[ "$MODE" == "full" || "$MODE" == "claude" ]]; then
 
     # Always ensure deps are current (fast if nothing changed)
     log_step "Installing Python dependencies"
-    uv pip install --python "$VENV_PYTHON" -e ".[dev]"
+    if [[ "$USE_UV" -eq 1 ]]; then
+        uv pip install --python "$VENV_PYTHON" -e ".[dev]"
+    else
+        "$VENV_PYTHON" -m pip install --quiet -e ".[dev]"
+    fi
     log_ok "Dependencies installed (aicp, httpx, rich, pyyaml, mcp, pytest, ruff)"
     STEPS_DONE+=("deps")
 else

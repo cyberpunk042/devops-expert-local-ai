@@ -1339,6 +1339,70 @@ def aicp_token_count(text: str, model: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Fleet (M95)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_fleet_status() -> str:
+    """Show the status of all fleet nodes (multi-machine cluster).
+
+    Returns JSON with each node's health, GPU info, and loaded models.
+    """
+    from aicp.core.cluster import load_fleet_config, check_cluster
+
+    nodes = load_fleet_config()
+    if not nodes:
+        return json.dumps({"error": "No fleet configured. Run: make fleet-init"})
+
+    nodes = check_cluster(nodes)
+    result = []
+    for n in nodes:
+        result.append({
+            "name": n.name,
+            "host": n.host,
+            "port": n.port,
+            "online": n.online,
+            "gpus": n.gpus,
+            "models": n.models,
+        })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def aicp_fleet_run(prompt: str, mode: str = "think") -> str:
+    """Route a task to the best available fleet node.
+
+    Picks the online node with the most free VRAM and executes the prompt.
+
+    Args:
+        prompt: The task/question to execute.
+        mode: Permission mode (think/edit/act).
+
+    Returns:
+        JSON with the result, node name, and duration.
+    """
+    from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node, execute_remote
+
+    nodes = load_fleet_config()
+    if not nodes:
+        return json.dumps({"error": "No fleet configured. Run: make fleet-init"})
+
+    nodes = check_cluster(nodes)
+    best = find_best_node(nodes)
+    if not best:
+        return json.dumps({"error": "No fleet nodes online"})
+
+    result = execute_remote(best, prompt, mode=mode, backend="local")
+    return json.dumps({
+        "node": best.name,
+        "host": best.host,
+        "result": result.get("result", ""),
+        "duration_seconds": result.get("duration_seconds", 0),
+    }, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
