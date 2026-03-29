@@ -32,7 +32,10 @@ logs/
 .DS_Store
 Thumbs.db
 
-# LocalAI models and backends (large binary files)
-models/
+# LocalAI models — track configs, ignore binaries
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/*.pt
 /backends/
 agent.pid

@@ -1,0 +1,9 @@
+name: hermes-3b
+backend: cuda12-llama-cpp
+parameters:
+  model: Hermes-3-Llama-3.2-3B-Q4_K_M.gguf
+  temperature: 0.3
+  top_p: 0.9
+context_size: 4096
+threads: 4
+gpu_layers: 32

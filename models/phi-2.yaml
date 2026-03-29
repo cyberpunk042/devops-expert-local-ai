@@ -1,0 +1,9 @@
+name: phi-2
+backend: cuda12-llama-cpp
+parameters:
+  model: phi-2.Q4_K_M.gguf
+  temperature: 0.7
+  top_p: 0.9
+context_size: 2048
+threads: 4
+gpu_layers: 0

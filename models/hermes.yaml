@@ -1,0 +1,9 @@
+name: hermes
+backend: cuda12-llama-cpp
+parameters:
+  model: hermes-2-pro-mistral-7b.Q4_K_M.gguf
+  temperature: 0.7
+  top_p: 0.9
+context_size: 2048
+threads: 3
+gpu_layers: 24
