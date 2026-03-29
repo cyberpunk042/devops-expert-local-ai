@@ -25,7 +25,8 @@ class AgentClient:
         try:
             r = httpx.get(f"{self.base_url}/health", timeout=5.0)
             return r.status_code == 200
-        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError,
+                httpx.RemoteProtocolError, OSError):
             return False
 
     def status(self) -> Optional[Dict[str, Any]]:
@@ -35,7 +36,8 @@ class AgentClient:
             if r.status_code == 200:
                 return r.json()
             return None
-        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError,
+                httpx.RemoteProtocolError, OSError):
             return None
 
     def execute_task(
