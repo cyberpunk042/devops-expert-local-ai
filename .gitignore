@@ -35,4 +35,4 @@ Thumbs.db
 # LocalAI models and backends (large binary files)
 models/
 /backends/
-
+agent.pid
