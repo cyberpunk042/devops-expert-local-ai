@@ -11,6 +11,7 @@ def test_load_cluster_config_empty():
 def test_load_cluster_config():
     config = {
         "cluster": {
+            "config_file": "/nonexistent/fleet.yaml",
             "token": "secret123",
             "nodes": [
                 {"name": "machine-a", "host": "192.168.1.10", "port": 9100},

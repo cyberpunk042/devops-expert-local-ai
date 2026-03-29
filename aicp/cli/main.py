@@ -792,6 +792,46 @@ def _run_self_test() -> int:
         return count
     _probe(f"MCP tool registry (≥30 tools)", _check_mcp_tools)
 
+    # 22. Fleet routing
+    def _check_fleet_routing():
+        from aicp.core.router import classify_task_with_reason, recommend_model
+        from aicp.core.modes import Mode as _Mode
+
+        # Use a minimal mock to avoid HTTP calls in the probe
+        class _MockBe:
+            def is_available(self):
+                return True
+        backend_name, reason = classify_task_with_reason(
+            "heartbeat", _Mode.THINK, {"local": _MockBe()}, {}
+        )
+        if backend_name != "local":
+            raise RuntimeError(f"heartbeat should route to local, got {backend_name}")
+        model = recommend_model("heartbeat")
+        if model != "hermes-3b":
+            raise RuntimeError(f"heartbeat should use hermes-3b, got {model}")
+        return f"backend={backend_name}, model={model}"
+    _probe("Fleet routing (classify + model selection)", _check_fleet_routing)
+
+    # 23. Fleet node connectivity
+    def _check_fleet_nodes():
+        from aicp.core.cluster import load_fleet_config, check_cluster
+        nodes = load_fleet_config()
+        if not nodes:
+            return None  # no fleet configured
+        nodes = check_cluster(nodes)
+        online = sum(1 for n in nodes if n.online)
+        return f"{online}/{len(nodes)} online"
+    _probe("Fleet nodes (connectivity)", _check_fleet_nodes)
+
+    # 24. Offload metrics
+    def _check_offload():
+        from aicp.core.metrics import offload_report
+        r = offload_report(100)
+        if r["total_tasks"] == 0:
+            return None  # no history yet
+        return f"{r['offload_pct']}% offloaded ({r['local_tasks']}L/{r['claude_tasks']}C)"
+    _probe("Offload metrics (history)", _check_offload)
+
     # Summary
     console.print()
     total = passed + failed + skipped

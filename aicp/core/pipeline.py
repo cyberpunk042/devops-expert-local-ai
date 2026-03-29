@@ -41,6 +41,7 @@ import yaml
 
 from aicp.backends.base import Backend
 from aicp.core.budget import BudgetLimits, load_budget_from_config
+from aicp.core.controller import Controller, Task
 from aicp.core.modes import Mode
 from aicp.core.router import classify_task
 
@@ -170,20 +171,29 @@ def run_pipeline(
                 })
                 break
 
-        # Execute with retry
+        # Execute with retry (via Controller for fleet routing + failover)
+        controller = Controller(backends, config=config or {})
         print(f"[Step {i + 1}/{len(steps)}] {mode_str}/{backend_name}: {prompt[:80]}...", file=sys.stderr)
         last_error = None
         for attempt in range(max_retries + 1):
             try:
-                result = backend.execute(prompt, mode, project_path)
-                usage = getattr(backend, "last_usage", {})
+                task = Task(
+                    prompt=prompt,
+                    mode=mode,
+                    project_path=project_path,
+                    backend_name=backend_name,
+                )
+                result = controller.run(task)
+                usage = getattr(backends.get(backend_name), "last_usage", {})
                 budget.update(
                     cost=usage.get("estimated_cost_usd") or 0,
                     steps=1,
                 )
+                route = controller.last_route or "local"
                 results.append({
                     "step_index": i, "prompt": prompt, "mode": mode_str,
-                    "backend": backend_name, "result": result, "error": None,
+                    "backend": backend_name, "route": route,
+                    "result": result, "error": None,
                     "agent": agent_name,
                 })
                 last_error = None

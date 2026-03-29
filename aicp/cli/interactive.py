@@ -69,6 +69,7 @@ Slash commands:
   /fleet-run <prompt>       Run a task on the best available fleet node
   /fleet-route              Show where the next task would be routed
   /offload                  Show LocalAI offload metrics (progress toward 80% goal)
+  /route <prompt>           Show routing decision without executing (backend + model)
   /help                     Show this help
   /exit                     Quit
 """
@@ -211,6 +212,42 @@ def _handle_slash(
             print()
         except Exception as e:
             print(f"[error] Offload report failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/route":
+        if not arg:
+            print("[error] Usage: /route <prompt>", file=sys.stderr)
+            return None
+        try:
+            from aicp.core.router import classify_task_with_reason, recommend_model
+
+            # Build mock backends dict for routing check
+            mock_backends = {}
+            if backend:
+                mock_backends["local"] = backend
+            # Check if claude is configured
+            try:
+                from aicp.backends.claude_code import ClaudeCodeBackend
+                claude_cfg = config.get("backends", {}).get("claude", {})
+                claude = ClaudeCodeBackend(
+                    model=claude_cfg.get("model", "opus"),
+                    max_turns=claude_cfg.get("max_turns", 10),
+                    timeout=claude_cfg.get("timeout", 300),
+                )
+                mock_backends["claude"] = claude
+            except Exception:
+                pass
+
+            backend_choice, reason = classify_task_with_reason(arg, mode, mock_backends, config)
+            model_choice = recommend_model(arg, config) or "(default)"
+
+            print(f"\n  Prompt:   {arg[:80]}{'...' if len(arg) > 80 else ''}")
+            print(f"  Backend:  {backend_choice}  ({reason})")
+            print(f"  Model:    {model_choice}")
+            print(f"  Mode:     {mode.value}")
+            print()
+        except Exception as e:
+            print(f"[error] Route check failed: {e}", file=sys.stderr)
         return None
 
     if not backend:

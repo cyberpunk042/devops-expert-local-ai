@@ -16,6 +16,13 @@ backends:
     sound_model: transformers-musicgen
     cache_prompt: true
     auto_route: true
+    # Advanced sampling (uncomment to override defaults):
+    # mirostat: 0          # 0=disabled, 1=Mirostat, 2=Mirostat 2.0
+    # mirostat_tau: 5.0    # Target entropy
+    # mirostat_eta: 0.1    # Learning rate
+    # typical_p: 1.0       # Locally typical sampling threshold
+    # frequency_penalty: 0.0
+    # presence_penalty: 0.0
   claude:
     model: opus
     max_turns: 10
