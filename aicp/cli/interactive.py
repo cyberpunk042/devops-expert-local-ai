@@ -71,6 +71,7 @@ Slash commands:
   /offload                  Show LocalAI offload metrics (progress toward 80% goal)
   /route <prompt>           Show routing decision without executing (backend + model)
   /status                   System status (GPU, model, routing, offload progress)
+  /fallback                 Switch to Claude backend for this session (when LocalAI is down)
   /help                     Show this help
   /exit                     Quit
 """
@@ -263,6 +264,20 @@ def _handle_slash(
             print()
         except Exception as e:
             print(f"[error] Status check failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/fallback":
+        print("\n  The interactive REPL is designed for LocalAI conversations.")
+        print("  To use Claude as a fallback, run from the CLI:")
+        print()
+        print("    aicp --backend claude \"your prompt here\"")
+        print("    aicp --backend auto \"your prompt here\"   # auto-routes")
+        print()
+        print("  To fix LocalAI:")
+        print("    make local-up       # start container")
+        print("    make local-status   # check status")
+        print("    /health             # check from here")
+        print()
         return None
 
     if cmd == "/route":
@@ -1468,9 +1483,11 @@ def run_interactive(
 
         except httpx.ConnectError:
             print("[error] Cannot connect to LocalAI. Is it running?", file=sys.stderr)
+            print("  Tip: `make local-up` to start, or `aicp --backend claude` for cloud fallback", file=sys.stderr)
             messages.pop()
         except httpx.TimeoutException:
-            print("[error] Request timed out.", file=sys.stderr)
+            print("[error] Request timed out. Model may be loading (cold start).", file=sys.stderr)
+            print("  Tip: `/warmup` to pre-load, or wait and retry", file=sys.stderr)
             messages.pop()
 
     return 0
