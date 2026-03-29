@@ -2475,6 +2475,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 console.print(f"  [dim]Session '{args.session}' updated[/]")
             else:
                 result = controller.run(task)
+        if controller.last_route and controller.last_route != "local":
+            console.print(f"  [dim]Routed via: {controller.last_route}[/]")
         print_response(result)
 
         # Warn if a local model snuck commands/writes into a THINK-mode response

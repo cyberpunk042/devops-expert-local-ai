@@ -67,6 +67,7 @@ Slash commands:
   /neighbors <query> | <d1> | <d2> ...  Find nearest documents to query
   /fleet                    Show fleet status (all nodes)
   /fleet-run <prompt>       Run a task on the best available fleet node
+  /fleet-route              Show where the next task would be routed
   /help                     Show this help
   /exit                     Quit
 """
@@ -137,6 +138,41 @@ def _handle_slash(
             messages.append({"role": "assistant", "content": text})
         except Exception as e:
             print(f"[error] Fleet-run failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/fleet-route":
+        try:
+            from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node
+            from aicp.core.controller import _local_ips
+            import socket as _sock
+
+            nodes = load_fleet_config()
+            if not nodes:
+                print("  No fleet configured. Run: make fleet-init", file=sys.stderr)
+                return None
+
+            auto_route = config.get("cluster", {}).get("auto_route", False)
+            nodes = check_cluster(nodes)
+            best = find_best_node(nodes)
+
+            print(f"\n  Fleet routing {'ENABLED' if auto_route else 'DISABLED'}")
+            print(f"  Nodes: {len(nodes)} total, {sum(1 for n in nodes if n.online)} online")
+            if best:
+                local_ips = _local_ips()
+                is_self = best.host in local_ips or best.name.lower() == _sock.gethostname().lower()
+                where = "LOCAL (this machine)" if is_self else f"REMOTE → {best.name} ({best.host}:{best.port})"
+                print(f"  Best node: {best.name} ({best.host})")
+                print(f"  Next task would run: {where}")
+                if best.gpus:
+                    for g in best.gpus:
+                        print(f"    GPU: {g.get('name', '?')} — {g.get('vram_free_mb', '?')}MB free")
+            else:
+                print("  Best node: NONE (all offline) → would run locally")
+            if not auto_route:
+                print("  To enable: set cluster.auto_route: true in config/default.yaml")
+            print()
+        except Exception as e:
+            print(f"[error] Fleet-route failed: {e}", file=sys.stderr)
         return None
 
     if not backend:

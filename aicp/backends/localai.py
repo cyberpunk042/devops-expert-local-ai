@@ -172,12 +172,16 @@ class LocalAIBackend(Backend):
         """Pick the best model for this prompt.
 
         Returns the model name to use. When auto_route is off (default),
-        always returns self.model.
+        always returns self.model. When on, uses router.recommend_model()
+        to pick the best local model (hermes-3b for fleet ops, codellama
+        for code, etc.).
         """
         if not self.auto_route:
             return self.model
-        if self.code_model and _CODE_KEYWORDS.search(prompt):
-            return self.code_model
+        from aicp.core.router import recommend_model
+        recommended = recommend_model(prompt)
+        if recommended:
+            return recommended
         return self.model
 
     def embed(self, text: str) -> list[float]:

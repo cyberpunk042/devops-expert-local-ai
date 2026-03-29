@@ -15,7 +15,7 @@ backends:
     reranker_model: bge-reranker-v2-m3
     sound_model: transformers-musicgen
     cache_prompt: true
-    auto_route: false
+    auto_route: true
   claude:
     model: opus
     max_turns: 10
@@ -42,4 +42,4 @@ guardrails:
   - '*secret*'
 cluster:
   config_file: config/fleet.yaml
-  auto_route: false
+  auto_route: true

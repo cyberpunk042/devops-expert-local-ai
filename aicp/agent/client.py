@@ -53,6 +53,7 @@ class AgentClient:
                 "mode": mode,
                 "backend": backend,
                 "project": project,
+                "remote": True,
             },
             headers=self._headers(),
             timeout=300.0,

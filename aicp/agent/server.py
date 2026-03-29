@@ -71,6 +71,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             mode_str = body.get("mode", "think")
             backend_name = body.get("backend", "local")
             project = body.get("project", ".")
+            is_remote = body.get("remote", False)
 
             if not prompt:
                 self._respond_json(400, {"error": "missing prompt"})
@@ -83,6 +84,13 @@ class AgentHandler(BaseHTTPRequestHandler):
                 return
 
             controller = self.server.controller  # type: ignore
+
+            # If this task came from another fleet node, disable auto_route
+            # to prevent recursive routing loops
+            if is_remote:
+                controller._fleet_checked = True
+                controller._fleet_nodes = []
+
             task = Task(
                 prompt=prompt,
                 mode=mode,
