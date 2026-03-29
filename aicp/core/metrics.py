@@ -89,6 +89,61 @@ def aggregate(count: int = 1000) -> Dict[str, Any]:
     }
 
 
+def offload_report(count: int = 1000) -> Dict[str, Any]:
+    """Compute LocalAI offload metrics — how much work avoids Claude.
+
+    Returns a dict with:
+      - offload_pct: percentage of tasks handled by local backends
+      - token_savings_pct: percentage of tokens NOT sent to Claude
+      - cost_savings_usd: estimated cost saved by using local
+      - by_backend: per-backend breakdown
+      - goal_met: True if offload >= 80% (the mission target)
+    """
+    stats = aggregate(count)
+    by_backend = stats["by_backend"]
+
+    local_tasks = by_backend.get("local", {}).get("tasks", 0)
+    claude_tasks = by_backend.get("claude", {}).get("tasks", 0)
+    total_tasks = stats["total_tasks"]
+
+    local_tokens = (
+        by_backend.get("local", {}).get("prompt_tokens", 0)
+        + by_backend.get("local", {}).get("completion_tokens", 0)
+    )
+    claude_tokens = (
+        by_backend.get("claude", {}).get("prompt_tokens", 0)
+        + by_backend.get("claude", {}).get("completion_tokens", 0)
+    )
+    total_tokens = local_tokens + claude_tokens
+
+    claude_cost = by_backend.get("claude", {}).get("cost", 0.0)
+
+    # Estimate what local tasks would have cost on Claude
+    # Conservative estimate: $0.003 per 1K tokens (blended opus/sonnet rate)
+    estimated_claude_rate = 0.003 / 1000
+    estimated_savings = local_tokens * estimated_claude_rate
+
+    offload_pct = round(local_tasks / total_tasks * 100, 1) if total_tasks else 0
+    token_savings_pct = round(local_tokens / total_tokens * 100, 1) if total_tokens else 0
+
+    return {
+        "total_tasks": total_tasks,
+        "local_tasks": local_tasks,
+        "claude_tasks": claude_tasks,
+        "offload_pct": offload_pct,
+        "token_savings_pct": token_savings_pct,
+        "local_tokens": local_tokens,
+        "claude_tokens": claude_tokens,
+        "claude_cost_usd": round(claude_cost, 4),
+        "estimated_savings_usd": round(estimated_savings, 4),
+        "avg_local_duration": by_backend.get("local", {}).get("avg_duration", 0),
+        "avg_claude_duration": by_backend.get("claude", {}).get("avg_duration", 0),
+        "goal_met": offload_pct >= 80,
+        "today": stats["today"],
+        "this_week": stats["this_week"],
+    }
+
+
 def _empty() -> Dict[str, Any]:
     return {
         "total_tasks": 0, "today": 0, "this_week": 0,

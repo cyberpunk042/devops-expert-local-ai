@@ -68,6 +68,7 @@ Slash commands:
   /fleet                    Show fleet status (all nodes)
   /fleet-run <prompt>       Run a task on the best available fleet node
   /fleet-route              Show where the next task would be routed
+  /offload                  Show LocalAI offload metrics (progress toward 80% goal)
   /help                     Show this help
   /exit                     Quit
 """
@@ -173,6 +174,41 @@ def _handle_slash(
             print()
         except Exception as e:
             print(f"[error] Fleet-route failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/offload":
+        try:
+            from aicp.core.metrics import offload_report
+            r = offload_report()
+
+            if r["total_tasks"] == 0:
+                print("\n  No task history yet. Run some tasks first.\n")
+                return None
+
+            goal_icon = "OK" if r["goal_met"] else "  "
+            bar_len = 30
+            filled = int(r["offload_pct"] / 100 * bar_len)
+            bar = "#" * filled + "-" * (bar_len - filled)
+            target_pos = int(80 / 100 * bar_len)
+            bar_list = list(bar)
+            if target_pos < bar_len:
+                bar_list[target_pos] = "|"
+            bar_str = "".join(bar_list)
+
+            print(f"\n  LocalAI Offload Dashboard")
+            print(f"  ========================")
+            print(f"  [{bar_str}] {r['offload_pct']}% offloaded  {goal_icon}")
+            print(f"                         {'          80% goal ^' :>40}")
+            print(f"")
+            print(f"  Tasks:   {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total")
+            print(f"  Tokens:  {r['local_tokens']:,} local / {r['claude_tokens']:,} claude ({r['token_savings_pct']}% local)")
+            print(f"  Speed:   {r['avg_local_duration']}s avg local / {r['avg_claude_duration']}s avg claude")
+            print(f"  Cost:    ${r['claude_cost_usd']:.4f} spent on Claude")
+            print(f"  Saved:   ~${r['estimated_savings_usd']:.4f} by using LocalAI")
+            print(f"  Activity: {r['today']} today / {r['this_week']} this week")
+            print()
+        except Exception as e:
+            print(f"[error] Offload report failed: {e}", file=sys.stderr)
         return None
 
     if not backend:

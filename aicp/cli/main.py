@@ -343,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show live Prometheus metrics, GPU status, and API call stats",
     )
+    parser.add_argument(
+        "--offload",
+        action="store_true",
+        help="Show LocalAI offload dashboard — progress toward 80%% Claude reduction",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -1887,6 +1892,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --metrics: live Prometheus metrics
     if getattr(args, "metrics", False):
         return _run_metrics()
+
+    # --offload: LocalAI offload dashboard
+    if getattr(args, "offload", False):
+        from aicp.core.metrics import offload_report
+        r = offload_report()
+        if r["total_tasks"] == 0:
+            print("No task history yet. Run some tasks first.")
+            return 0
+        bar_len = 30
+        filled = int(r["offload_pct"] / 100 * bar_len)
+        bar = "#" * filled + "-" * (bar_len - filled)
+        bar_list = list(bar)
+        target_pos = int(80 / 100 * bar_len)
+        if target_pos < bar_len:
+            bar_list[target_pos] = "|"
+        bar_str = "".join(bar_list)
+        goal = "GOAL MET" if r["goal_met"] else "in progress"
+        print(f"\nLocalAI Offload Dashboard ({goal})")
+        print(f"[{bar_str}] {r['offload_pct']}% offloaded (target: 80%)")
+        print(f"")
+        print(f"Tasks:    {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total")
+        print(f"Tokens:   {r['local_tokens']:,} local / {r['claude_tokens']:,} claude ({r['token_savings_pct']}% local)")
+        print(f"Speed:    {r['avg_local_duration']}s avg local / {r['avg_claude_duration']}s avg claude")
+        print(f"Cost:     ${r['claude_cost_usd']:.4f} spent on Claude")
+        print(f"Saved:    ~${r['estimated_savings_usd']:.4f} by using LocalAI")
+        print(f"Activity: {r['today']} today / {r['this_week']} this week")
+        return 0
 
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):

@@ -1,6 +1,6 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
-        test test-all check lint format type-check auto-config benchmark self-test capabilities update \
+        test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -47,6 +47,7 @@ help:
 	@echo "  make benchmark               Benchmark the default model"
 	@echo "  make self-test               Validate all AICP features against live LocalAI"
 	@echo "  make capabilities            Show all AICP capabilities and integrations"
+	@echo "  make offload                 LocalAI offload dashboard (progress toward 80%% goal)"
 	@echo ""
 	@echo "MODELS"
 	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
@@ -199,6 +200,9 @@ self-test:
 
 capabilities:
 	.venv/bin/aicp --capabilities
+
+offload:
+	.venv/bin/aicp --offload
 
 # =============================================================================
 # Model management
