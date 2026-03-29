@@ -64,6 +64,7 @@ def save_task(
     prompt_tokens: Optional[int] = None,
     completion_tokens: Optional[int] = None,
     estimated_cost_usd: Optional[float] = None,
+    route: Optional[str] = None,
 ) -> str:
     """Save a task record to disk. Returns the record ID (filename stem)."""
     now = datetime.utcnow()
@@ -76,6 +77,7 @@ def save_task(
         "mode": mode,
         "backend": backend,
         "model": model,
+        "route": route,
         "project": project,
         "response": response,
         "duration_seconds": round(duration_seconds, 2),

@@ -28,6 +28,7 @@ def aggregate(count: int = 1000) -> Dict[str, Any]:
     total_cost = 0.0
 
     by_backend = {}  # type: Dict[str, Dict[str, Any]]
+    by_route = {}  # type: Dict[str, int]
 
     for r in records:
         ts_str = r.get("timestamp", "")
@@ -53,6 +54,9 @@ def aggregate(count: int = 1000) -> Dict[str, Any]:
         total_prompt_tokens += pt
         total_completion_tokens += ct
         total_cost += cost
+
+        route = r.get("route", "local")
+        by_route[route] = by_route.get(route, 0) + 1
 
         backend = r.get("backend", "unknown")
         if backend not in by_backend:
@@ -86,6 +90,7 @@ def aggregate(count: int = 1000) -> Dict[str, Any]:
         "total_tokens": total_prompt_tokens + total_completion_tokens,
         "total_cost_usd": round(total_cost, 4),
         "by_backend": by_backend,
+        "by_route": by_route,
     }
 
 
@@ -126,10 +131,17 @@ def offload_report(count: int = 1000) -> Dict[str, Any]:
     offload_pct = round(local_tasks / total_tasks * 100, 1) if total_tasks else 0
     token_savings_pct = round(local_tokens / total_tokens * 100, 1) if total_tokens else 0
 
+    # Count failover and fleet-routed tasks
+    by_route = stats.get("by_route", {})
+    fleet_tasks = sum(v for k, v in by_route.items() if k and "fleet:" in k)
+    failover_tasks = sum(v for k, v in by_route.items() if k and "failover:" in k)
+
     return {
         "total_tasks": total_tasks,
         "local_tasks": local_tasks,
         "claude_tasks": claude_tasks,
+        "fleet_tasks": fleet_tasks,
+        "failover_tasks": failover_tasks,
         "offload_pct": offload_pct,
         "token_savings_pct": token_savings_pct,
         "local_tokens": local_tokens,
@@ -149,5 +161,5 @@ def _empty() -> Dict[str, Any]:
         "total_tasks": 0, "today": 0, "this_week": 0,
         "errors": 0, "error_rate": 0, "avg_duration": 0,
         "total_prompt_tokens": 0, "total_completion_tokens": 0,
-        "total_tokens": 0, "total_cost_usd": 0, "by_backend": {},
+        "total_tokens": 0, "total_cost_usd": 0, "by_backend": {}, "by_route": {},
     }

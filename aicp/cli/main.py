@@ -1912,7 +1912,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"\nLocalAI Offload Dashboard ({goal})")
         print(f"[{bar_str}] {r['offload_pct']}% offloaded (target: 80%)")
         print(f"")
-        print(f"Tasks:    {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total")
+        fleet_info = f" ({r['fleet_tasks']} fleet-routed)" if r.get('fleet_tasks') else ""
+        failover_info = f" ({r['failover_tasks']} failovers)" if r.get('failover_tasks') else ""
+        print(f"Tasks:    {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total{fleet_info}{failover_info}")
         print(f"Tokens:   {r['local_tokens']:,} local / {r['claude_tokens']:,} claude ({r['token_savings_pct']}% local)")
         print(f"Speed:    {r['avg_local_duration']}s avg local / {r['avg_claude_duration']}s avg claude")
         print(f"Cost:     ${r['claude_cost_usd']:.4f} spent on Claude")

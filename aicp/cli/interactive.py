@@ -200,7 +200,9 @@ def _handle_slash(
             print(f"  [{bar_str}] {r['offload_pct']}% offloaded  {goal_icon}")
             print(f"                         {'          80% goal ^' :>40}")
             print(f"")
-            print(f"  Tasks:   {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total")
+            fleet_info = f" ({r['fleet_tasks']} fleet-routed)" if r.get('fleet_tasks') else ""
+            failover_info = f" ({r['failover_tasks']} failovers)" if r.get('failover_tasks') else ""
+            print(f"  Tasks:   {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total{fleet_info}{failover_info}")
             print(f"  Tokens:  {r['local_tokens']:,} local / {r['claude_tokens']:,} claude ({r['token_savings_pct']}% local)")
             print(f"  Speed:   {r['avg_local_duration']}s avg local / {r['avg_claude_duration']}s avg claude")
             print(f"  Cost:    ${r['claude_cost_usd']:.4f} spent on Claude")
@@ -1312,13 +1314,22 @@ def run_interactive(
             except Exception:
                 pass  # Silently fall back to unaugmented prompt
 
+        # Auto model selection: pick the best local model for this prompt
+        turn_model = model
+        if config.get("backends", {}).get("local", {}).get("auto_route", False):
+            from aicp.core.router import recommend_model
+            recommended = recommend_model(prompt)
+            if recommended and recommended != model:
+                turn_model = recommended
+                print(f"  [auto-route → {turn_model}]", flush=True)
+
         messages.append({"role": "user", "content": prompt})
 
         try:
             if stream:
-                content = _stream_turn(base_url, model, messages, max_tokens)
+                content = _stream_turn(base_url, turn_model, messages, max_tokens)
             else:
-                content = _blocking_turn(base_url, model, messages, max_tokens)
+                content = _blocking_turn(base_url, turn_model, messages, max_tokens)
 
             if content is None:
                 messages.pop()

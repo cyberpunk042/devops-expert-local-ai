@@ -252,6 +252,7 @@ class Controller:
                 prompt_tokens=usage.get("prompt_tokens"),
                 completion_tokens=usage.get("completion_tokens"),
                 estimated_cost_usd=usage.get("estimated_cost_usd"),
+                route=self.last_route,
             )
 
         return result
