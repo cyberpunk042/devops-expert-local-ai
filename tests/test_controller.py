@@ -152,3 +152,104 @@ class TestFleetRouting:
         result = ctrl.run(task)
         assert result == "local result"
         assert "local" in ctrl.last_route
+
+
+# ---------------------------------------------------------------------------
+# Failover chain
+# ---------------------------------------------------------------------------
+
+
+class TestFailoverChain:
+    """Test failover: local → fleet peer → Claude."""
+
+    def test_failover_to_claude_when_local_fails(self, tmp_path):
+        """When local backend raises and Claude is available, failover to Claude."""
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.execute.return_value = "claude fallback result"
+        claude_backend.last_usage = {}
+
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend},
+            config={"cluster": {"auto_route": True, "config_file": "/nonexistent"}},
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        result = ctrl.run(task)
+        assert result == "claude fallback result"
+        assert ctrl.last_route == "failover:claude"
+        claude_backend.execute.assert_called_once()
+
+    def test_failover_disabled_raises_original_error(self, tmp_path):
+        """When auto_route is off, local failure raises without trying failover."""
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.last_usage = {}
+
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend},
+            config={"cluster": {"auto_route": False}},
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        with pytest.raises(RuntimeError, match="LocalAI down"):
+            ctrl.run(task)
+        claude_backend.execute.assert_not_called()
+
+    @patch("aicp.core.controller._local_ips", return_value={"127.0.0.1", "::1", "localhost", "192.168.40.10"})
+    @patch("aicp.core.controller.check_cluster")
+    @patch("aicp.core.controller.load_cluster_config")
+    def test_failover_to_fleet_peer(self, mock_load, mock_check, mock_ips, tmp_path):
+        """When local fails, try fleet peer before Claude."""
+        from aicp.core.cluster import NodeInfo
+
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.last_usage = {}
+
+        peer = NodeInfo(name="workstation", host="192.168.40.250", port=9100, token="t", online=True)
+        mock_load.return_value = [peer]
+        mock_check.return_value = [peer]
+
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend},
+            config={"cluster": {"auto_route": True, "config_file": "config/fleet.yaml"}},
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+
+        with patch("aicp.core.controller.execute_remote", return_value={"result": "peer result"}) as mock_exec:
+            # find_best_node returns self (192.168.40.10) so _try_fleet_route returns None,
+            # then local fails, then _try_fleet_failover tries the peer
+            with patch("aicp.core.controller.find_best_node", return_value=NodeInfo(
+                name="mining-station", host="192.168.40.10", port=9100, token="t", online=True
+            )):
+                result = ctrl.run(task)
+
+        assert result == "peer result"
+        assert "failover:fleet:workstation" in ctrl.last_route
+        claude_backend.execute.assert_not_called()
+
+    def test_failover_all_fail_raises(self, tmp_path):
+        """When local, fleet, and Claude all fail, raise the original error."""
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.execute.side_effect = RuntimeError("Claude also down")
+        claude_backend.last_usage = {}
+
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend},
+            config={"cluster": {"auto_route": True, "config_file": "/nonexistent"}},
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        with pytest.raises(RuntimeError, match="LocalAI down"):
+            ctrl.run(task)

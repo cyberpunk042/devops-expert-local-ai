@@ -2475,7 +2475,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 console.print(f"  [dim]Session '{args.session}' updated[/]")
             else:
                 result = controller.run(task)
-        if controller.last_route and controller.last_route != "local":
+        if controller.last_route and controller.last_route.startswith("failover:"):
+            console.print(f"  [yellow]⚠ Failover: {controller.last_route}[/]")
+        elif controller.last_route and controller.last_route != "local":
             console.print(f"  [dim]Routed via: {controller.last_route}[/]")
         print_response(result)
 

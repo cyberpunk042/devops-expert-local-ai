@@ -110,6 +110,46 @@ class Controller:
         )
         return result_dict.get("response", result_dict.get("result", str(result_dict)))
 
+    def _try_fleet_failover(self, task: Task) -> Optional[str]:
+        """Try to execute on any available fleet peer (failover).
+
+        Called when the local backend has failed. Tries each online remote
+        node in order of free VRAM.
+        """
+        cluster_cfg = self.config.get("cluster", {})
+        if not cluster_cfg.get("auto_route", False):
+            return None
+
+        self._check_fleet()
+        local_ips = _local_ips()
+        hostname = socket.gethostname().lower()
+
+        # Get all online remote nodes
+        remote_nodes = [
+            n for n in self._fleet_nodes
+            if n.online and n.host not in local_ips and n.name.lower() != hostname
+        ]
+        if not remote_nodes:
+            return None
+
+        for node in remote_nodes:
+            try:
+                logger.info("Failover: trying %s (%s:%d)", node.name, node.host, node.port)
+                result_dict = execute_remote(
+                    node,
+                    prompt=task.prompt,
+                    mode=task.mode.value,
+                    backend=task.backend_name,
+                    project=str(task.project_path),
+                )
+                self.last_route = f"failover:fleet:{node.name} ({node.host})"
+                return result_dict.get("response", result_dict.get("result", str(result_dict)))
+            except Exception as e:
+                logger.warning("Failover: %s failed: %s", node.name, e)
+                continue
+
+        return None
+
     def run(self, task: Task) -> str:
         """Run a task through the selected backend with mode enforcement."""
         issues = run_preflight_checks(
@@ -137,6 +177,8 @@ class Controller:
 
         error = None
         result = ""
+        failover_enabled = self.config.get("cluster", {}).get("auto_route", False)
+
         try:
             # Try fleet routing first (if auto_route is enabled)
             fleet_result = self._try_fleet_route(task)
@@ -148,7 +190,36 @@ class Controller:
                 backend = self.backends.get(task.backend_name)
                 if backend is None:
                     raise ValueError(f"Unknown backend: {task.backend_name}")
-                result = backend.execute(task.prompt, task.mode, task.project_path)
+
+                try:
+                    result = backend.execute(task.prompt, task.mode, task.project_path)
+                except Exception as local_err:
+                    if not failover_enabled:
+                        raise
+
+                    # Failover chain: local failed → try fleet peer → try Claude
+                    logger.warning("Local backend failed: %s — trying failover", local_err)
+
+                    # Step 1: try fleet peers
+                    peer_result = self._try_fleet_failover(task)
+                    if peer_result is not None:
+                        result = peer_result
+                    else:
+                        # Step 2: try Claude (if we weren't already using it)
+                        claude = self.backends.get("claude")
+                        if claude and task.backend_name != "claude":
+                            try:
+                                logger.info("Failover: escalating to Claude")
+                                self.last_route = "failover:claude"
+                                result = claude.execute(
+                                    task.prompt, task.mode, task.project_path
+                                )
+                            except Exception as claude_err:
+                                logger.error("Failover: Claude also failed: %s", claude_err)
+                                raise local_err from None
+                        else:
+                            raise local_err from None
+
         except Exception as e:
             error = str(e)
             raise
