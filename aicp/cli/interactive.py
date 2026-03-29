@@ -1405,11 +1405,16 @@ def run_interactive(
         # Auto model selection: pick the best local model for this prompt
         turn_model = model
         if config.get("backends", {}).get("local", {}).get("auto_route", False):
-            from aicp.core.router import recommend_model, intercept_operation
+            from aicp.core.router import recommend_model, intercept_operation, categorize_operation
             recommended = recommend_model(prompt)
             if recommended and recommended != model:
                 turn_model = recommended
                 print(f"  [auto-route → {turn_model}]", flush=True)
+
+            # Complexity hint: show when prompt would benefit from Claude
+            category = categorize_operation(prompt)
+            if category == "complex":
+                print("  [hint: complex task — consider `aicp --backend auto` for Claude routing]", flush=True)
 
             # Zero-token intercept: heartbeats, status checks bypass LLM
             intercepted = intercept_operation(prompt, config)
