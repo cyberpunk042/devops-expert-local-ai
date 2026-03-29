@@ -66,6 +66,7 @@ help:
 	@echo "  make fleet-test              Run a test task on each node"
 	@echo "  make fleet-copy HOST=<ip>    SCP fleet config + token to remote node"
 	@echo "  make fleet-firewall          Show firewall rules (Windows/ESET/Linux)"
+	@echo "  make p2p-token               Fetch P2P token from LocalAI + save to .env"
 	@echo ""
 	@echo "MAINTENANCE"
 	@echo "  make update                  git pull + pip install"
@@ -118,30 +119,32 @@ extract-backend-only:
 
 local-up:
 	docker compose up -d
-	@echo "Waiting for LocalAI API..."
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+	@echo "Waiting for LocalAI API (backend install may take 2-3 min on first start)..."
+	@for i in $$(seq 1 36); do \
 		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
 			echo "LocalAI ready at http://localhost:$(PORT)"; \
-			break; \
+			exit 0; \
 		fi; \
-		echo "  waiting... ($$i/10)"; \
-		sleep 3; \
-	done
+		echo "  waiting... ($$i/36)"; \
+		sleep 5; \
+	done; \
+	echo "LocalAI still starting — check: make local-logs"
 
 local-up-multi:
 	docker compose -f docker-compose.yaml -f docker-compose.multi-gpu.yaml up -d
 
 local-up-p2p:
 	docker compose -f docker-compose.yaml -f docker-compose.p2p.yaml up -d
-	@echo "LocalAI P2P federated mode. Waiting for API..."
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+	@echo "Waiting for LocalAI P2P (backend install may take 2-3 min on first start)..."
+	@for i in $$(seq 1 36); do \
 		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
 			echo "LocalAI P2P ready at http://localhost:$(PORT)"; \
-			break; \
+			exit 0; \
 		fi; \
-		echo "  waiting... ($$i/10)"; \
-		sleep 3; \
-	done
+		echo "  waiting... ($$i/36)"; \
+		sleep 5; \
+	done; \
+	echo "LocalAI still starting — check: make local-logs"
 
 
 local-down:
@@ -282,6 +285,9 @@ fleet-copy:
 
 fleet-firewall:
 	@bash scripts/fleet.sh firewall
+
+p2p-token:
+	@bash scripts/fleet.sh p2p-token
 
 # =============================================================================
 # Maintenance

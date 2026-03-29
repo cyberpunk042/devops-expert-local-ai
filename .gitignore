@@ -38,4 +38,3 @@ models/*.bin
 models/*.safetensors
 models/*.pt
 /backends/
-agent.pid

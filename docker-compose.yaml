@@ -10,6 +10,7 @@ services:
       - "8090:8080"
     volumes:
       - ./models:/models
+      - localai-backends:/backends
     environment:
       - THREADS=${THREADS:-4}
       - MODELS_PATH=/models
@@ -46,3 +47,6 @@ services:
               device_ids: ["0"]
               capabilities: [gpu]
     restart: unless-stopped
+
+volumes:
+  localai-backends:
