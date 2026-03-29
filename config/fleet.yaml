@@ -6,7 +6,7 @@ fleet:
     host: 192.168.40.10
     port: 9100
     role: primary
-  - name: node-250
+  - name: workstation-jfm
     host: 192.168.40.250
     port: 9100
     role: worker

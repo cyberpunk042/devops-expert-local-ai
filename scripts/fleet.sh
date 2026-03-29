@@ -179,24 +179,42 @@ cmd_join() {
     [[ -f "$FLEET_CONFIG" ]] || die "No fleet config. Run 'make fleet-init' first."
 
     if [[ -z "$REMOTE_NAME" ]]; then
-        # Try reverse DNS to resolve the actual hostname
         local resolved_name=""
+
+        # Method 1: reverse DNS (works on networks with proper DNS)
         resolved_name=$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $2}' | head -1)
-        if [[ -n "$resolved_name" && "$resolved_name" != "$REMOTE_HOST" ]]; then
-            # Strip domain if present (e.g., "node.local" → "node")
-            REMOTE_NAME="${resolved_name%%.*}"
-            REMOTE_NAME=$(echo "$REMOTE_NAME" | tr '[:upper:]' '[:lower:]')
-        else
-            # Try nslookup as fallback
-            resolved_name=$(nslookup "$REMOTE_HOST" 2>/dev/null | grep 'name =' | awk '{print $NF}' | sed 's/\.$//' | head -1)
-            if [[ -n "$resolved_name" ]]; then
-                REMOTE_NAME="${resolved_name%%.*}"
-                REMOTE_NAME=$(echo "$REMOTE_NAME" | tr '[:upper:]' '[:lower:]')
-            else
-                REMOTE_NAME="node-${REMOTE_HOST##*.}"
+
+        # Method 2: NetBIOS via PowerShell (works on Windows home LANs)
+        if [[ -z "$resolved_name" || "$resolved_name" == "$REMOTE_HOST" ]]; then
+            if command -v powershell.exe >/dev/null 2>&1; then
+                resolved_name=$(powershell.exe -NoProfile -Command \
+                    "try { ([System.Net.Dns]::GetHostEntry('$REMOTE_HOST')).HostName } catch { '' }" \
+                    2>/dev/null | tr -d '\r\n')
             fi
         fi
-        log_info "Resolved name: $REMOTE_NAME (from $REMOTE_HOST)"
+
+        # Method 3: nslookup reverse lookup
+        if [[ -z "$resolved_name" || "$resolved_name" == "$REMOTE_HOST" ]]; then
+            resolved_name=$(nslookup "$REMOTE_HOST" 2>/dev/null | grep 'name =' | awk '{print $NF}' | sed 's/\.$//' | head -1)
+        fi
+
+        # Method 4: ping -a (some systems resolve via NetBIOS/mDNS)
+        if [[ -z "$resolved_name" || "$resolved_name" == "$REMOTE_HOST" ]]; then
+            resolved_name=$(ping -c1 -W2 -a "$REMOTE_HOST" 2>/dev/null | head -1 | grep -oP 'PING \K[^ (]+' | head -1)
+            # Only use if it's not just the IP repeated
+            [[ "$resolved_name" == "$REMOTE_HOST" ]] && resolved_name=""
+        fi
+
+        if [[ -n "$resolved_name" && "$resolved_name" != "$REMOTE_HOST" ]]; then
+            # Strip domain if present (e.g., "NODE-250.local" → "node-250")
+            REMOTE_NAME="${resolved_name%%.*}"
+            REMOTE_NAME=$(echo "$REMOTE_NAME" | tr '[:upper:]' '[:lower:]')
+            log_ok "Resolved hostname: $REMOTE_NAME (from $REMOTE_HOST)"
+        else
+            REMOTE_NAME="node-${REMOTE_HOST##*.}"
+            log_info "Could not resolve hostname for $REMOTE_HOST — using '$REMOTE_NAME'"
+            log_info "Override with: make fleet-join HOST=$REMOTE_HOST FLEET_NAME=<name>"
+        fi
     fi
 
     log_head "Adding node to fleet"
@@ -604,6 +622,25 @@ cmd_firewall() {
     local is_wsl=0
     grep -qi microsoft /proc/version 2>/dev/null && is_wsl=1
 
+    # Detect Windows network profile
+    local net_profile="Private,Public"
+    if [[ "$is_wsl" -eq 1 ]]; then
+        local detected_profile
+        detected_profile=$(powershell.exe -NoProfile -Command \
+            "(Get-NetConnectionProfile | Select-Object -First 1).NetworkCategory" \
+            2>/dev/null | tr -d '\r\n')
+        if [[ -n "$detected_profile" ]]; then
+            echo -e "  ${YELLOW}⚠ Your Windows network is classified as: ${BOLD}${detected_profile}${RESET}"
+            echo "  Firewall rules MUST match this profile or traffic will be silently dropped."
+            if [[ "$detected_profile" == "Public" ]]; then
+                echo -e "  ${YELLOW}  Tip: To switch to Private (recommended for home LAN):${RESET}"
+                echo "    Set-NetConnectionProfile -InterfaceAlias 'Ethernet' -NetworkCategory Private"
+            fi
+            echo ""
+            net_profile="$detected_profile"
+        fi
+    fi
+
     echo -e "${BOLD}═══ Option A: Windows Firewall (built-in) ═══${RESET}"
     echo ""
     echo "  Run these in an ${BOLD}Administrator PowerShell${RESET}:"
@@ -611,19 +648,23 @@ cmd_firewall() {
     echo "  # Allow LocalAI API (port 8090)"
     echo "  New-NetFirewallRule -DisplayName 'AICP - LocalAI API' \\"
     echo "    -Direction Inbound -Protocol TCP -LocalPort 8090 \\"
-    echo "    -Action Allow -Profile Private"
+    echo "    -Action Allow -Profile $net_profile"
     echo ""
     echo "  # Allow AICP Agent (port 9100)"
     echo "  New-NetFirewallRule -DisplayName 'AICP - Agent Daemon' \\"
     echo "    -Direction Inbound -Protocol TCP -LocalPort 9100 \\"
-    echo "    -Action Allow -Profile Private"
+    echo "    -Action Allow -Profile $net_profile"
+    echo ""
+    echo "  # Allow ping (ICMP) — used by fleet-status diagnostics"
+    echo "  New-NetFirewallRule -DisplayName 'AICP - Ping (ICMP)' \\"
+    echo "    -Direction Inbound -Protocol ICMPv4 -IcmpType 8 \\"
+    echo "    -Action Allow -Profile $net_profile"
     echo ""
     echo "  To verify:"
-    echo "  Get-NetFirewallRule -DisplayName 'AICP*' | Format-Table DisplayName,Enabled,Direction"
+    echo "  Get-NetFirewallRule -DisplayName 'AICP*' | Format-Table DisplayName,Enabled,Direction,Profile"
     echo ""
     echo "  To remove later:"
-    echo "  Remove-NetFirewallRule -DisplayName 'AICP - LocalAI API'"
-    echo "  Remove-NetFirewallRule -DisplayName 'AICP - Agent Daemon'"
+    echo "  Remove-NetFirewallRule -DisplayName 'AICP*'"
     echo ""
 
     echo -e "${BOLD}═══ Option B: ESET Firewall ═══${RESET}"
@@ -652,8 +693,13 @@ cmd_firewall() {
     echo "  Tip: If ESET is in Interactive mode, it will prompt when a"
     echo "  connection comes in — choose 'Allow' and 'Create rule'."
     echo ""
-    echo "  To check if ESET is managing firewall (vs Windows):"
+    echo "  IMPORTANT: If ESET manages your firewall, Windows Firewall rules"
+    echo "  are IGNORED. Check which one is active:"
     echo "    ESET → Setup → Network protection → see if Firewall shows 'Active'"
+    echo ""
+    echo "  Also ensure your LAN is in ESET's Trusted zone:"
+    echo "    ESET → Setup → Network protection → Connected networks"
+    echo "    → Set your home network to 'Home / Office' (not 'Public')"
     echo ""
 
     if [[ "$is_wsl" -eq 1 ]]; then
