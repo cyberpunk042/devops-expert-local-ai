@@ -253,3 +253,52 @@ class TestFailoverChain:
         task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
         with pytest.raises(RuntimeError, match="LocalAI down"):
             ctrl.run(task)
+
+
+# ---------------------------------------------------------------------------
+# Zero-token intercept
+# ---------------------------------------------------------------------------
+
+
+class TestIntercept:
+    """Test zero-token operation interception."""
+
+    def test_heartbeat_bypasses_backend(self, tmp_path):
+        """Heartbeat prompt should be intercepted without calling backend.execute()."""
+        backend = MagicMock()
+        backend.execute.return_value = "should not be called"
+        backend.last_usage = {}
+
+        ctrl = Controller(backends={"local": backend}, config={})
+        task = Task(prompt="heartbeat", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        result = ctrl.run(task)
+
+        assert "HEARTBEAT_OK" in result
+        assert ctrl.last_route == "intercepted"
+        backend.execute.assert_not_called()
+
+    def test_ping_bypasses_backend(self, tmp_path):
+        """Ping should be intercepted."""
+        backend = MagicMock()
+        backend.last_usage = {}
+
+        ctrl = Controller(backends={"local": backend}, config={})
+        task = Task(prompt="ping", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        result = ctrl.run(task)
+
+        assert "HEARTBEAT_OK" in result
+        backend.execute.assert_not_called()
+
+    def test_normal_prompt_not_intercepted(self, tmp_path):
+        """Normal prompts should go through to backend.execute()."""
+        backend = MagicMock()
+        backend.execute.return_value = "normal response"
+        backend.last_usage = {}
+
+        ctrl = Controller(backends={"local": backend}, config={})
+        task = Task(prompt="what is Python?", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        result = ctrl.run(task)
+
+        assert result == "normal response"
+        assert ctrl.last_route == "local"
+        backend.execute.assert_called_once()

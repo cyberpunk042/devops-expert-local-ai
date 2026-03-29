@@ -1354,11 +1354,29 @@ def run_interactive(
         # Auto model selection: pick the best local model for this prompt
         turn_model = model
         if config.get("backends", {}).get("local", {}).get("auto_route", False):
-            from aicp.core.router import recommend_model
+            from aicp.core.router import recommend_model, intercept_operation
             recommended = recommend_model(prompt)
             if recommended and recommended != model:
                 turn_model = recommended
                 print(f"  [auto-route → {turn_model}]", flush=True)
+
+            # Zero-token intercept: heartbeats, status checks bypass LLM
+            intercepted = intercept_operation(prompt, config)
+            if intercepted is not None:
+                print(f"\n{intercepted}\n", flush=True)
+                messages.append({"role": "user", "content": prompt})
+                messages.append({"role": "assistant", "content": intercepted})
+                try:
+                    from aicp.core.history import save_task
+                    save_task(
+                        prompt=prompt, mode=mode.value, backend="local",
+                        project=str(project_path), response=intercepted,
+                        duration_seconds=0.0, model="intercept",
+                        route="intercepted",
+                    )
+                except Exception:
+                    pass
+                continue
 
         messages.append({"role": "user", "content": prompt})
 

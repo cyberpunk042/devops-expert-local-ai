@@ -20,6 +20,7 @@ from aicp.core.cluster import (
     load_cluster_config,
 )
 from aicp.core.history import save_task
+from aicp.core.router import intercept_operation
 from aicp.guardrails.checks import run_preflight_checks
 
 logger = logging.getLogger("aicp")
@@ -180,9 +181,14 @@ class Controller:
         failover_enabled = self.config.get("cluster", {}).get("auto_route", False)
 
         try:
-            # Try fleet routing first (if auto_route is enabled)
-            fleet_result = self._try_fleet_route(task)
-            if fleet_result is not None:
+            # Zero-token intercept: heartbeats, status checks bypass LLM
+            intercepted = intercept_operation(task.prompt, self.config)
+            if intercepted is not None:
+                self.last_route = "intercepted"
+                result = intercepted
+                logger.info("Intercepted operation (0 tokens): %s", result[:80])
+            # Try fleet routing (if auto_route is enabled)
+            elif (fleet_result := self._try_fleet_route(task)) is not None:
                 result = fleet_result
             else:
                 # Execute locally

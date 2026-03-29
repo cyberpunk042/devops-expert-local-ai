@@ -1,7 +1,12 @@
 """Tests for smart routing."""
 
 from aicp.core.modes import Mode
-from aicp.core.router import classify_task_with_reason, recommend_model
+from aicp.core.router import (
+    categorize_operation,
+    classify_task_with_reason,
+    intercept_operation,
+    recommend_model,
+)
 
 
 class _MockBackend:
@@ -148,3 +153,73 @@ def test_recommend_model_code():
 def test_recommend_model_default():
     model = recommend_model("tell me about the weather")
     assert model is None
+
+
+# ---------------------------------------------------------------------------
+# Operation categorization
+# ---------------------------------------------------------------------------
+
+
+def test_categorize_heartbeat():
+    assert categorize_operation("heartbeat") == "heartbeat"
+
+
+def test_categorize_ping():
+    assert categorize_operation("ping the node") == "heartbeat"
+
+
+def test_categorize_health_check():
+    assert categorize_operation("health check") == "heartbeat"
+
+
+def test_categorize_fleet_read_context():
+    assert categorize_operation("fleet_read_context for agent alpha-1") == "direct"
+
+
+def test_categorize_fleet_agent_status():
+    assert categorize_operation("fleet_agent_status") == "direct"
+
+
+def test_categorize_complex():
+    assert categorize_operation("refactor the auth module") == "complex"
+
+
+def test_categorize_simple():
+    assert categorize_operation("what is Python?") == "simple"
+
+
+def test_categorize_default():
+    assert categorize_operation("random prompt with no keywords") == "default"
+
+
+# ---------------------------------------------------------------------------
+# Operation interception (zero-token responses)
+# ---------------------------------------------------------------------------
+
+
+def test_intercept_heartbeat():
+    result = intercept_operation("heartbeat")
+    assert result is not None
+    assert "HEARTBEAT_OK" in result
+
+
+def test_intercept_ping():
+    result = intercept_operation("ping")
+    assert result is not None
+    assert "HEARTBEAT_OK" in result
+
+
+def test_intercept_normal_prompt():
+    result = intercept_operation("what is Python?")
+    assert result is None
+
+
+def test_intercept_complex_prompt():
+    result = intercept_operation("refactor the auth module")
+    assert result is None
+
+
+def test_intercept_fleet_read_context():
+    """Direct ops return None (handled by agent client, not here)."""
+    result = intercept_operation("fleet_read_context")
+    assert result is None

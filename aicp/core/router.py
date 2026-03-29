@@ -113,6 +113,62 @@ def classify_task_with_reason(
     return "local", "default"
 
 
+# Operations that can be handled without LLM (zero tokens)
+_DIRECT_OPS = re.compile(
+    r"\b(fleet_read_context|fleet_agent_status|fleet_node_status)\b",
+    re.IGNORECASE,
+)
+
+# Operations that get a structured response (minimal tokens)
+_HEARTBEAT_OPS = re.compile(
+    r"\b(heartbeat|HEARTBEAT_OK|health.?check|ping)\b",
+    re.IGNORECASE,
+)
+
+
+def categorize_operation(prompt: str) -> str:
+    """Categorize an operation for routing decisions.
+
+    Returns one of:
+      - 'direct'    — handled via direct HTTP, no LLM needed
+      - 'heartbeat' — structured response, minimal LLM or template
+      - 'simple'    — simple task, LocalAI can handle
+      - 'complex'   — needs Claude-level reasoning
+      - 'default'   — no strong signal, use default backend
+    """
+    if _DIRECT_OPS.search(prompt):
+        return "direct"
+    if _HEARTBEAT_OPS.search(prompt):
+        return "heartbeat"
+    if _COMPLEX_KEYWORDS.search(prompt):
+        return "complex"
+    if _SIMPLE_KEYWORDS.search(prompt):
+        return "simple"
+    return "default"
+
+
+def intercept_operation(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
+    """Try to handle an operation without invoking an LLM.
+
+    Returns a response string if the operation was handled, None otherwise.
+    These are zero-token operations that don't need inference.
+    """
+    import socket
+
+    category = categorize_operation(prompt)
+
+    if category == "heartbeat":
+        hostname = socket.gethostname()
+        return f"HEARTBEAT_OK | node={hostname} | status=online"
+
+    if category == "direct":
+        # Direct HTTP operations — caller should route to MCP/HTTP handler
+        # Return a marker so the caller knows to use direct HTTP
+        return None  # Not handled here; controller should route to agent client
+
+    return None
+
+
 def recommend_model(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
     """Suggest the best LocalAI model for a prompt.
 
