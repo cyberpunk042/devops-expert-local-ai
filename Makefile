@@ -204,39 +204,36 @@ model-list-remote:
 # Agent daemon
 # =============================================================================
 
-agent-up:
+agent-up: agent-down
 	@mkdir -p .aicp
-	@# Kill any existing aicp-agent (stale PID file or orphan process)
-	@if [ -f .aicp/agent.pid ]; then \
-		kill $$(cat .aicp/agent.pid) 2>/dev/null; \
-		rm -f .aicp/agent.pid; \
-		sleep 0.5; \
-	fi
-	@pkill -f 'aicp-agent' 2>/dev/null; sleep 0.5; true
-	@# Also kill anything holding port 9100
-	@fuser -k 9100/tcp 2>/dev/null; sleep 0.3; true
 	@AGENT_TOKEN=$$(grep '^AICP_AGENT_SECRET=' .env 2>/dev/null | cut -d= -f2-); \
 	if [ -n "$$AGENT_TOKEN" ]; then \
-		AICP_AGENT_SECRET=$$AGENT_TOKEN .venv/bin/aicp-agent & echo $$! > .aicp/agent.pid; \
-		echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (token from .env)"; \
+		AICP_AGENT_SECRET=$$AGENT_TOKEN nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $$! > .aicp/agent.pid; \
+		sleep 1; \
+		if kill -0 $$(cat .aicp/agent.pid) 2>/dev/null; then \
+			echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (token from .env)"; \
+		else \
+			echo "aicp-agent failed to start. Check .aicp/agent.log"; \
+			cat .aicp/agent.log; \
+		fi; \
 	else \
-		.venv/bin/aicp-agent & echo $$! > .aicp/agent.pid; \
-		echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (no token — open access)"; \
-		echo "  Warning: Run 'make fleet-init' to generate a shared secret."; \
+		nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $$! > .aicp/agent.pid; \
+		sleep 1; \
+		if kill -0 $$(cat .aicp/agent.pid) 2>/dev/null; then \
+			echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (no token)"; \
+			echo "  Warning: Run 'make fleet-init' to generate a shared secret."; \
+		else \
+			echo "aicp-agent failed to start. Check .aicp/agent.log"; \
+			cat .aicp/agent.log; \
+		fi; \
 	fi
-	@echo "Stop with: make agent-down"
 
 agent-down:
-	@# Kill via PID file
 	@if [ -f .aicp/agent.pid ]; then \
-		kill $$(cat .aicp/agent.pid) 2>/dev/null && echo "aicp-agent stopped (PID)" || true; \
+		kill $$(cat .aicp/agent.pid) 2>/dev/null && echo "aicp-agent stopped" || true; \
 		rm -f .aicp/agent.pid; \
 	fi
-	@# Kill any remaining aicp-agent processes
-	@pkill -f 'aicp-agent' 2>/dev/null && echo "aicp-agent stopped (pkill)" || true
-	@# Release port 9100 if still held
 	@fuser -k 9100/tcp 2>/dev/null || true
-	@echo "Port 9100 released."
 
 # =============================================================================
 # Fleet (multi-machine)
