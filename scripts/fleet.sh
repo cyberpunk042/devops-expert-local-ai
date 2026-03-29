@@ -447,7 +447,7 @@ shift || true
 
 case "$CMD" in
     init)    cmd_init ;;
-    join)    cmd_join "${HOST:-$1}" "${PORT:-$DEFAULT_PORT}" "${NAME:-}" ;;
+    join)    cmd_join "${HOST:-${1:-}}" "${PORT:-$DEFAULT_PORT}" "${FLEET_NAME:-}" ;;
     status)  cmd_status ;;
     test)    cmd_test ;;
     copy)    cmd_copy "${HOST:-$1}" ;;
