@@ -1,5 +1,5 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
-        local-up local-up-multi local-down local-status local-logs \
+        local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities update \
         model-download models-list model-list-remote agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
@@ -29,7 +29,8 @@ help:
 	@echo "  make extract-backend         Extract all backends from quay.io (idempotent)"
 	@echo "  make extract-backend-force   Re-extract all backends"
 	@echo "  make extract-backend-only BACKEND=whisper  Extract one backend"
-	@echo "  make local-up                Start LocalAI container"
+	@echo "  make local-up                Start LocalAI container (standalone)"
+	@echo "  make local-up-p2p            Start LocalAI with P2P federation (all nodes equal)"
 	@echo "  make local-down              Stop LocalAI container"
 	@echo "  make local-status            Container + API status"
 	@echo "  make local-logs              Tail LocalAI container logs"
@@ -129,6 +130,19 @@ local-up:
 
 local-up-multi:
 	docker compose -f docker-compose.yaml -f docker-compose.multi-gpu.yaml up -d
+
+local-up-p2p:
+	docker compose -f docker-compose.yaml -f docker-compose.p2p.yaml up -d
+	@echo "LocalAI P2P federated mode. Waiting for API..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -sf http://localhost:$(PORT)/v1/models > /dev/null 2>&1; then \
+			echo "LocalAI P2P ready at http://localhost:$(PORT)"; \
+			break; \
+		fi; \
+		echo "  waiting... ($$i/10)"; \
+		sleep 3; \
+	done
+
 
 local-down:
 	docker compose down

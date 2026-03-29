@@ -58,7 +58,7 @@ add_forward() {
 }
 
 remove_forwards() {
-    for port in 9100 9200; do
+    for port in 8090 9100 9876; do
         powershell.exe -NoProfile -Command \
             "Start-Process netsh -ArgumentList 'interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0' -Verb RunAs -Wait" \
             2>/dev/null || true
@@ -89,8 +89,11 @@ case "${1:-}" in
         exit 0
         ;;
     "")
-        # Default: forward agent port
+        # Default: forward all AICP ports (agent + P2P)
+        # Note: 8090 is only needed in P2P mode (network_mode: host)
+        # In standalone mode, Docker auto-exposes 8090 via dual-stack binding
         add_forward 9100
+        add_forward 9876
         ;;
     *)
         # Forward all specified ports
