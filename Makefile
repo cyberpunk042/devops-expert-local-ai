@@ -209,23 +209,25 @@ agent-up: agent-down
 	@AGENT_TOKEN=$$(grep '^AICP_AGENT_SECRET=' .env 2>/dev/null | cut -d= -f2-); \
 	if [ -n "$$AGENT_TOKEN" ]; then \
 		AICP_AGENT_SECRET=$$AGENT_TOKEN nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $$! > .aicp/agent.pid; \
-		sleep 1; \
-		if kill -0 $$(cat .aicp/agent.pid) 2>/dev/null; then \
-			echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (token from .env)"; \
-		else \
-			echo "aicp-agent failed to start. Check .aicp/agent.log"; \
-			cat .aicp/agent.log; \
-		fi; \
 	else \
 		nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $$! > .aicp/agent.pid; \
-		sleep 1; \
-		if kill -0 $$(cat .aicp/agent.pid) 2>/dev/null; then \
-			echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100 (no token)"; \
-			echo "  Warning: Run 'make fleet-init' to generate a shared secret."; \
-		else \
-			echo "aicp-agent failed to start. Check .aicp/agent.log"; \
-			cat .aicp/agent.log; \
+	fi; \
+	sleep 1; \
+	if kill -0 $$(cat .aicp/agent.pid) 2>/dev/null; then \
+		echo "aicp-agent started (PID $$(cat .aicp/agent.pid)) on port 9100"; \
+		if [ -n "$$AGENT_TOKEN" ]; then echo "  Auth: token from .env"; else echo "  Auth: NONE (run make fleet-init)"; fi; \
+		if grep -qi microsoft /proc/version 2>/dev/null; then \
+			echo "  WSL detected — checking LAN port forward for 9100..."; \
+			if powershell.exe -NoProfile -Command "netsh interface portproxy show v4tov4" 2>/dev/null | tr -d '\r' | grep -q "9100"; then \
+				echo "  Port forward: already configured"; \
+			else \
+				echo "  Port forward: NOT configured — LAN machines cannot reach this agent"; \
+				echo "  Run: make wsl-forward"; \
+			fi; \
 		fi; \
+	else \
+		echo "aicp-agent failed to start:"; \
+		cat .aicp/agent.log; \
 	fi
 
 agent-down:
@@ -238,6 +240,15 @@ agent-down:
 # =============================================================================
 # Fleet (multi-machine)
 # =============================================================================
+
+wsl-forward:
+	@bash scripts/wsl-port-forward.sh 9100
+
+wsl-forward-check:
+	@bash scripts/wsl-port-forward.sh --check
+
+wsl-forward-remove:
+	@bash scripts/wsl-port-forward.sh --remove
 
 fleet-init:
 	@bash scripts/fleet.sh init

@@ -176,7 +176,24 @@ cmd_join() {
     [[ -f "$FLEET_CONFIG" ]] || die "No fleet config. Run 'make fleet-init' first."
 
     if [[ -z "$REMOTE_NAME" ]]; then
-        REMOTE_NAME="node-${REMOTE_HOST##*.}"
+        # Try reverse DNS to resolve the actual hostname
+        local resolved_name=""
+        resolved_name=$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $2}' | head -1)
+        if [[ -n "$resolved_name" && "$resolved_name" != "$REMOTE_HOST" ]]; then
+            # Strip domain if present (e.g., "node.local" → "node")
+            REMOTE_NAME="${resolved_name%%.*}"
+            REMOTE_NAME=$(echo "$REMOTE_NAME" | tr '[:upper:]' '[:lower:]')
+        else
+            # Try nslookup as fallback
+            resolved_name=$(nslookup "$REMOTE_HOST" 2>/dev/null | grep 'name =' | awk '{print $NF}' | sed 's/\.$//' | head -1)
+            if [[ -n "$resolved_name" ]]; then
+                REMOTE_NAME="${resolved_name%%.*}"
+                REMOTE_NAME=$(echo "$REMOTE_NAME" | tr '[:upper:]' '[:lower:]')
+            else
+                REMOTE_NAME="node-${REMOTE_HOST##*.}"
+            fi
+        fi
+        log_info "Resolved name: $REMOTE_NAME (from $REMOTE_HOST)"
     fi
 
     log_head "Adding node to fleet"
@@ -284,14 +301,18 @@ PYEOF
 cmd_status() {
     [[ -f "$FLEET_CONFIG" ]] || die "No fleet config. Run 'make fleet-init' first."
 
-    log_head "Fleet status"
+    log_head "Fleet status (diagnostic)"
 
     "$VENV_PYTHON" - <<'PYEOF'
+import os
+import socket
+import subprocess
 import yaml
 import sys
 sys.path.insert(0, ".")
 
 from pathlib import Path
+import httpx
 from aicp.agent.client import AgentClient
 
 fleet_path = Path("config/fleet.yaml")
@@ -304,7 +325,13 @@ if not nodes:
     print("  No nodes configured. Run: make fleet-join HOST=<ip>")
     sys.exit(0)
 
-print(f"  Fleet: {len(nodes)} node(s)\n")
+# Detect if we're in WSL
+is_wsl = "microsoft" in open("/proc/version").read().lower() if os.path.exists("/proc/version") else False
+
+print(f"  Fleet: {len(nodes)} node(s)")
+if is_wsl:
+    print(f"  Environment: WSL2 (port forwarding may be needed for agent)")
+print()
 
 for node in nodes:
     name = node["name"]
@@ -312,42 +339,155 @@ for node in nodes:
     port = node.get("port", 9100)
     role = node.get("role", "worker")
 
+    print(f"  {name} ({host}:{port}) [{role}]")
+
+    # ── Step 1: DNS/hostname resolution ──
+    try:
+        resolved = socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
+        if resolved != host:
+            print(f"    Hostname: {host} → {resolved}")
+    except socket.gaierror:
+        print(f"    \033[0;31m✗ DNS:\033[0m Cannot resolve hostname '{host}'")
+        print()
+        continue
+
+    # ── Step 2: Ping ──
+    ping_ok = False
+    try:
+        r = subprocess.run(["ping", "-c1", "-W2", host], capture_output=True, timeout=5)
+        ping_ok = r.returncode == 0
+    except Exception:
+        pass
+    if ping_ok:
+        print(f"    \033[0;32m✓ Ping:\033[0m reachable")
+    else:
+        print(f"    \033[0;31m✗ Ping:\033[0m unreachable — check network/firewall")
+        print()
+        continue
+
+    # ── Step 3: TCP port check (is anything listening?) ──
+    agent_port_open = False
+    try:
+        s = socket.create_connection((host, port), timeout=3)
+        s.close()
+        agent_port_open = True
+    except (ConnectionRefusedError, OSError, socket.timeout):
+        pass
+
+    if not agent_port_open:
+        print(f"    \033[0;31m✗ TCP {port}:\033[0m port not reachable")
+        # Diagnose further
+        if is_wsl and host not in ("127.0.0.1", "localhost"):
+            # Check if this is our own node
+            local_ips = []
+            try:
+                out = subprocess.check_output(["hostname", "-I"], text=True).strip().split()
+                local_ips = out
+            except Exception:
+                pass
+            # Check if this host is the local machine's LAN IP (WSL port forward needed)
+            try:
+                wsl_forward = subprocess.check_output(
+                    ["powershell.exe", "-NoProfile", "-Command",
+                     "netsh interface portproxy show v4tov4"],
+                    text=True, timeout=5,
+                ).replace("\r", "")
+            except Exception:
+                wsl_forward = ""
+            if str(port) in wsl_forward:
+                print(f"    ℹ Port forward exists but agent may not be running")
+            else:
+                print(f"    ℹ WSL detected — this port likely needs forwarding:")
+                print(f"      Run: make wsl-forward")
+    else:
+        print(f"    \033[0;32m✓ TCP {port}:\033[0m port open")
+
+    # ── Step 4: Agent HTTP health ──
+    agent_ok = False
+    agent_err = ""
     client = AgentClient(host, port, token)
+    try:
+        r = httpx.get(f"http://{host}:{port}/health", timeout=3.0)
+        if r.status_code == 200:
+            agent_ok = True
+        elif r.status_code == 401:
+            agent_err = "401 Unauthorized — token mismatch"
+        else:
+            agent_err = f"HTTP {r.status_code}"
+    except httpx.ConnectError as e:
+        agent_err = f"connection refused"
+    except httpx.TimeoutException:
+        agent_err = f"timeout"
+    except Exception as e:
+        agent_err = str(e)[:80]
 
-    # Check agent health
-    agent_ok = client.health()
+    if agent_ok:
+        print(f"    \033[0;32m✓ Agent:\033[0m online")
+    else:
+        reason = f" — {agent_err}" if agent_err else ""
+        print(f"    \033[0;31m✗ Agent:\033[0m offline{reason}")
+        if "refused" in agent_err:
+            print(f"      ℹ Agent daemon not running. On that machine run: make agent-up")
 
-    # Check LocalAI
-    import httpx
+    # ── Step 5: LocalAI ──
     localai_ok = False
+    localai_err = ""
     models = []
     try:
         r = httpx.get(f"http://{host}:8090/v1/models", timeout=3.0)
         if r.status_code == 200:
             localai_ok = True
             models = [m["id"] for m in r.json().get("data", [])]
+        else:
+            localai_err = f"HTTP {r.status_code}"
+    except httpx.ConnectError:
+        localai_err = "connection refused"
+    except httpx.TimeoutException:
+        localai_err = "timeout"
+    except Exception as e:
+        localai_err = str(e)[:80]
+
+    if localai_ok:
+        print(f"    \033[0;32m✓ LocalAI:\033[0m online  models: {', '.join(models)}")
+    else:
+        reason = f" — {localai_err}" if localai_err else ""
+        print(f"    \033[0;31m✗ LocalAI:\033[0m offline{reason}")
+        if "refused" in localai_err:
+            print(f"      ℹ LocalAI not running. On that machine run: make local-up")
+
+    # ── Step 6: GPU info (only if agent is up) ──
+    if agent_ok:
+        try:
+            status = client.status()
+            if status and status.get("gpus"):
+                for g in status["gpus"]:
+                    gname = g.get("name", "?")
+                    free = g.get("vram_free_mb", "?")
+                    total = g.get("vram_total_mb", "?")
+                    print(f"    GPU:     {gname} ({free}MB free / {total}MB)")
+            if status and status.get("models"):
+                names = [m.get("name", "?") for m in status["models"]]
+                print(f"    Models:  {', '.join(names)}")
+        except Exception:
+            pass
+
+    print()
+
+# ── Summary ──
+online_count = 0
+for node in nodes:
+    host = node["host"]
+    port = node.get("port", 9100)
+    try:
+        r = httpx.get(f"http://{host}:{port}/health", timeout=2.0)
+        if r.status_code == 200:
+            online_count += 1
     except Exception:
         pass
 
-    # Check GPU
-    gpu_info = ""
-    if agent_ok:
-        status = client.status()
-        if status and status.get("gpus"):
-            g = status["gpus"][0]
-            gpu_info = f"{g.get('name', '?')} ({g.get('vram_free_mb', '?')}MB free / {g.get('vram_total_mb', '?')}MB)"
-
-    # Print
-    agent_sym = "\033[0;32m●\033[0m" if agent_ok else "\033[0;31m●\033[0m"
-    localai_sym = "\033[0;32m●\033[0m" if localai_ok else "\033[0;31m●\033[0m"
-
-    print(f"  {name} ({host}:{port}) [{role}]")
-    print(f"    Agent:   {agent_sym} {'online' if agent_ok else 'offline'}")
-    print(f"    LocalAI: {localai_sym} {'online' if localai_ok else 'offline'}" +
-          (f"  models: {', '.join(models)}" if models else ""))
-    if gpu_info:
-        print(f"    GPU:     {gpu_info}")
-    print()
+print(f"  Summary: {online_count}/{len(nodes)} agents online")
+if online_count < len(nodes):
+    print(f"  Run 'make agent-up' on offline machines, then 'make fleet-status' again.")
 
 PYEOF
 }
