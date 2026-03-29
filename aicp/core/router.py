@@ -169,6 +169,35 @@ def intercept_operation(prompt: str, config: Dict[str, Any] = None) -> Optional[
     return None
 
 
+def classify_test_output(output: str) -> Optional[str]:
+    """Classify test output as pass/fail without LLM inference.
+
+    Returns 'pass', 'fail', or None if the output doesn't look like test results.
+    This is a zero-token alternative for simple review tasks.
+    """
+    # Common test framework patterns
+    pass_patterns = re.compile(
+        r"\b(\d+ passed|PASSED|PASS|tests? passed|all tests|"
+        r"OK \(\d+ test|✓|✅|BUILD SUCCESS|exit code 0)\b",
+        re.IGNORECASE,
+    )
+    fail_patterns = re.compile(
+        r"\b(\d+ failed|FAILED|FAIL|tests? failed|errors? found|"
+        r"✗|❌|BUILD FAILURE|exit code [1-9]|AssertionError|"
+        r"Error:|ERRORS?:)\b",
+        re.IGNORECASE,
+    )
+
+    has_pass = bool(pass_patterns.search(output))
+    has_fail = bool(fail_patterns.search(output))
+
+    if has_fail:
+        return "fail"
+    if has_pass:
+        return "pass"
+    return None
+
+
 def recommend_model(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
     """Suggest the best LocalAI model for a prompt.
 

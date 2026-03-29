@@ -4,6 +4,7 @@ from aicp.core.modes import Mode
 from aicp.core.router import (
     categorize_operation,
     classify_task_with_reason,
+    classify_test_output,
     intercept_operation,
     recommend_model,
 )
@@ -223,3 +224,49 @@ def test_intercept_fleet_read_context():
     """Direct ops return None (handled by agent client, not here)."""
     result = intercept_operation("fleet_read_context")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Test output classification (zero-token review)
+# ---------------------------------------------------------------------------
+
+
+def test_classify_pytest_pass():
+    output = "====== 42 passed, 3 warnings in 2.1s ======"
+    assert classify_test_output(output) == "pass"
+
+
+def test_classify_pytest_fail():
+    output = "FAILED tests/test_foo.py::test_bar - AssertionError"
+    assert classify_test_output(output) == "fail"
+
+
+def test_classify_mixed_pass_and_fail():
+    """If both pass and fail signals present, fail wins."""
+    output = "10 passed, 2 failed in 5.0s"
+    assert classify_test_output(output) == "fail"
+
+
+def test_classify_exit_code_zero():
+    output = "Build completed successfully. exit code 0"
+    assert classify_test_output(output) == "pass"
+
+
+def test_classify_exit_code_nonzero():
+    output = "Process terminated with exit code 1"
+    assert classify_test_output(output) == "fail"
+
+
+def test_classify_no_test_output():
+    output = "Hello, this is just a normal response about weather."
+    assert classify_test_output(output) is None
+
+
+def test_classify_checkmark():
+    output = "✓ all assertions passed"
+    assert classify_test_output(output) == "pass"
+
+
+def test_classify_build_success():
+    output = "BUILD SUCCESS in 12s"
+    assert classify_test_output(output) == "pass"
