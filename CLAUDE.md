@@ -96,6 +96,22 @@ These rules govern how this AI must behave in every session. Violations are trac
 
 10. **Stay in scope.** Do not refactor, clean up, or "improve" things that were not part of the current task.
 
+## LocalAI Assessment (Stage 1 — 2026-03-29)
+
+LocalAI is running and functional. Key findings:
+
+| Model | Size | Cold Start | Warm | GPU | Use Case |
+|-------|------|------------|------|-----|----------|
+| hermes (7B) | 4.4GB | ~80s | ~1s | 24 layers | Complex reasoning, code |
+| hermes-3b (3B) | 2.0GB | ~10s | ~1.2s | 32 layers | **Fleet heartbeats** (target) |
+| codellama (7B) | 4.4GB | ~80s | ~1s | GPU | Code-specific tasks |
+| phi-2 (2.7B) | 1.6GB | CPU | CPU | 0 layers | Fallback |
+
+- **API**: OpenAI-compatible chat completions working (localhost:8090)
+- **Single-active backend**: Only one GPU model loaded at a time (8GB VRAM limit)
+- **9 models total**: hermes, hermes-3b, codellama, phi-2, llava, whisper, piper-tts, bge-reranker, stablediffusion
+- **Target**: 3B model for heartbeats (1.2s warm), 7B for reasoning, codellama for code
+
 ## Commands
 
 ```bash
@@ -110,4 +126,9 @@ ruff check aicp/ tests/
 
 # Format
 ruff format aicp/ tests/
+
+# Test LocalAI
+curl http://localhost:8090/v1/models
+curl http://localhost:8090/v1/chat/completions -H "Content-Type: application/json" \
+  -d '{"model":"hermes-3b","messages":[{"role":"user","content":"Hello"}]}'
 ```
