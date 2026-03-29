@@ -502,20 +502,28 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
 
     # Cluster nodes
     from aicp.core.cluster import load_cluster_config, check_cluster
+    from aicp.core.controller import _local_ips
     nodes = load_cluster_config(config)
     if nodes:
         console.print()
         console.print("  [bold]Cluster nodes:[/]")
+        local_ips = _local_ips()
         check_cluster(nodes)
         for n in nodes:
-            status = "[green]ONLINE[/]" if n.online else "[red]OFFLINE[/]"
+            is_self = n.host in local_ips or n.name.lower() == __import__("socket").gethostname().lower()
+            if n.online:
+                status = "[green]ONLINE[/]"
+            elif is_self:
+                status = "[yellow]LOCAL[/] [dim](agent daemon not running)[/]"
+            else:
+                status = "[red]OFFLINE[/]"
             gpu_info = ""
             if n.gpus:
                 total_free = sum(g.get("vram_free_mb", 0) for g in n.gpus)
                 gpu_info = f", {len(n.gpus)} GPUs, {total_free} MiB free"
             model_names = ", ".join(m.get("name", "?") for m in n.models) if n.models else "none"
             console.print(f"    {status} {n.name} ({n.host}:{n.port}{gpu_info}, models: {model_names})")
-            if not n.online:
+            if not n.online and not is_self:
                 all_ok = False
 
     # Routing config
@@ -2051,12 +2059,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Fleet nodes
         try:
             from aicp.core.cluster import load_fleet_config, check_cluster
+            from aicp.core.controller import _local_ips
+            import socket as _sock
             nodes = load_fleet_config()
             if nodes:
+                local_ips = _local_ips()
                 nodes = check_cluster(nodes)
-                online = sum(1 for n in nodes if n.online)
                 for n in nodes:
-                    status = "[green]online[/]" if n.online else "[red]offline[/]"
+                    is_self = n.host in local_ips or n.name.lower() == _sock.gethostname().lower()
+                    if n.online:
+                        status = "[green]online[/]"
+                    elif is_self:
+                        status = "[yellow]local[/] [dim](no agent daemon)[/]"
+                    else:
+                        status = "[red]offline[/]"
                     console.print(f"  [cyan]Fleet[/]     {n.name} ({n.host}:{n.port}) — {status}")
             else:
                 console.print("  [cyan]Fleet[/]     [dim]not configured[/]")

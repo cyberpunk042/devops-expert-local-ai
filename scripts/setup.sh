@@ -602,13 +602,47 @@ else
 fi
 
 # =============================================================================
-# SECTION 10 — Verify
+# SECTION 10 — Agent daemon
+# =============================================================================
+log_head "Agent daemon"
+if [ -f .aicp/agent.pid ] && kill -0 $(cat .aicp/agent.pid) 2>/dev/null; then
+    log_skip "aicp-agent already running (PID $(cat .aicp/agent.pid)) on port 9100"
+    STEPS_SKIPPED+=("agent-up")
+else
+    log_step "Starting aicp-agent on port 9100"
+    mkdir -p .aicp
+    # Kill any stale process on port 9100
+    fuser -k 9100/tcp 2>/dev/null || true
+    rm -f .aicp/agent.pid
+
+    AGENT_TOKEN="${AICP_AGENT_SECRET:-}"
+    if [ -f .env ]; then
+        source_token=$(grep -oP '^AICP_AGENT_SECRET=\K.*' .env 2>/dev/null || true)
+        AGENT_TOKEN="${AGENT_TOKEN:-$source_token}"
+    fi
+
+    if [ -n "$AGENT_TOKEN" ]; then
+        AICP_AGENT_SECRET="$AGENT_TOKEN" nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $! > .aicp/agent.pid
+    else
+        nohup .venv/bin/aicp-agent > .aicp/agent.log 2>&1 & echo $! > .aicp/agent.pid
+    fi
+    sleep 1
+    if [ -f .aicp/agent.pid ] && kill -0 $(cat .aicp/agent.pid) 2>/dev/null; then
+        log_ok "aicp-agent started (PID $(cat .aicp/agent.pid)) on port 9100"
+        STEPS_DONE+=("agent-up")
+    else
+        log_warn "aicp-agent failed to start. Check: .aicp/agent.log"
+    fi
+fi
+
+# =============================================================================
+# SECTION 11 — Verify
 # =============================================================================
 log_head "Verification"
 .venv/bin/aicp --check || true   # non-fatal: check prints its own output
 
 # =============================================================================
-# SECTION 11 — Summary
+# SECTION 12 — Summary
 # =============================================================================
 echo ""
 echo -e "${BOLD}══════════════════════════════════════════${RESET}"
