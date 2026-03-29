@@ -80,6 +80,7 @@ class LocalAIBackend(Backend):
         self.sound_model = sound_model or "transformers-musicgen"
         self.whisper_model = whisper_model or "whisper-1"
         self.tts_model = tts_model or "piper-tts"
+        self.fallback_model = "phi-2"  # CPU-only fallback for GPU failures
         # Advanced sampling
         self.mirostat = mirostat
         self.mirostat_tau = mirostat_tau
@@ -535,7 +536,9 @@ class LocalAIBackend(Backend):
                         self._wait_for_model()
                         continue
 
-                    raise RuntimeError(f"LocalAI error ({response.status_code}): {msg}")
+                    # Last attempt failed — set response to None to trigger fallback
+                    response = None
+                    break
 
                 if response.status_code >= 400:
                     raise RuntimeError(f"LocalAI error ({response.status_code}): {response.text}")
@@ -551,7 +554,22 @@ class LocalAIBackend(Backend):
                 )
 
         if response is None:
-            raise RuntimeError(f"LocalAI failed after retries. Last error: {last_error}")
+            # Try CPU fallback model before giving up
+            if selected_model != self.fallback_model:
+                try:
+                    payload["model"] = self.fallback_model
+                    response = httpx.post(
+                        f"{self.base_url}/v1/chat/completions",
+                        json=payload, headers=headers, timeout=120.0,
+                    )
+                    if response.status_code < 400:
+                        pass  # success — fall through to parse
+                    else:
+                        raise RuntimeError(f"LocalAI failed after retries. Last error: {last_error}")
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    raise RuntimeError(f"LocalAI failed after retries. Last error: {last_error}")
+            else:
+                raise RuntimeError(f"LocalAI failed after retries. Last error: {last_error}")
 
         try:
             data = response.json()
