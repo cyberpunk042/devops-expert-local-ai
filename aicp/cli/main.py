@@ -513,6 +513,34 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
             if not n.online:
                 all_ok = False
 
+    # Routing config
+    cluster_cfg = config.get("cluster", {})
+    local_cfg = config.get("backends", {}).get("local", {})
+    console.print()
+    console.print("  [bold]Routing:[/]")
+    fleet_route = cluster_cfg.get("auto_route", False)
+    model_route = local_cfg.get("auto_route", False)
+    console.print(f"    Fleet auto-route:  {'[green]ON[/]' if fleet_route else '[dim]OFF[/]'}")
+    console.print(f"    Model auto-route:  {'[green]ON[/]' if model_route else '[dim]OFF[/]'}")
+    if fleet_route:
+        console.print("    Failover chain:    local → fleet peer → Claude")
+    if model_route:
+        console.print("    Model selection:   hermes-3b (fleet ops) / codellama (code) / hermes (default)")
+
+    # Offload summary (if history exists)
+    try:
+        from aicp.core.metrics import offload_report
+        r = offload_report(500)
+        if r["total_tasks"] > 0:
+            console.print()
+            console.print("  [bold]Offload:[/]")
+            pct = r["offload_pct"]
+            color = "green" if pct >= 80 else "yellow" if pct >= 50 else "red"
+            console.print(f"    [{color}]{pct}% offloaded[/] ({r['local_tasks']} local / {r['claude_tasks']} claude)")
+            console.print(f"    Target: 80% — {'[green]GOAL MET[/]' if r['goal_met'] else '[yellow]in progress[/]'}")
+    except Exception:
+        pass
+
     console.print()
     if all_ok:
         console.print("  [bold green]All systems ready.[/]")
@@ -894,6 +922,23 @@ def _run_capabilities() -> int:
         console.print()
     except Exception:
         pass
+
+    # ── Fleet & Routing ───────────────────────────────────────────────
+    console.print("[bold]Fleet & Routing[/]")
+    console.print("  [cyan]Fleet auto-route[/]     Route tasks to best fleet node by VRAM/availability")
+    console.print("  [cyan]Model auto-route[/]     Pick best local model per prompt (3B/7B/code)")
+    console.print("  [cyan]Failover chain[/]       local → fleet peer → Claude (graceful degradation)")
+    console.print("  [cyan]Anti-loop[/]            Remote tasks flagged to prevent recursive routing")
+    console.print("  [cyan]Offload dashboard[/]    Track LocalAI vs Claude usage (80% goal)")
+    console.print("  [cyan]Route history[/]        Every task records where it ran")
+    console.print()
+    console.print("  Commands:")
+    console.print("    [cyan]make offload[/]         Show offload dashboard")
+    console.print("    [cyan]/fleet[/]               Fleet node status (interactive)")
+    console.print("    [cyan]/fleet-run <p>[/]       Execute on best fleet node")
+    console.print("    [cyan]/fleet-route[/]         Show routing decision")
+    console.print("    [cyan]/offload[/]             Offload metrics (interactive)")
+    console.print()
 
     return 0
 

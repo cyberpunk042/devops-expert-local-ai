@@ -1325,6 +1325,7 @@ def run_interactive(
 
         messages.append({"role": "user", "content": prompt})
 
+        _turn_start = __import__("time").perf_counter()
         try:
             if stream:
                 content = _stream_turn(base_url, turn_model, messages, max_tokens)
@@ -1336,6 +1337,23 @@ def run_interactive(
                 continue
 
             messages.append({"role": "assistant", "content": content})
+
+            # Record in history for offload tracking
+            _turn_elapsed = __import__("time").perf_counter() - _turn_start
+            try:
+                from aicp.core.history import save_task
+                save_task(
+                    prompt=display_prompt,
+                    mode=mode.value,
+                    backend="local",
+                    project=str(project_path),
+                    response=content,
+                    duration_seconds=_turn_elapsed,
+                    model=turn_model,
+                    route="interactive",
+                )
+            except Exception:
+                pass  # Never block the chat loop
 
         except httpx.ConnectError:
             print("[error] Cannot connect to LocalAI. Is it running?", file=sys.stderr)
