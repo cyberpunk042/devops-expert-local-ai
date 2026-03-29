@@ -70,6 +70,7 @@ Slash commands:
   /fleet-route              Show where the next task would be routed
   /offload                  Show LocalAI offload metrics (progress toward 80% goal)
   /route <prompt>           Show routing decision without executing (backend + model)
+  /status                   System status (GPU, model, routing, offload progress)
   /help                     Show this help
   /exit                     Quit
 """
@@ -212,6 +213,56 @@ def _handle_slash(
             print()
         except Exception as e:
             print(f"[error] Offload report failed: {e}", file=sys.stderr)
+        return None
+
+    if cmd == "/status":
+        try:
+            print("\n  AICP Status")
+            print("  ===========")
+
+            # GPU info
+            try:
+                from aicp.core.gpu import detect_gpus
+                gpus = detect_gpus()
+                for g in gpus:
+                    used = g.get("vram_used_mb", 0)
+                    total = g.get("vram_total_mb", 0)
+                    free = g.get("vram_free_mb", 0)
+                    pct = round(used / total * 100) if total else 0
+                    print(f"  GPU:       {g.get('name', '?')} — {used}MB/{total}MB ({pct}% used, {free}MB free)")
+            except Exception:
+                print("  GPU:       unavailable")
+
+            # Loaded model
+            try:
+                r = httpx.get(f"{base_url}/v1/models", timeout=5.0)
+                models_data = r.json().get("data", [])
+                loaded = [m.get("id", "?") for m in models_data] if models_data else ["none"]
+                print(f"  Model:     {', '.join(loaded)}")
+            except Exception:
+                print("  Model:     unavailable (LocalAI not reachable)")
+
+            # Routing config
+            auto_route = config.get("backends", {}).get("local", {}).get("auto_route", False)
+            fleet_route = config.get("cluster", {}).get("auto_route", False)
+            print(f"  Routing:   model={'ON' if auto_route else 'OFF'}, fleet={'ON' if fleet_route else 'OFF'}")
+
+            # Offload stats
+            try:
+                from aicp.core.metrics import offload_report
+                r = offload_report(100)
+                if r["total_tasks"] > 0:
+                    goal_icon = "✓ GOAL MET" if r["goal_met"] else f"→ {80 - r['offload_pct']:.0f}% to go"
+                    print(f"  Offload:   {r['offload_pct']}% local ({r['local_tasks']}L/{r['claude_tasks']}C) {goal_icon}")
+                    print(f"  Activity:  {r['today']} today / {r['this_week']} this week")
+                else:
+                    print("  Offload:   no history yet")
+            except Exception:
+                print("  Offload:   unavailable")
+
+            print()
+        except Exception as e:
+            print(f"[error] Status check failed: {e}", file=sys.stderr)
         return None
 
     if cmd == "/route":

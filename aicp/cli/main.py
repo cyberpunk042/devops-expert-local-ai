@@ -348,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show LocalAI offload dashboard — progress toward 80%% Claude reduction",
     )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show system status (GPU, model, routing, offload progress)",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -2005,6 +2010,73 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Cost:     ${r['claude_cost_usd']:.4f} spent on Claude")
         print(f"Saved:    ~${r['estimated_savings_usd']:.4f} by using LocalAI")
         print(f"Activity: {r['today']} today / {r['this_week']} this week")
+        return 0
+
+    # --status: system status (GPU, model, routing, offload)
+    if getattr(args, "status", False):
+        import httpx
+        local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        console.print("[bold]AICP System Status[/]\n")
+
+        # GPU
+        try:
+            from aicp.core.gpu import detect_gpus
+            gpus = detect_gpus()
+            for g in gpus:
+                used = g.get("vram_used_mb", 0)
+                total = g.get("vram_total_mb", 0)
+                free = g.get("vram_free_mb", 0)
+                pct = round(used / total * 100) if total else 0
+                console.print(f"  [cyan]GPU[/]       {g.get('name', '?')} — {used}MB/{total}MB ({pct}% used, {free}MB free)")
+        except Exception:
+            console.print("  [cyan]GPU[/]       [dim]unavailable[/]")
+
+        # Loaded models
+        try:
+            r = httpx.get(f"{local_url}/v1/models", timeout=5.0)
+            models_data = r.json().get("data", [])
+            loaded = [m.get("id", "?") for m in models_data] if models_data else []
+            if loaded:
+                console.print(f"  [cyan]Models[/]    {', '.join(loaded)}")
+            else:
+                console.print("  [cyan]Models[/]    [dim]none loaded[/]")
+        except Exception:
+            console.print("  [cyan]Models[/]    [dim]LocalAI not reachable[/]")
+
+        # Routing config
+        auto_route = config.get("backends", {}).get("local", {}).get("auto_route", False)
+        fleet_route = config.get("cluster", {}).get("auto_route", False)
+        console.print(f"  [cyan]Routing[/]   model={'[green]ON[/]' if auto_route else '[dim]OFF[/]'}, fleet={'[green]ON[/]' if fleet_route else '[dim]OFF[/]'}")
+
+        # Fleet nodes
+        try:
+            from aicp.core.cluster import load_fleet_config, check_cluster
+            nodes = load_fleet_config()
+            if nodes:
+                nodes = check_cluster(nodes)
+                online = sum(1 for n in nodes if n.online)
+                for n in nodes:
+                    status = "[green]online[/]" if n.online else "[red]offline[/]"
+                    console.print(f"  [cyan]Fleet[/]     {n.name} ({n.host}:{n.port}) — {status}")
+            else:
+                console.print("  [cyan]Fleet[/]     [dim]not configured[/]")
+        except Exception:
+            console.print("  [cyan]Fleet[/]     [dim]unavailable[/]")
+
+        # Offload stats
+        try:
+            from aicp.core.metrics import offload_report
+            rpt = offload_report(100)
+            if rpt["total_tasks"] > 0:
+                goal_icon = "[green]GOAL MET[/]" if rpt["goal_met"] else f"[yellow]{80 - rpt['offload_pct']:.0f}% to go[/]"
+                console.print(f"  [cyan]Offload[/]   {rpt['offload_pct']}% ({rpt['local_tasks']}L/{rpt['claude_tasks']}C) {goal_icon}")
+                console.print(f"  [cyan]Activity[/]  {rpt['today']} today / {rpt['this_week']} this week")
+            else:
+                console.print("  [cyan]Offload[/]   [dim]no history yet[/]")
+        except Exception:
+            console.print("  [cyan]Offload[/]   [dim]unavailable[/]")
+
+        console.print()
         return 0
 
     # --bench: quick performance benchmark (no config needed)
