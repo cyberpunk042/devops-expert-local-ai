@@ -1,96 +1,45 @@
-# AICP default configuration
-
 defaults:
   mode: think
   backend: local
-
 backends:
   local:
-    base_url: "http://localhost:8090"
-    model: "hermes"
+    base_url: http://localhost:8090
+    model: hermes
     max_tokens: 2048
-    # Multi-model: specialized models for different task types
-    embedding_model: "nomic-embed"
-    code_model: "codellama"
-    vision_model: "llava"
-    # Audio models: whisper for STT, piper for TTS
-    whisper_model: "whisper-1"
-    tts_model: "piper-tts"
-    # Image generation model (Stable Diffusion via stablediffusion-ggml backend)
-    image_model: "stablediffusion"
-    # Reranker model (cross-encoder for RAG result reranking)
-    reranker_model: "bge-reranker-v2-m3"
-    # Sound generation model (ElevenLabs-compatible /v1/sound-generation)
-    # Install via: aicp --models install --models-arg transformers-musicgen
-    sound_model: "transformers-musicgen"
-    # Prompt caching: reuse KV cache for repeated system prompts (faster warm calls)
+    embedding_model: nomic-embed
+    code_model: codellama
+    vision_model: llava
+    whisper_model: whisper-1
+    tts_model: piper-tts
+    image_model: stablediffusion
+    reranker_model: bge-reranker-v2-m3
+    sound_model: transformers-musicgen
     cache_prompt: true
-    # auto_route: when true, AICP picks hermes vs codellama based on task keywords.
-    # When false (default), always uses the primary model unless explicitly overridden.
     auto_route: false
-    # ── Sampling overrides ──────────────────────────────────────────────────────
-    # These override model YAML defaults per-request.
-    # Uncomment to tune from AICP side (useful for mode-specific behavior).
-    # temperature: 0.7
-    # top_p: 0.9
-    # top_k: 40
-    # repeat_penalty: 1.1
-    # ── Advanced sampling (llama.cpp) ───────────────────────────────────────────
-    # mirostat: 2              # 0=disabled, 1=Mirostat, 2=Mirostat 2.0
-    # mirostat_tau: 5.0        # target entropy (lower = more focused)
-    # mirostat_eta: 0.1        # learning rate
-    # typical_p: 1.0           # typical sampling threshold (1.0 = disabled)
-    # frequency_penalty: 0.0   # penalise repeated tokens by frequency
-    # presence_penalty: 0.0    # penalise tokens that already appeared
-    # ── Mode-aware sampling profiles ──────────────────────────────────────────
-    # Per-mode temperature defaults. Explicit sampling overrides above take precedence.
-    # Uncomment to customize (defaults: think=0.7, edit=0.4, act=0.1).
-    # mode_profiles:
-    #   think:
-    #     temperature: 0.7
-    #   edit:
-    #     temperature: 0.4
-    #   act:
-    #     temperature: 0.1
-    # API key for LocalAI (must match LOCALAI_API_KEY in .env / docker-compose)
-    # api_key: ""
   claude:
-    model: "opus"
+    model: opus
     max_turns: 10
     timeout: 300
-    # max_budget_usd: 1.00  # uncomment to set a cost cap
-
 rag:
   enabled: false
-  # SQLite database path for vector store (relative to project or absolute)
-  db_path: ".aicp/rag.db"
-  store_name: "default"
+  db_path: .aicp/rag.db
+  store_name: default
   chunk_size: 512
   chunk_overlap: 64
   top_k: 5
   threshold: 0.3
-  # Cross-encoder reranking: improves search precision after embedding retrieval
   rerank: true
-  # Max characters of retrieved context injected into prompts
   max_context_chars: 3000
-
 stores:
-  # Ephemeral in-memory vector stores via LocalAI /stores/* API.
-  # Stores are agent working memory — lost on LocalAI restart.
-  default_store: "default"
-  # P2P cluster: if enabled in LocalAI (--p2p flag), AICP can query
-  # /api/p2p/stats and /api/p2p/workers for cluster awareness.
-  # No config needed — AICP auto-detects P2P via --observe.
-
+  default_store: default
 guardrails:
   forbidden_patterns:
-    - ".env"
-    - ".env.*"
-    - "*.key"
-    - "*.pem"
-    - "*credentials*"
-    - "*secret*"
-  # allowed_paths restricts Edit/Act mode to specific directories.
-  # Uncomment and set to limit scope — useful for shared machines.
-  # allowed_paths:
-  #   - /home/youruser/projects
+  - .env
+  - .env.*
+  - '*.key'
+  - '*.pem'
+  - '*credentials*'
+  - '*secret*'
+cluster:
+  config_file: config/fleet.yaml
+  auto_route: false
