@@ -190,9 +190,9 @@ cmd_join() {
     fi
     log_ok "Host reachable (ping OK)"
 
-    # Test if agent is running
+    # Test if agent is running (3s timeout — it's OK if it's not up yet)
     local AGENT_OK=0
-    if curl -sf "http://$REMOTE_HOST:$REMOTE_PORT/health" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 3 --max-time 5 "http://$REMOTE_HOST:$REMOTE_PORT/health" >/dev/null 2>&1; then
         AGENT_OK=1
         log_ok "Agent daemon responding at $REMOTE_HOST:$REMOTE_PORT"
     else
@@ -200,7 +200,7 @@ cmd_join() {
     fi
 
     # Test if LocalAI is running
-    if curl -sf "http://$REMOTE_HOST:8090/v1/models" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 3 --max-time 5 "http://$REMOTE_HOST:8090/v1/models" >/dev/null 2>&1; then
         log_ok "LocalAI responding at $REMOTE_HOST:8090"
     else
         log_info "LocalAI not responding at $REMOTE_HOST:8090 (start it after setup)"
