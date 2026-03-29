@@ -112,7 +112,7 @@ class LocalAIBackend(Backend):
                 return resp.status_code == 200
             except (httpx.ConnectError, httpx.TimeoutException, OSError):
                 return False
-            except httpx.ReadError:
+            except (httpx.ReadError, httpx.RemoteProtocolError):
                 if attempt < retries - 1:
                     time.sleep(delay)
                     continue
@@ -545,7 +545,7 @@ class LocalAIBackend(Backend):
 
                 break  # success
 
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.RemoteProtocolError):
                 raise RuntimeError(self._connect_error_message())
             except httpx.TimeoutException:
                 raise RuntimeError(
@@ -663,7 +663,7 @@ class LocalAIBackend(Backend):
                                 yield chunk
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.RemoteProtocolError):
             raise RuntimeError(self._connect_error_message())
         except httpx.TimeoutException:
             raise RuntimeError(
@@ -2959,7 +2959,7 @@ class LocalAIBackend(Backend):
                 timeout=5.0,
             )
             return {"healthy": resp.status_code == 200, "status_code": resp.status_code}
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.RemoteProtocolError):
             return {"healthy": False, "error": "connection refused"}
         except httpx.TimeoutException:
             return {"healthy": False, "error": "timeout"}
@@ -2973,7 +2973,7 @@ class LocalAIBackend(Backend):
                 timeout=5.0,
             )
             return resp.status_code == 200
-        except (httpx.ConnectError, httpx.TimeoutException):
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError):
             return False
 
     # ── Backend Management ───────────────────────────────────────────────────

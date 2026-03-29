@@ -68,6 +68,15 @@ def test_is_model_loaded_false_on_connect_error():
         assert backend._is_model_loaded() is False
 
 
+def test_is_available_false_on_remote_protocol_error():
+    """RemoteProtocolError (server disconnect during model load) returns False."""
+    import httpx as _httpx
+    backend = LocalAIBackend(model="hermes")
+
+    with patch("httpx.get", side_effect=_httpx.RemoteProtocolError("Server disconnected")):
+        assert backend.is_available() is False
+
+
 def test_wait_for_model_succeeds_on_second_poll():
     """_wait_for_model returns True when model appears after one failed poll."""
     backend = LocalAIBackend(model="hermes")
