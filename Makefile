@@ -2,7 +2,7 @@
         local-up local-up-multi local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities update \
         model-download models-list model-list-remote agent-up agent-down \
-        fleet-init fleet-join fleet-status fleet-test fleet-copy \
+        fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
 
@@ -64,6 +64,7 @@ help:
 	@echo "  make fleet-status            Check connectivity of all fleet nodes"
 	@echo "  make fleet-test              Run a test task on each node"
 	@echo "  make fleet-copy HOST=<ip>    SCP fleet config + token to remote node"
+	@echo "  make fleet-firewall          Show firewall rules (Windows/ESET/Linux)"
 	@echo ""
 	@echo "MAINTENANCE"
 	@echo "  make update                  git pull + pip install"
@@ -264,6 +265,9 @@ fleet-test:
 
 fleet-copy:
 	@bash scripts/fleet.sh copy
+
+fleet-firewall:
+	@bash scripts/fleet.sh firewall
 
 # =============================================================================
 # Maintenance

@@ -148,18 +148,21 @@ PYEOF
     echo ""
     echo -e "${BOLD}Next steps:${RESET}"
     echo ""
-    echo "  1. Start the agent daemon on this machine:"
+    echo "  1. Open firewall ports on BOTH machines:"
+    echo "     make fleet-firewall    (shows rules for Windows Firewall / ESET / Linux)"
+    echo ""
+    echo "  2. Start the agent daemon on this machine:"
     echo "     make agent-up"
     echo "     (or: make install-service  for auto-start on boot)"
     echo ""
-    echo "  2. Add the other machine:"
-    echo "     make fleet-join HOST=192.168.40.250"
+    echo "  3. Add the other machine:"
+    echo "     make fleet-join HOST=<ip>"
     echo ""
-    echo "  3. On the other machine (192.168.40.250):"
+    echo "  4. On the other machine:"
     echo "     - Copy config/fleet.yaml to their config/fleet.yaml"
     echo "     - Run: make agent-up"
     echo ""
-    echo "  4. Verify:"
+    echo "  5. Verify:"
     echo "     make fleet-status"
     echo ""
 }
@@ -376,6 +379,7 @@ for node in nodes:
 
     if not agent_port_open:
         print(f"    \033[0;31m✗ TCP {port}:\033[0m port not reachable")
+        print(f"      ℹ Firewall? Run: make fleet-firewall")
         # Diagnose further
         if is_wsl and host not in ("127.0.0.1", "localhost"):
             # Check if this is our own node
@@ -395,10 +399,10 @@ for node in nodes:
             except Exception:
                 wsl_forward = ""
             if str(port) in wsl_forward:
-                print(f"    ℹ Port forward exists but agent may not be running")
+                print(f"      ℹ Port forward exists but agent may not be running")
             else:
-                print(f"    ℹ WSL detected — this port likely needs forwarding:")
-                print(f"      Run: make wsl-forward")
+                print(f"      ℹ WSL detected — this port also needs forwarding:")
+                print(f"        Run: make wsl-forward")
     else:
         print(f"    \033[0;32m✓ TCP {port}:\033[0m port open")
 
@@ -580,17 +584,128 @@ cmd_copy() {
 }
 
 # =============================================================================
+# COMMAND: firewall — print firewall rules for all AICP ports
+# =============================================================================
+cmd_firewall() {
+    log_head "AICP Firewall Rules"
+
+    echo ""
+    echo -e "${BOLD}Ports used by AICP:${RESET}"
+    echo ""
+    echo "  Port   Service           Protocol  Notes"
+    echo "  ─────  ────────────────  ────────  ─────────────────────────────────────"
+    echo "  8090   LocalAI API       TCP/HTTP  Model inference (chat, embed, TTS, etc.)"
+    echo "  9100   AICP Agent        TCP/HTTP  Fleet communication between nodes"
+    echo ""
+    echo "  Both ports need to be open for INBOUND TCP on every fleet machine."
+    echo ""
+
+    # Detect environment
+    local is_wsl=0
+    grep -qi microsoft /proc/version 2>/dev/null && is_wsl=1
+
+    echo -e "${BOLD}═══ Option A: Windows Firewall (built-in) ═══${RESET}"
+    echo ""
+    echo "  Run these in an ${BOLD}Administrator PowerShell${RESET}:"
+    echo ""
+    echo "  # Allow LocalAI API (port 8090)"
+    echo "  New-NetFirewallRule -DisplayName 'AICP - LocalAI API' \\"
+    echo "    -Direction Inbound -Protocol TCP -LocalPort 8090 \\"
+    echo "    -Action Allow -Profile Private"
+    echo ""
+    echo "  # Allow AICP Agent (port 9100)"
+    echo "  New-NetFirewallRule -DisplayName 'AICP - Agent Daemon' \\"
+    echo "    -Direction Inbound -Protocol TCP -LocalPort 9100 \\"
+    echo "    -Action Allow -Profile Private"
+    echo ""
+    echo "  To verify:"
+    echo "  Get-NetFirewallRule -DisplayName 'AICP*' | Format-Table DisplayName,Enabled,Direction"
+    echo ""
+    echo "  To remove later:"
+    echo "  Remove-NetFirewallRule -DisplayName 'AICP - LocalAI API'"
+    echo "  Remove-NetFirewallRule -DisplayName 'AICP - Agent Daemon'"
+    echo ""
+
+    echo -e "${BOLD}═══ Option B: ESET Firewall ═══${RESET}"
+    echo ""
+    echo "  If ESET Smart Security / Internet Security manages your firewall,"
+    echo "  Windows Firewall rules may be IGNORED. Configure in ESET instead:"
+    echo ""
+    echo "  1. Open ESET → Setup → Network protection → Firewall"
+    echo "  2. Click 'Configure rules...' (or 'Interactive mode' rules)"
+    echo "  3. Add TWO rules:"
+    echo ""
+    echo "     Rule 1: AICP - LocalAI API"
+    echo "       Direction:   Inbound"
+    echo "       Protocol:    TCP"
+    echo "       Local port:  8090"
+    echo "       Action:      Allow"
+    echo "       Profile:     Home / Trusted network"
+    echo ""
+    echo "     Rule 2: AICP - Agent Daemon"
+    echo "       Direction:   Inbound"
+    echo "       Protocol:    TCP"
+    echo "       Local port:  9100"
+    echo "       Action:      Allow"
+    echo "       Profile:     Home / Trusted network"
+    echo ""
+    echo "  Tip: If ESET is in Interactive mode, it will prompt when a"
+    echo "  connection comes in — choose 'Allow' and 'Create rule'."
+    echo ""
+    echo "  To check if ESET is managing firewall (vs Windows):"
+    echo "    ESET → Setup → Network protection → see if Firewall shows 'Active'"
+    echo ""
+
+    if [[ "$is_wsl" -eq 1 ]]; then
+        echo -e "${BOLD}═══ WSL2 Note ═══${RESET}"
+        echo ""
+        echo "  Docker ports (8090) are auto-exposed to LAN by Windows."
+        echo "  Agent port (9100) runs in WSL and needs port forwarding:"
+        echo ""
+        echo "    make wsl-forward          # Set up port forward for 9100"
+        echo "    make wsl-forward-check    # Verify current forwards"
+        echo ""
+        echo "  Port forward + firewall rule are BOTH needed for 9100."
+        echo ""
+    fi
+
+    echo -e "${BOLD}═══ Linux (bare metal, no WSL) ═══${RESET}"
+    echo ""
+    echo "  If running on native Linux, use iptables/ufw:"
+    echo ""
+    echo "  # ufw (Ubuntu/Debian)"
+    echo "  sudo ufw allow 8090/tcp comment 'AICP - LocalAI API'"
+    echo "  sudo ufw allow 9100/tcp comment 'AICP - Agent Daemon'"
+    echo ""
+    echo "  # iptables (any distro)"
+    echo "  sudo iptables -A INPUT -p tcp --dport 8090 -j ACCEPT"
+    echo "  sudo iptables -A INPUT -p tcp --dport 9100 -j ACCEPT"
+    echo ""
+
+    # Quick connectivity test hint
+    echo -e "${BOLD}═══ Quick test from another machine ═══${RESET}"
+    echo ""
+    local MY_IP
+    MY_IP=$(detect_local_ip)
+    echo "  From the other machine, run:"
+    echo "    curl -sf http://$MY_IP:8090/v1/models    # Should return JSON"
+    echo "    curl -sf http://$MY_IP:9100/health        # Should return {\"status\":\"ok\"}"
+    echo ""
+}
+
+# =============================================================================
 # Dispatch
 # =============================================================================
 CMD="${1:-}"
 shift || true
 
 case "$CMD" in
-    init)    cmd_init ;;
-    join)    cmd_join "${HOST:-${1:-}}" "${PORT:-$DEFAULT_PORT}" "${FLEET_NAME:-}" ;;
-    status)  cmd_status ;;
-    test)    cmd_test ;;
-    copy)    cmd_copy "${HOST:-$1}" ;;
+    init)      cmd_init ;;
+    join)      cmd_join "${HOST:-${1:-}}" "${PORT:-$DEFAULT_PORT}" "${FLEET_NAME:-}" ;;
+    status)    cmd_status ;;
+    test)      cmd_test ;;
+    copy)      cmd_copy "${HOST:-$1}" ;;
+    firewall)  cmd_firewall ;;
     *)
         echo "Usage: scripts/fleet.sh <command>"
         echo ""
@@ -600,6 +715,7 @@ case "$CMD" in
         echo "  status               Check all fleet nodes"
         echo "  test                 Run a test task on each node"
         echo "  copy                 SCP fleet config to a remote node (HOST=<ip>)"
+        echo "  firewall             Show firewall rules for all AICP ports"
         exit 1
         ;;
 esac
