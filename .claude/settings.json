@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r heartbeat /home/jfortin/openclaw-fleet/ --include=*.py -l)",
+      "Bash(grep -r webhook /home/jfortin/openclaw-fleet --include=*.py --include=*.md)",
+      "Bash(grep -r \"github.*event\\\\|push.*event\\\\|pr.*event\\\\|on.*merge\" /home/jfortin/openclaw-fleet --include=*.py)",
+      "Bash(grep -r \"approve_approval\\\\|auto.*approve\\\\|orchestrator\\\\|on.*complete\\\\|on.*merge\" /home/jfortin/openclaw-fleet/fleet --include=*.py)",
+      "Bash(find /home/jfortin/openclaw-fleet -path */.venv -prune -o -name *lifecycle*.py -print)",
+      "Bash(find /home/jfortin/openclaw-fleet -type f \\\\\\(-name *webhook* -o -name *event* -o -name *trigger* \\\\\\))",
+      "Bash(grep -r \"def.*webhook\\\\|@.*webhook\\\\|/webhook\" /home/jfortin/openclaw-fleet/fleet --include=*.py)",
+      "Bash(grep -r \"approve_approval\\\\|transition.*done\\\\|orchestrat\" /home/jfortin/openclaw-fleet/fleet --include=*.py)"
+    ]
+  }
+}

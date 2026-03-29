@@ -90,15 +90,9 @@ GPU_DOCKER_OK=0  # set to 1 by check_nvidia_toolkit if passthrough works
 log_head "Checking prerequisites"
 
 check_python() {
-    log_step "Python 3.8+"
-    PYTHON=$(which python3 2>/dev/null) || die "python3 not found. Install Python 3.8+."
-    PY_VERSION=$($PYTHON -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    PY_MAJOR=$($PYTHON -c "import sys; print(sys.version_info.major)")
-    PY_MINOR=$($PYTHON -c "import sys; print(sys.version_info.minor)")
-    if [[ "$PY_MAJOR" -lt 3 ]] || [[ "$PY_MAJOR" -eq 3 && "$PY_MINOR" -lt 8 ]]; then
-        die "Python 3.8+ required, found $PY_VERSION"
-    fi
-    log_ok "Python $PY_VERSION at $PYTHON"
+    log_step "Python (uv manages version)"
+    command -v uv >/dev/null 2>&1 || die "uv not found. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    log_ok "uv $(uv --version)"
 }
 
 check_docker() {
@@ -163,25 +157,23 @@ if [[ "$MODE" == "full" || "$MODE" == "claude" ]]; then
         log_skip "Virtual environment (.venv exists)"
         STEPS_SKIPPED+=("venv")
     else
-        log_step "Creating virtual environment"
-        $PYTHON -m venv .venv
-        log_ok ".venv created"
+        log_step "Creating virtual environment (Python 3.11)"
+        [[ -d .venv ]] && rm -rf .venv
+        uv venv --python 3.11 .venv
+        log_ok ".venv created (Python 3.11)"
         STEPS_DONE+=("venv")
     fi
 
-    VENV_PIP=".venv/bin/pip"
     VENV_PYTHON=".venv/bin/python"
 
     # Always ensure deps are current (fast if nothing changed)
     log_step "Installing Python dependencies"
-    "$VENV_PIP" install --upgrade pip -q
-    "$VENV_PIP" install -e ".[dev]" -q
-    log_ok "Dependencies installed (aicp, httpx, rich, pyyaml, pytest, ruff)"
+    uv pip install --python "$VENV_PYTHON" -e ".[dev]"
+    log_ok "Dependencies installed (aicp, httpx, rich, pyyaml, mcp, pytest, ruff)"
     STEPS_DONE+=("deps")
 else
     # local mode — assume .venv exists
     [[ -d .venv ]] || die "No .venv found. Run 'make setup' first (not 'make setup-local-only')."
-    VENV_PIP=".venv/bin/pip"
     VENV_PYTHON=".venv/bin/python"
 fi
 

@@ -216,7 +216,7 @@ agent-down:
 
 update:
 	git pull
-	.venv/bin/pip install -e ".[dev]"
+	uv pip install --python .venv/bin/python -e ".[dev]"
 	@echo "Updated. If LocalAI config changed: make setup-local-only"
 
 install-aliases:
