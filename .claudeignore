@@ -1,0 +1,26 @@
+# Model binaries (multi-GB, never useful in context)
+models/*.gguf
+models/*.bin
+
+# Python artifacts
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Build/temp
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+dist/
+build/
+
+# Docker volumes
+volumes/
+
+# Large logs
+*.log
+
+# IDE
+.idea/
+.vscode/

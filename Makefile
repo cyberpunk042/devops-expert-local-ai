@@ -4,7 +4,8 @@
         model-download models-list model-list-remote agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
-        install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only help
+        install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only \
+        install-statusline help
 
 SETUP_SCRIPT := scripts/setup.sh
 PORT         ?= 8090
@@ -102,6 +103,9 @@ check-prereqs:
 
 install-nvidia-toolkit:
 	@bash scripts/install-nvidia-toolkit.sh
+
+install-statusline:
+	@bash scripts/install-statusline.sh
 
 # =============================================================================
 # Backend extraction (run before first docker build)

@@ -8,7 +8,12 @@
       "Bash(find /home/jfortin/openclaw-fleet -path */.venv -prune -o -name *lifecycle*.py -print)",
       "Bash(find /home/jfortin/openclaw-fleet -type f \\\\\\(-name *webhook* -o -name *event* -o -name *trigger* \\\\\\))",
       "Bash(grep -r \"def.*webhook\\\\|@.*webhook\\\\|/webhook\" /home/jfortin/openclaw-fleet/fleet --include=*.py)",
-      "Bash(grep -r \"approve_approval\\\\|transition.*done\\\\|orchestrat\" /home/jfortin/openclaw-fleet/fleet --include=*.py)"
+      "Bash(grep -r \"approve_approval\\\\|transition.*done\\\\|orchestrat\" /home/jfortin/openclaw-fleet/fleet --include=*.py)",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=AI+agent+failure+modes+autonomous+task+drift+hallucinated+completions+2024+2025&count=10\" -H 'Accept: application/json' -H 'Accept-Encoding: gzip' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY')",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=AI+agent+guardrails+frameworks+discipline+constitutional+AI+agent+behavior+enforcement+2024+2025&count=10\" -H 'Accept: application/json' -H 'Accept-Encoding: gzip' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY')"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }
