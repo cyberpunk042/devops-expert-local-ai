@@ -7,3 +7,16 @@ parameters:
 context_size: 2048
 threads: 4
 gpu_layers: 0
+# ── KV cache quantization (4x VRAM savings) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling (grammar-constrained) ──
+function:
+  parallel_calls: false
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: phi-2-cache
+prompt_cache_all: true

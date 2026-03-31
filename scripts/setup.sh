@@ -474,6 +474,13 @@ else
 fi
 
 # =============================================================================
+# SECTION 6b — Optimize model configs (KV cache, function calling, caching)
+# =============================================================================
+log_head "Model optimization"
+bash scripts/optimize-models.sh models
+STEPS_DONE+=("model-optimize")
+
+# =============================================================================
 # SECTION 7 — Write Docker .env (THREADS, log level)
 # =============================================================================
 if [[ -f .env && "$FORCE" -eq 0 ]]; then

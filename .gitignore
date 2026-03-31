@@ -39,3 +39,7 @@ models/*.safetensors
 models/*.pt
 /backends/
 .aicp/agent.pid
+
+# LocalAI persistent data — track knowledge, ignore runtime temp files
+data/*.lock
+data/*.pid

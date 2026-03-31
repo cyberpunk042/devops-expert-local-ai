@@ -4,6 +4,21 @@ parameters:
   model: Hermes-3-Llama-3.2-3B-Q4_K_M.gguf
   temperature: 0.3
   top_p: 0.9
-context_size: 4096
+  repeat_penalty: 1.1
+context_size: 8192
 threads: 4
 gpu_layers: 32
+
+# ── KV cache quantization (4x VRAM savings) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling (grammar-constrained for reliability) ──
+function:
+  parallel_calls: false
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: hermes-3b-cache
+prompt_cache_all: true

@@ -11,6 +11,7 @@ services:
     volumes:
       - ./models:/models
       - localai-backends:/backends
+      - ./data:/data
     environment:
       - THREADS=${THREADS:-4}
       - MODELS_PATH=/models
@@ -29,6 +30,9 @@ services:
       # Single-active: only one GPU model loaded at a time (swap on demand)
       # Essential for 8GB VRAM with multiple 7B models (hermes, codellama, llava)
       - LOCALAI_SINGLE_ACTIVE_BACKEND=true
+      # ── Persistence ──
+      # Stores, KB collections, and agent state persist to host via ./data
+      - LOCALAI_DATA_PATH=/data
       # ── Observability ──
       # /metrics endpoint is enabled by default (Prometheus format)
       # To disable: LOCALAI_DISABLE_METRICS_ENDPOINT=true
