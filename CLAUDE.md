@@ -285,9 +285,23 @@ docker logs devops-expert-local-ai-localai-1 --tail 20  # Check logs
 docker stats                            # Monitor resource usage
 ```
 
+## AICP ↔ Fleet Connection
+
+AICP modules that fleet will connect to (NOT yet wired):
+- `aicp/core/rag.py` — SQLite vector store, cosine similarity (fleet RAG)
+- `aicp/core/kb.py` — Knowledge base, file ingestion, BGE reranker
+- `aicp/core/stores.py` — LocalAI /stores/ API client
+- `aicp/core/router.py` — Backend routing (AICP version → fleet bridge)
+- `aicp/core/skills.py` — 3-layer skill system (78 skills in .claude/skills/)
+
+Skills in AICP needed by fleet agents (18 skills referenced in fleet's
+config/agent-tooling.yaml): architecture-propose, feature-implement,
+quality-coverage, foundation-docker, pm-plan, ops-deploy, etc.
+
 ## Related Projects
 
-- **Fleet docs**: `../openclaw-fleet/docs/milestones/STATUS-TRACKER.md`
-- **DSPD mission config**: `../devops-solution-product-development/config/mission.yaml`
-- **AICP board in Plane**: `config/aicp-board.yaml` (in DSPD repo)
+- **Fleet navigation**: `../openclaw-fleet/docs/README.md` (start here for fleet docs)
+- **Fleet architecture**: `../openclaw-fleet/docs/ARCHITECTURE.md`
+- **Fleet work backlog**: `../openclaw-fleet/docs/WORK-BACKLOG.md`
+- **DSPD mission**: `../devops-solution-product-development/config/mission.yaml`
 - **LocalAI strategic vision**: `../openclaw-fleet/docs/milestones/active/strategic-vision-localai-independence.md`
