@@ -126,6 +126,7 @@ class Controller:
     """Orchestrates backend selection, mode enforcement, and task execution.
 
     Features:
+      - Knowledge map context injection (navigator assembles relevant context)
       - Response caching (skip inference for repeated prompts)
       - Quality-based auto-escalation (LocalAI garbage → retry with Claude)
       - Token budget tracking (warn/block when budget exhausted)
@@ -154,6 +155,15 @@ class Controller:
         budget_cfg = self.config.get("budget", {})
         self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
         self.tokens_used = 0
+        # Knowledge map navigator (E-M29)
+        self._navigator = None
+        if self.config.get("rag", {}).get("enabled", False):
+            try:
+                from aicp.core.navigator import Navigator
+                project_path = Path(".")
+                self._navigator = Navigator(project_path, config=self.config)
+            except Exception:
+                pass  # navigator is optional — works without knowledge map files
 
     def _check_fleet(self) -> None:
         """Load and health-check fleet nodes (cached per controller lifetime)."""
@@ -341,14 +351,25 @@ class Controller:
             elif (fleet_result := self._try_fleet_route(task)) is not None:
                 result = fleet_result
             else:
-                # Execute locally
+                # Knowledge map context augmentation (E-M29)
+                effective_prompt = task.prompt
+                if self._navigator and task.backend_name == "local":
+                    try:
+                        effective_prompt = self._navigator.assemble_context(
+                            task.prompt, task.mode,
+                            model=getattr(self.backends.get("local"), "model", ""),
+                        )
+                    except Exception:
+                        pass  # fall back to original prompt
+
+                # Execute
                 self.last_route = "local"
                 backend = self.backends.get(task.backend_name)
                 if backend is None:
                     raise ValueError(f"Unknown backend: {task.backend_name}")
 
                 try:
-                    result = backend.execute(task.prompt, task.mode, task.project_path)
+                    result = backend.execute(effective_prompt, task.mode, task.project_path)
 
                     # Auto-escalation on low quality (E-M49)
                     if task.backend_name in ("local", "openrouter"):

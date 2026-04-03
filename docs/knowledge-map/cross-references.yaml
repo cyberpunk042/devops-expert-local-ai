@@ -1,0 +1,103 @@
+# AICP Cross-References — System → Module → Tool Relationships
+#
+# Maps how every piece of AICP connects. The navigator and intent-map
+# read this to determine what content to inject per situation.
+
+systems:
+  routing:
+    modules: [router.py, controller.py]
+    tools: [aicp_chat, aicp_complete, aicp_agent]
+    config: [default.yaml (backends, cluster)]
+    connected_systems: [backends, guardrails, observability, knowledge-map]
+
+  rag:
+    modules: [rag.py, kb.py, lightrag.py, indexer.py, chunking.py, stores.py]
+    tools: [aicp_kb_search, aicp_kb_ingest, aicp_kb_stats, aicp_kb_augment, aicp_store_set, aicp_store_find, aicp_embed, aicp_rerank]
+    config: [default.yaml (rag)]
+    connected_systems: [backends, knowledge-map]
+
+  backends:
+    modules: [localai.py, openrouter.py, claude_code.py, base.py]
+    tools: [aicp_models, aicp_models_loaded, aicp_model_install, aicp_model_unload, aicp_warmup, aicp_health]
+    config: [default.yaml (backends), config/models/*.yaml]
+    connected_systems: [routing, observability]
+
+  observability:
+    modules: [prometheus.py, observability.py, metrics.py, db.py]
+    tools: [aicp_metrics, aicp_system, aicp_health, aicp_p2p_status]
+    config: [prometheus.yaml, alerts.yaml, docker-compose.yaml]
+    connected_systems: [backends, routing]
+
+  guardrails:
+    modules: [checks.py, paths.py, response.py]
+    tools: []
+    config: [default.yaml (guardrails)]
+    connected_systems: [routing]
+
+  knowledge-map:
+    modules: [navigator.py]
+    tools: [aicp_kb_augment]
+    config: [_schema.yaml, injection-profiles.yaml, intent-map.yaml]
+    connected_systems: [rag, routing]
+
+  cluster:
+    modules: [cluster.py, gpu.py]
+    tools: [aicp_fleet_status, aicp_fleet_run, aicp_p2p_status]
+    config: [fleet.yaml, docker-compose.dual-gpu.yaml]
+    connected_systems: [routing, backends]
+
+  cli:
+    modules: [main.py, interactive.py, control.py, dashboard.py, display.py, project_ops.py]
+    tools: []
+    config: [default.yaml]
+    connected_systems: [routing, backends, rag, observability, guardrails]
+
+  agent:
+    modules: [client.py, server.py]
+    tools: [aicp_fleet_run]
+    config: [fleet.yaml]
+    connected_systems: [cluster, routing]
+
+  mcp:
+    modules: [server.py]
+    tools: all 64 MCP tools
+    config: [default.yaml]
+    connected_systems: [backends, rag, observability]
+
+# Module → file mapping for navigator lookups
+module_paths:
+  router.py: aicp/core/router.py
+  controller.py: aicp/core/controller.py
+  localai.py: aicp/backends/localai.py
+  openrouter.py: aicp/backends/openrouter.py
+  claude_code.py: aicp/backends/claude_code.py
+  base.py: aicp/backends/base.py
+  rag.py: aicp/core/rag.py
+  kb.py: aicp/core/kb.py
+  lightrag.py: aicp/core/lightrag.py
+  indexer.py: aicp/core/indexer.py
+  chunking.py: aicp/core/chunking.py
+  stores.py: aicp/core/stores.py
+  navigator.py: aicp/core/navigator.py
+  prometheus.py: aicp/core/prometheus.py
+  observability.py: aicp/core/observability.py
+  metrics.py: aicp/core/metrics.py
+  db.py: aicp/core/db.py
+  checks.py: aicp/guardrails/checks.py
+  paths.py: aicp/guardrails/paths.py
+  response.py: aicp/guardrails/response.py
+  cluster.py: aicp/core/cluster.py
+  gpu.py: aicp/core/gpu.py
+  modes.py: aicp/core/modes.py
+  budget.py: aicp/core/budget.py
+  session.py: aicp/core/session.py
+  pipeline.py: aicp/core/pipeline.py
+  tools.py: aicp/core/tools.py
+  skills.py: aicp/core/skills.py
+  history.py: aicp/core/history.py
+  models.py: aicp/core/models.py
+  context.py: aicp/core/context.py
+  result.py: aicp/core/result.py
+  approval.py: aicp/core/approval.py
+  worktree.py: aicp/core/worktree.py
+  projects.py: aicp/core/projects.py
