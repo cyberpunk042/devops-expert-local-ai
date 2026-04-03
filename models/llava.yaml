@@ -2,16 +2,21 @@ name: llava
 backend: cuda12-llama-cpp
 
 parameters:
+  seed: -1
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  repeat_penalty: 1.1
   model: llava-v1.6-vicuna-7b.Q4_K_M.gguf
   temperature: 0.2
-  top_p: 0.95
+  top_p: 0.85
   top_k: 40
 
 # Vision: CLIP multimodal projector (must match the model version)
 mmproj: mmproj-llava-v1.6-vicuna-7b-f16.gguf
 
 threads: 7
-gpu_layers: 99
+gpu_layers: 24
 
 # Prompt template — LLaVA 1.6 Vicuna uses Vicuna v1.1 format
 template:
@@ -40,3 +45,6 @@ function:
   parallel_calls: false
   mixed_mode: false
 context_size: 16384
+batch_size: 2048
+mmap: true
+mmlock: true

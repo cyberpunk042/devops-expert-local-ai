@@ -21,18 +21,19 @@ services:
       # ── Performance ──
       # LocalAI divides context by LLAMACPP_PARALLEL slots
       # PARALLEL=2, CONTEXT=16384 → 8192 per slot (fits 8GB VRAM)
-      # PARALLEL=4 with 32768 overwhelms VRAM (179s+ per inference)
       - LLAMACPP_PARALLEL=${LLAMACPP_PARALLEL:-2}
       - CONTEXT_SIZE=${CONTEXT_SIZE:-16384}
+      # PARALLEL_REQUESTS must be true for LLAMACPP_PARALLEL to work
+      - LOCALAI_PARALLEL_REQUESTS=true
       # ── Watchdog: auto-recover stuck or idle backends ──
       - LOCALAI_WATCHDOG_IDLE=true
       - LOCALAI_WATCHDOG_IDLE_TIMEOUT=15m
       - LOCALAI_WATCHDOG_BUSY=true
-      - LOCALAI_WATCHDOG_BUSY_TIMEOUT=5m
+      - LOCALAI_WATCHDOG_BUSY_TIMEOUT=10m
       # ── Model management ──
-      # Multiple models needed simultaneously (hermes LLM + nomic-embed embeddings)
-      # nomic-embed runs on CPU (gpu_layers:0), hermes on GPU — no VRAM conflict
+      # LRU eviction: max 3 backends (hermes + nomic-embed + bge-reranker)
       - LOCALAI_SINGLE_ACTIVE_BACKEND=false
+      - LOCALAI_MAX_ACTIVE_BACKENDS=3
       # ── Persistence ──
       # Stores, KB collections, and agent state persist to host via ./data
       - LOCALAI_DATA_PATH=/data

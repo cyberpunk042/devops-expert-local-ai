@@ -2,14 +2,18 @@ name: codellama
 backend: cuda12-llama-cpp
 
 parameters:
+  seed: -1
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
   model: codellama-7b-instruct.Q4_K_M.gguf
   temperature: 0.2
-  top_p: 0.9
+  top_p: 0.85
   top_k: 40
   repeat_penalty: 1.1
 
 threads: 7
-gpu_layers: 99
+gpu_layers: 24
 
 # Prompt template — CodeLlama Instruct uses Llama 2 format
 template:
@@ -34,3 +38,6 @@ function:
   parallel_calls: false
   mixed_mode: false
 context_size: 16384
+batch_size: 2048
+mmap: true
+mmlock: true

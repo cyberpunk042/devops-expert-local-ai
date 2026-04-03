@@ -16,5 +16,6 @@ threads: 7
 cache_type_k: q4_0
 cache_type_v: q4_0
 flash_attention: true
-context_size: 16384
+context_size: 8192
 batch_size: 2048
+mmap: true

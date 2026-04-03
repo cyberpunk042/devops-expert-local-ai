@@ -1,9 +1,14 @@
 name: hermes-3b
 backend: cuda12-llama-cpp
 parameters:
+  seed: -1
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
   model: Hermes-3-Llama-3.2-3B-Q4_K_M.gguf
-  temperature: 0.3
-  top_p: 0.9
+  temperature: 0.2
+  top_p: 0.85
   repeat_penalty: 1.1
 threads: 4
 gpu_layers: 32
@@ -22,3 +27,6 @@ function:
 prompt_cache_path: hermes-3b-cache
 prompt_cache_all: true
 context_size: 16384
+batch_size: 2048
+mmap: true
+mmlock: true
