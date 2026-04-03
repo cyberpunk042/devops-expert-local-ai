@@ -203,7 +203,7 @@ class Controller:
                     if not failover_enabled:
                         raise
 
-                    # Failover chain: local failed → try fleet peer → try Claude
+                    # Failover chain: local → fleet peer → openrouter → claude
                     logger.warning("Local backend failed: %s — trying failover", local_err)
 
                     # Step 1: try fleet peers
@@ -211,20 +211,36 @@ class Controller:
                     if peer_result is not None:
                         result = peer_result
                     else:
-                        # Step 2: try Claude (if we weren't already using it)
-                        claude = self.backends.get("claude")
-                        if claude and task.backend_name != "claude":
+                        # Step 2: try OpenRouter (free middle tier)
+                        openrouter = self.backends.get("openrouter")
+                        if openrouter and task.backend_name != "openrouter":
                             try:
-                                logger.info("Failover: escalating to Claude")
-                                self.last_route = "failover:claude"
-                                result = claude.execute(
+                                logger.info("Failover: trying OpenRouter")
+                                self.last_route = "failover:openrouter"
+                                result = openrouter.execute(
                                     task.prompt, task.mode, task.project_path
                                 )
-                            except Exception as claude_err:
-                                logger.error("Failover: Claude also failed: %s", claude_err)
-                                raise local_err from None
+                            except Exception as or_err:
+                                logger.warning("Failover: OpenRouter failed: %s", or_err)
+                                result = None
                         else:
-                            raise local_err from None
+                            result = None
+
+                        # Step 3: try Claude (if OpenRouter also failed)
+                        if result is None:
+                            claude = self.backends.get("claude")
+                            if claude and task.backend_name != "claude":
+                                try:
+                                    logger.info("Failover: escalating to Claude")
+                                    self.last_route = "failover:claude"
+                                    result = claude.execute(
+                                        task.prompt, task.mode, task.project_path
+                                    )
+                                except Exception as claude_err:
+                                    logger.error("Failover: Claude also failed: %s", claude_err)
+                                    raise local_err from None
+                            else:
+                                raise local_err from None
 
         except Exception as e:
             error = str(e)
@@ -242,7 +258,7 @@ class Controller:
                 "backend": task.backend_name,
                 "route": self.last_route,
                 "duration_seconds": elapsed,
-                "response_length": len(result),
+                "response_length": len(result or ""),
                 "tokens": usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }))
@@ -251,7 +267,7 @@ class Controller:
                 mode=task.mode.value,
                 backend=task.backend_name,
                 project=str(task.project_path),
-                response=result,
+                response=result or "",
                 duration_seconds=elapsed,
                 error=error,
                 model=usage.get("model"),

@@ -26,6 +26,14 @@ backends:
     # typical_p: 1.0       # Locally typical sampling threshold
     # frequency_penalty: 0.0
     # presence_penalty: 0.0
+  openrouter:
+    # OpenRouter: 200+ models, 29 free. Zero-cost middle tier.
+    # Set OPENROUTER_API_KEY in .env to enable.
+    # model: qwen/qwen3-8b:free     (default free model)
+    # free_model: qwen/qwen3-8b:free
+    # free_only: true                (restrict to $0 models)
+    max_tokens: 4096
+    timeout: 120
   claude:
     model: opus
     max_turns: 10

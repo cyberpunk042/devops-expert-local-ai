@@ -45,6 +45,13 @@ services:
       - LOCALAI_LOG_FORMAT=${LOCALAI_LOG_FORMAT:-json}
       # ── Auth (set in .env, empty = disabled) ──
       - LOCALAI_API_KEY=${LOCALAI_API_KEY:-}
+    # ── Health check: model API responsive ──
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     devices:
       - /dev/dxg:/dev/dxg
     deploy:
@@ -54,6 +61,9 @@ services:
             - driver: nvidia
               device_ids: ["0"]
               capabilities: [gpu]
+        limits:
+          memory: 12G
+          cpus: "${DOCKER_CPU_LIMIT:-4.0}"
     restart: unless-stopped
 
 volumes:

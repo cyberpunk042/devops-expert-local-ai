@@ -65,25 +65,35 @@ def classify_task_with_reason(
     backends: Dict[str, Backend],
     config: Dict[str, Any] = None,
 ) -> Tuple[str, str]:
-    """Classify a task and return (backend_name, reason)."""
+    """Classify a task and return (backend_name, reason).
+
+    4-tier routing:
+      1. local   — free, fast, private (fleet ops, simple tasks)
+      2. openrouter — free cloud models (medium complexity, local unavailable)
+      3. claude  — expensive, powerful (complex, edit/act modes)
+    """
 
     local = backends.get("local")
     claude = backends.get("claude")
+    openrouter = backends.get("openrouter")
     local_available = local and local.is_available()
     claude_available = claude and claude.is_available()
+    or_available = openrouter and openrouter.is_available()
 
     # If only one backend is available, use it
-    if local_available and not claude_available:
-        return "local", "claude unavailable"
-    if claude_available and not local_available:
-        return "claude", "local unavailable"
-    if not local_available and not claude_available:
+    if local_available and not claude_available and not or_available:
+        return "local", "only backend available"
+    if not local_available and not claude_available and not or_available:
         return "local", "no backends available"
 
-    # Fleet operations → always local (zero Claude tokens)
+    # Fleet operations → always local (zero tokens, zero cost)
     fleet_matches = _FLEET_OPS.findall(prompt)
     if fleet_matches:
-        return "local", "fleet operation ({})".format(fleet_matches[0])
+        if local_available:
+            return "local", "fleet operation ({})".format(fleet_matches[0])
+        if or_available:
+            return "openrouter", "fleet op, local unavailable"
+        return "local", "fleet operation (local down)"
 
     # Act mode → Claude (hard enforcement via CLI flags)
     if mode == Mode.ACT:
@@ -93,25 +103,40 @@ def classify_task_with_reason(
     if mode == Mode.EDIT:
         return "claude", "edit mode needs hard enforcement"
 
-    # Long prompts → Claude (better at complex reasoning)
-    if len(prompt) > 500:
-        return "claude", "long prompt ({} chars)".format(len(prompt))
-
-    # Complex keywords → Claude
+    # Complex keywords → Claude (or OpenRouter as fallback)
     complex_matches = _COMPLEX_KEYWORDS.findall(prompt)
     if complex_matches:
-        return "claude", "complex task ({})".format(complex_matches[0])
+        if claude_available:
+            return "claude", "complex task ({})".format(complex_matches[0])
+        if or_available:
+            return "openrouter", "complex task, claude unavailable"
+        return "local", "complex task, no cloud backends"
 
-    # Simple keywords → Local
+    # Long prompts → Claude or OpenRouter
+    if len(prompt) > 500:
+        if claude_available:
+            return "claude", "long prompt ({} chars)".format(len(prompt))
+        if or_available:
+            return "openrouter", "long prompt, claude unavailable"
+
+    # Simple keywords → Local (or cheapest available fallback)
     simple_matches = _SIMPLE_KEYWORDS.findall(prompt)
     if simple_matches:
-        return "local", "simple task"
+        if local_available:
+            return "local", "simple task"
+        if or_available:
+            return "openrouter", "simple task, local unavailable"
+        if claude_available:
+            return "claude", "simple task, local unavailable"
 
-    # Default: local for think mode (fast + private)
-    if mode == Mode.THINK:
-        return "local", "default for think mode"
-
-    return "local", "default"
+    # Default: prefer local → openrouter → claude
+    if local_available:
+        return "local", "default for think mode" if mode == Mode.THINK else "default"
+    if or_available:
+        return "openrouter", "local unavailable"
+    if claude_available:
+        return "claude", "local unavailable"
+    return "local", "no backends available"
 
 
 # Operations that can be handled without LLM (zero tokens)

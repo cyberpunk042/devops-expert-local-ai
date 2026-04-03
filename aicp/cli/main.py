@@ -21,6 +21,7 @@ from aicp.core.modes import Mode
 from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
+from aicp.backends.openrouter import OpenRouterBackend
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -398,6 +399,22 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             timeout=claude_cfg.get("timeout", 300),
         ),
     }
+
+    # OpenRouter: optional middle-tier backend (needs OPENROUTER_API_KEY)
+    import os
+    or_cfg = get_backend_config(config, "openrouter")
+    or_key = os.environ.get("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
+    if or_key:
+        backends["openrouter"] = OpenRouterBackend(
+            api_key=or_key,
+            model=or_cfg.get("model", ""),
+            free_model=or_cfg.get("free_model", ""),
+            max_tokens=or_cfg.get("max_tokens", 4096),
+            timeout=or_cfg.get("timeout", 120),
+            free_only=or_cfg.get("free_only", False),
+        )
+
+    return backends
 
 
 def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
@@ -2321,6 +2338,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         dt.add_row("Complex keywords", ", ".join(complex_hits) if complex_hits else "[dim]none[/]")
         dt.add_row("Simple keywords", ", ".join(simple_hits) if simple_hits else "[dim]none[/]")
         dt.add_row("Local available", str(backends.get("local") and backends["local"].is_available()))
+        dt.add_row("OpenRouter available", str(backends.get("openrouter") and backends["openrouter"].is_available()))
         dt.add_row("Claude available", str(backends.get("claude") and backends["claude"].is_available()))
         dt.add_row("Recommended", f"[cyan]{debug_backend}[/]")
         dt.add_row("Reason", debug_reason)
