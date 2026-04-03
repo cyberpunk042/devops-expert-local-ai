@@ -1,0 +1,119 @@
+# AICP Intent Map (E-M24)
+#
+# Maps situations to what knowledge content should be injected.
+# The navigator reads this to determine WHAT to inject for a given
+# task type, backend, and mode combination.
+#
+# Format: Each intent specifies a trigger condition and maps it to
+# content branches from the knowledge map.
+
+# ─── Task-Type Intents ──────────────────────────────────────────────────
+
+intents:
+  # Simple Q&A — user asks a factual question
+  simple_qa:
+    triggers:
+      complexity_below: 0.3
+      mode: think
+    inject:
+      kb_context: true           # RAG search for relevant chunks
+      systems: []                # no system docs needed
+      modules: []
+    model_hint: "qwen3-8b-fast"  # no-think mode sufficient
+
+  # Code task — user wants code written or analyzed
+  code_task:
+    triggers:
+      has_keywords: [code, function, class, implement, refactor, debug]
+      mode: [think, edit]
+    inject:
+      kb_context: true
+      modules: ["relevant to task files"]
+      systems: [router, controller]
+    model_hint: "qwen3-8b"       # thinking mode helps
+
+  # Architecture — user asks about system design
+  architecture:
+    triggers:
+      has_keywords: [architect, design, system, architecture, how does]
+      complexity_above: 0.5
+    inject:
+      kb_context: true
+      systems: [router, controller, rag, lightrag, observability]
+      modules: ["core/*.py overview"]
+      backends: [all]
+    model_hint: null              # let router decide (likely claude)
+
+  # Fleet operations — fleet agent heartbeat, status, task dispatch
+  fleet_ops:
+    triggers:
+      has_keywords: [heartbeat, fleet, agent, status, health]
+    inject:
+      kb_context: false           # fleet ops don't need KB
+      systems: [cluster]
+      modules: [cluster, agent]
+    model_hint: "qwen3-4b"
+
+  # Model management — user configuring or managing models
+  model_mgmt:
+    triggers:
+      has_keywords: [model, download, benchmark, swap, load, unload, vram]
+    inject:
+      models: [all_active]
+      systems: []
+      kb_context: true
+    model_hint: "qwen3-8b-fast"
+
+  # RAG / KB operations — user working with knowledge base
+  rag_ops:
+    triggers:
+      has_keywords: [search, ingest, index, embed, knowledge, kb, rag]
+    inject:
+      systems: [rag, lightrag, kb, indexer]
+      modules: [rag, kb, lightrag, indexer, stores, chunking]
+      kb_context: false           # avoid recursion
+    model_hint: "qwen3-8b"
+
+  # Observability — user checking metrics, status, health
+  observability:
+    triggers:
+      has_keywords: [metrics, prometheus, grafana, dashboard, alert, monitor]
+    inject:
+      systems: [observability, prometheus]
+      modules: [observability, prometheus, metrics, db]
+      kb_context: false
+    model_hint: "qwen3-8b-fast"
+
+  # Config / Setup — user configuring the system
+  config_setup:
+    triggers:
+      has_keywords: [config, setup, install, docker, compose, env, yaml]
+    inject:
+      config: [default.yaml, docker-compose.yaml, fleet.yaml]
+      systems: []
+      kb_context: true
+    model_hint: "qwen3-8b-fast"
+
+  # Default — no specific intent matched
+  default:
+    triggers:
+      fallback: true
+    inject:
+      kb_context: true
+      systems: []
+      modules: []
+    model_hint: null              # let router decide
+
+# ─── Profile Selection Rules ────────────────────────────────────────────
+
+profile_selection:
+  # Profile is selected based on the TARGET model's context window
+  rules:
+    - if: "model context >= 200K"
+      profile: opus-1m
+    - if: "model context >= 32K"
+      profile: sonnet-200k
+    - if: "model context >= 4K"
+      profile: localai-8k
+    - if: "model is *-fast or heartbeat"
+      profile: heartbeat

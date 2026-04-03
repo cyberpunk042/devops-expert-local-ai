@@ -1,0 +1,90 @@
+# Knowledge Map Metadata Schema (E-M22)
+#
+# Defines the _map.yaml format used across all knowledge map entries.
+# Every directory in the knowledge map tree has a _map.yaml that describes
+# what it contains, how it connects to other entries, and what injection
+# level to use per context tier.
+#
+# The navigator module (aicp/core/navigator.py) reads these at context
+# assembly time to decide what to inject into agent prompts.
+
+# ─── _map.yaml Format ──────────────────────────────────────────────────
+
+_map_schema:
+  # Required fields
+  name: string              # Human-readable name
+  type: enum                # module | model | tool | backend | config | system
+  description: string       # One-line purpose (used for intent matching)
+
+  # Content tiers (what exists at each detail level)
+  content:
+    full: path              # Full documentation (e.g. full.md, the source file)
+    condensed: path         # Key concepts, 50-100 lines (condensed.md)
+    minimal: path           # One-paragraph essence, 5-10 lines (minimal.md)
+
+  # Relationships (how this entry connects to others)
+  connects_to: list[string]   # Other _map entries this depends on
+  depends_on: list[string]    # Hard dependencies
+  used_by: list[string]       # What uses this entry
+  related_models: list[string] # Models that interact with this
+
+  # Injection rules
+  injection:
+    opus-1m: full | condensed | minimal | none
+    sonnet-200k: full | condensed | minimal | none
+    localai-8k: condensed | minimal | none
+    heartbeat: minimal | none
+
+  # Tags for intent matching
+  tags: list[string]        # e.g. [routing, backend, inference]
+
+# ─── Entry Types ────────────────────────────────────────────────────────
+
+entry_types:
+  module:
+    description: "Python module in aicp/"
+    typical_content: "docstring, public API, architecture notes"
+    example: "aicp/core/router.py → routing decisions"
+
+  model:
+    description: "LocalAI model configuration"
+    typical_content: "model card, VRAM requirements, use cases, config"
+    example: "qwen3-8b → main reasoning model"
+
+  tool:
+    description: "MCP tool or built-in tool"
+    typical_content: "purpose, parameters, return type, usage patterns"
+    example: "aicp_kb_search → semantic KB search"
+
+  backend:
+    description: "AI backend (LocalAI, OpenRouter, Claude)"
+    typical_content: "capabilities, cost, latency, when to use"
+    example: "openrouter → free cloud middle tier"
+
+  config:
+    description: "Configuration file or template"
+    typical_content: "what it controls, key settings, defaults"
+    example: "config/default.yaml → AICP defaults"
+
+  system:
+    description: "Subsystem or architectural component"
+    typical_content: "purpose, modules involved, data flow"
+    example: "RAG pipeline → ingest, embed, search, augment"
+
+# ─── Content Tier Guidelines ───────────────────────────────────────────
+
+content_tiers:
+  full:
+    target: "Complete documentation, all details"
+    budget: "unlimited (for opus-1m)"
+    includes: "architecture, API reference, examples, edge cases"
+
+  condensed:
+    target: "Key concepts and essential API"
+    budget: "50-100 lines"
+    includes: "purpose, main functions, key parameters, gotchas"
+
+  minimal:
+    target: "Identity and core responsibility"
+    budget: "5-10 lines"
+    includes: "one-line purpose, most important function/config"

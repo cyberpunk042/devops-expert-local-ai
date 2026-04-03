@@ -1,0 +1,104 @@
+# AICP Injection Profiles (E-M23)
+#
+# Defines how much knowledge to inject per model context tier.
+# Mirrors fleet's injection-profiles.yaml but scoped to AICP domain.
+#
+# The navigator selects a profile based on the target model's context window,
+# then reads the intent-map to determine WHICH specific content to inject.
+
+opus-1m:
+  description: "Full context — Claude Code with 1M window"
+  context_budget_tokens: 50000
+  model_patterns: ["opus*", "claude-opus*"]
+
+  branches:
+    modules:
+      level: condensed
+      selection: "modules related to current task"
+      max_items: 10
+    models:
+      level: full
+      selection: "active model + alternatives"
+    tools:
+      level: full
+      selection: "all MCP tools with parameters"
+    backends:
+      level: full
+      selection: "all backends with status"
+    config:
+      level: full
+      selection: "relevant config sections"
+    systems:
+      level: full
+      selection: "RAG, routing, controller, observability"
+    kb_context:
+      level: full
+      selection: "top-5 RAG results augmented into prompt"
+
+sonnet-200k:
+  description: "Standard context — Claude Sonnet or large OpenRouter models"
+  context_budget_tokens: 15000
+  model_patterns: ["sonnet*", "claude-sonnet*", "qwen/qwen3-32b*"]
+
+  branches:
+    modules:
+      level: minimal
+      selection: "only directly relevant modules"
+      max_items: 5
+    models:
+      level: condensed
+      selection: "active model only"
+    tools:
+      level: names_and_purpose
+      selection: "relevant tools for task type"
+    backends:
+      level: minimal
+      selection: "active backend only"
+    config:
+      level: minimal
+      selection: "key settings only"
+    systems:
+      level: condensed
+      selection: "system relevant to task"
+    kb_context:
+      level: condensed
+      selection: "top-3 RAG results, truncated"
+
+localai-8k:
+  description: "Minimal context — Qwen3-8B, Qwen3-4B (8K effective context)"
+  context_budget_tokens: 3000
+  model_patterns: ["qwen3-8b*", "qwen3-4b*", "hermes*", "phi*"]
+
+  branches:
+    modules:
+      level: none
+    models:
+      level: none
+    tools:
+      level: none
+      note: "Agent knows tools from CLAUDE.md already"
+    backends:
+      level: none
+    config:
+      level: none
+    systems:
+      level: none
+    kb_context:
+      level: minimal
+      selection: "top-1 RAG result, 500 chars max"
+      note: "Most context comes from the prompt itself"
+
+heartbeat:
+  description: "Zero injection — just the prompt, no knowledge map"
+  context_budget_tokens: 0
+  model_patterns: ["*-fast", "*heartbeat*"]
+
+  branches:
+    # Everything is none — heartbeat gets just the prompt
+    modules: { level: none }
+    models: { level: none }
+    tools: { level: none }
+    backends: { level: none }
+    config: { level: none }
+    systems: { level: none }
+    kb_context: { level: none }
