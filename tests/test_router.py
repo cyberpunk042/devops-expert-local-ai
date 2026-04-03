@@ -2,11 +2,14 @@
 
 from aicp.core.modes import Mode
 from aicp.core.router import (
+    analyze_complexity,
     categorize_operation,
     classify_task_with_reason,
     classify_test_output,
+    estimate_cost,
     intercept_operation,
     recommend_model,
+    score_response_quality,
 )
 
 
@@ -278,3 +281,133 @@ def test_classify_checkmark():
 def test_classify_build_success():
     output = "BUILD SUCCESS in 12s"
     assert classify_test_output(output) == "pass"
+
+
+# ---------------------------------------------------------------------------
+# Complexity analysis (E-M07, E-M11)
+# ---------------------------------------------------------------------------
+
+
+def test_complexity_fleet_op_is_trivial():
+    result = analyze_complexity("heartbeat", Mode.THINK)
+    assert result.score < 0.1
+    assert result.recommended_tier == "local"
+
+
+def test_complexity_simple_question():
+    result = analyze_complexity("What is Python?", Mode.THINK)
+    assert result.score < 0.3
+    assert result.recommended_tier == "local"
+
+
+def test_complexity_refactor_is_complex():
+    result = analyze_complexity(
+        "Refactor the authentication module to use JWT tokens "
+        "and implement proper session management across files",
+        Mode.THINK,
+    )
+    assert result.score >= 0.3
+    assert "complex_keywords" in result.signals
+
+
+def test_complexity_act_mode_boosts_score():
+    think = analyze_complexity("deploy the service", Mode.THINK)
+    act = analyze_complexity("deploy the service", Mode.ACT)
+    assert act.score > think.score
+    assert "mode_act" in act.signals
+
+
+def test_complexity_edit_mode_boosts_score():
+    result = analyze_complexity("fix the bug", Mode.EDIT)
+    assert "mode_edit" in result.signals
+    assert result.score > 0.3
+
+
+def test_complexity_multi_step():
+    result = analyze_complexity(
+        "First analyze the code, then refactor it, and finally run the tests",
+        Mode.THINK,
+    )
+    assert "multi_step" in result.signals
+
+
+def test_complexity_long_prompt():
+    result = analyze_complexity("x " * 300, Mode.THINK)  # 600 chars
+    assert "medium_prompt" in result.signals
+
+
+def test_complexity_summary_string():
+    result = analyze_complexity("heartbeat", Mode.THINK)
+    assert isinstance(result.summary, str)
+    assert "fleet_op" in result.summary
+
+
+# ---------------------------------------------------------------------------
+# Response quality scoring (E-M48)
+# ---------------------------------------------------------------------------
+
+
+def test_quality_empty_response():
+    assert score_response_quality("", "hello") == 0.0
+
+
+def test_quality_good_response():
+    score = score_response_quality(
+        "Python is a high-level programming language known for its readability.\n"
+        "Key features include:\n- Dynamic typing\n- Garbage collection\n"
+        "- Extensive standard library",
+        "What is Python?",
+    )
+    assert score >= 0.6
+
+
+def test_quality_refusal_penalty():
+    score = score_response_quality(
+        "I cannot help with that request.",
+        "explain the code",
+    )
+    assert score < 0.5
+
+
+def test_quality_very_short_for_long_prompt():
+    score = score_response_quality(
+        "Yes.",
+        "Explain the architecture of this system in detail including all components",
+    )
+    assert score < 0.4
+
+
+def test_quality_repetitive_response():
+    repeated = "the answer is yes. " * 20
+    score = score_response_quality(repeated, "is this working?")
+    assert score < 0.4
+
+
+def test_quality_structured_response():
+    score = score_response_quality(
+        "## Overview\n\nThe system has three components:\n\n"
+        "- **Backend**: handles API requests\n"
+        "- **Frontend**: user interface\n"
+        "- **Database**: data persistence\n\n"
+        "```python\ndef main():\n    pass\n```",
+        "describe the system",
+    )
+    assert score >= 0.7
+
+
+# ---------------------------------------------------------------------------
+# Cost estimation (E-M08)
+# ---------------------------------------------------------------------------
+
+
+def test_cost_local_is_free():
+    assert estimate_cost("local", 1000, 500) == 0.0
+
+
+def test_cost_openrouter_free():
+    assert estimate_cost("openrouter", 1000, 500, model="qwen/qwen3-8b:free") == 0.0
+
+
+def test_cost_claude_is_expensive():
+    cost = estimate_cost("claude", 1000, 500)
+    assert cost > 0

@@ -8,12 +8,20 @@ Routing strategy (from CLAUDE.md):
   - Complex local tasks (analysis, reasoning)    → local (qwen3-8b, with thinking)
   - Complex implementation                       → claude (opus)
   - Architecture / security / planning           → claude (opus)
+
+Confidence scoring:
+  Each prompt is analyzed for complexity signals. A score 0.0-1.0 determines
+  which backend tier to use:
+    0.0 - 0.3  → local (simple, fast)
+    0.3 - 0.6  → local with thinking or openrouter
+    0.6 - 1.0  → claude (complex, needs deep reasoning)
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 from aicp.backends.base import Backend
 from aicp.core.modes import Mode
@@ -43,6 +51,199 @@ _SIMPLE_KEYWORDS = re.compile(
     r"accept|reject|approve|deny)\b",
     re.IGNORECASE,
 )
+
+
+# ---------------------------------------------------------------------------
+# Prompt complexity analysis (E-M07, E-M08, E-M11)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ComplexityScore:
+    """Weighted complexity analysis of a prompt."""
+
+    score: float                   # 0.0 (trivial) to 1.0 (very complex)
+    signals: Dict[str, float] = field(default_factory=dict)  # signal → weight
+    recommended_tier: str = ""     # local, openrouter, claude
+
+    @property
+    def summary(self) -> str:
+        top = sorted(self.signals.items(), key=lambda x: -x[1])[:3]
+        parts = [f"{k}={v:.2f}" for k, v in top]
+        return f"{self.score:.2f} ({', '.join(parts)})" if parts else f"{self.score:.2f}"
+
+
+def analyze_complexity(prompt: str, mode: Mode) -> ComplexityScore:
+    """Analyze prompt complexity and return a weighted score.
+
+    Signals and their weights:
+      - mode:           ACT/EDIT = 0.4, THINK = 0.0
+      - prompt_length:  0.0-0.25 scaled by character count
+      - complex_kw:     0.15 per complex keyword match (max 0.45)
+      - simple_kw:      -0.1 per simple keyword match (max -0.3)
+      - code_signals:   0.1 for code-related content
+      - multi_step:     0.15 if prompt implies multiple steps
+      - question_mark:  -0.05 (questions tend to be simpler)
+      - fleet_op:       -0.3 (fleet ops are always simple)
+    """
+    signals: Dict[str, float] = {}
+
+    # Mode signal
+    if mode == Mode.ACT:
+        signals["mode_act"] = 0.40
+    elif mode == Mode.EDIT:
+        signals["mode_edit"] = 0.30
+
+    # Prompt length (longer = more complex, up to 0.25)
+    length = len(prompt)
+    if length > 2000:
+        signals["long_prompt"] = 0.25
+    elif length > 500:
+        signals["medium_prompt"] = 0.15
+    elif length > 200:
+        signals["short_prompt"] = 0.05
+
+    # Complex keyword matches
+    complex_hits = _COMPLEX_KEYWORDS.findall(prompt)
+    if complex_hits:
+        weight = min(len(complex_hits) * 0.15, 0.45)
+        signals["complex_keywords"] = weight
+
+    # Simple keyword matches (reduce score)
+    simple_hits = _SIMPLE_KEYWORDS.findall(prompt)
+    if simple_hits:
+        weight = max(len(simple_hits) * -0.10, -0.30)
+        signals["simple_keywords"] = weight
+
+    # Code signals
+    code_match = re.search(
+        r"\b(code|function|class|method|import|def |return |syntax|compile|"
+        r"refactor|implement|debug|traceback|unittest|pytest)\b",
+        prompt, re.IGNORECASE,
+    )
+    if code_match:
+        signals["code_content"] = 0.10
+
+    # Multi-step indicators
+    multi_step = re.search(
+        r"\b(then|after that|next|step \d|first.*then|also|additionally|"
+        r"and then|finally|once.*done)\b",
+        prompt, re.IGNORECASE,
+    )
+    if multi_step:
+        signals["multi_step"] = 0.15
+
+    # Question mark (simpler)
+    if prompt.strip().endswith("?"):
+        signals["question"] = -0.05
+
+    # Fleet operations (always simple)
+    if _FLEET_OPS.search(prompt):
+        signals["fleet_op"] = -0.30
+
+    # Calculate final score, clamped to [0, 1]
+    raw = sum(signals.values())
+    score = max(0.0, min(1.0, raw))
+
+    # Determine tier
+    if score < 0.3:
+        tier = "local"
+    elif score < 0.6:
+        tier = "openrouter"
+    else:
+        tier = "claude"
+
+    return ComplexityScore(score=round(score, 3), signals=signals, recommended_tier=tier)
+
+
+# ---------------------------------------------------------------------------
+# Response quality scoring (E-M48)
+# ---------------------------------------------------------------------------
+
+def score_response_quality(response: str, prompt: str) -> float:
+    """Score a response's quality heuristically (0.0-1.0).
+
+    Checks:
+      - Non-empty response
+      - Reasonable length relative to prompt
+      - Not a refusal / error
+      - Contains substantive content (not just filler)
+      - Coherent structure (sentences, paragraphs)
+
+    This is a fast heuristic, not a semantic evaluation.
+    Used to decide whether to auto-escalate to a better backend.
+    """
+    if not response or not response.strip():
+        return 0.0
+
+    score = 0.5  # baseline for any non-empty response
+    text = response.strip()
+
+    # Length check — too short for the prompt is suspicious
+    if len(text) < 10:
+        score -= 0.3
+    elif len(text) < 50 and len(prompt) > 100:
+        score -= 0.15
+
+    # Refusal / error patterns
+    refusal = re.search(
+        r"\b(I cannot|I'm unable|I don't know|as an AI|I apologize|"
+        r"error occurred|failed to|not supported|out of context)\b",
+        text, re.IGNORECASE,
+    )
+    if refusal:
+        score -= 0.2
+
+    # Repetition check (same phrase repeated)
+    words = text.lower().split()
+    if len(words) > 20:
+        # Check for 3-gram repetition
+        trigrams = [" ".join(words[i:i+3]) for i in range(len(words)-2)]
+        unique_ratio = len(set(trigrams)) / len(trigrams) if trigrams else 1.0
+        if unique_ratio < 0.5:
+            score -= 0.3  # heavy repetition
+
+    # Structure signals (positive)
+    if "\n" in text:
+        score += 0.1  # has paragraph breaks
+    if re.search(r"^\s*[-*•]\s", text, re.MULTILINE):
+        score += 0.05  # has bullet points
+    if re.search(r"```", text):
+        score += 0.05  # has code blocks
+
+    # Substantive length bonus
+    if len(text) > 200:
+        score += 0.1
+    if len(text) > 500:
+        score += 0.05
+
+    return max(0.0, min(1.0, round(score, 3)))
+
+
+# ---------------------------------------------------------------------------
+# Cost tracking (E-M08)
+# ---------------------------------------------------------------------------
+
+# Approximate costs per 1M tokens (input, output) — updated 2026-04
+_BACKEND_COSTS: Dict[str, Tuple[float, float]] = {
+    "local": (0.0, 0.0),           # free
+    "openrouter": (0.0, 0.0),      # free tier default
+    "openrouter:paid": (0.5, 1.5), # generic paid estimate
+    "claude": (15.0, 75.0),        # opus pricing
+}
+
+
+def estimate_cost(
+    backend: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    model: str = "",
+) -> float:
+    """Estimate cost in USD for a request."""
+    key = backend
+    if backend == "openrouter" and ":free" not in model:
+        key = "openrouter:paid"
+    costs = _BACKEND_COSTS.get(key, (0.0, 0.0))
+    return (prompt_tokens * costs[0] + completion_tokens * costs[1]) / 1_000_000
 
 
 def classify_task(
