@@ -1,6 +1,7 @@
 name: hermes-3b
 backend: cuda12-llama-cpp
 parameters:
+  batch: 2048
   seed: -1
   max_tokens: 4096
   mirostat: 0
@@ -27,6 +28,5 @@ function:
 prompt_cache_path: hermes-3b-cache
 prompt_cache_all: true
 context_size: 16384
-batch_size: 2048
 mmap: true
 mmlock: true

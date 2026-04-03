@@ -99,12 +99,19 @@ optimize_model() {
   fi
 
   # ── 2. Batch size (physical batch for prompt processing) ──
+  # LocalAI uses "batch" under parameters:, not "batch_size" at root
   if $is_llm; then
-    set_root_key "$yaml" "batch_size" "2048" && { log "$name: batch_size → 2048 (faster prompt ingestion)"; changed=1; }
+    set_param "$yaml" "batch" "2048" && { log "$name: batch → 2048 (faster prompt ingestion)"; changed=1; }
   elif $is_embed; then
-    set_root_key "$yaml" "batch_size" "2048" && { log "$name: batch_size → 2048 (handle large embedding inputs)"; changed=1; }
+    set_param "$yaml" "batch" "2048" && { log "$name: batch → 2048 (handle large embedding inputs)"; changed=1; }
   elif $is_rerank; then
-    set_root_key "$yaml" "batch_size" "1024" && { log "$name: batch_size → 1024"; changed=1; }
+    set_param "$yaml" "batch" "1024" && { log "$name: batch → 1024"; changed=1; }
+  fi
+  # Clean up old batch_size at root if present (wrong location)
+  if grep -q "^batch_size:" "$yaml"; then
+    sed -i '/^batch_size:/d' "$yaml"
+    log "$name: removed batch_size from root (moved to parameters.batch)"
+    changed=1
   fi
 
   # ── 3. Temperature — LOW for structured extraction, moderate for chat ──

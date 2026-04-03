@@ -2,6 +2,7 @@ name: llava
 backend: cuda12-llama-cpp
 
 parameters:
+  batch: 2048
   seed: -1
   max_tokens: 4096
   mirostat: 0
@@ -45,6 +46,5 @@ function:
   parallel_calls: false
   mixed_mode: false
 context_size: 16384
-batch_size: 2048
 mmap: true
 mmlock: true

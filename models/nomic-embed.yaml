@@ -2,6 +2,7 @@ name: nomic-embed
 backend: cuda12-llama-cpp
 
 parameters:
+  batch: 2048
   model: nomic-embed-text-v1.5.Q8_0.gguf
 
 # Embedding model — returns vectors, not text
@@ -17,5 +18,4 @@ cache_type_k: q4_0
 cache_type_v: q4_0
 flash_attention: true
 context_size: 8192
-batch_size: 2048
 mmap: true
