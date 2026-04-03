@@ -272,6 +272,14 @@ benchmark-qwen3:
 	.venv/bin/aicp --models benchmark --models-arg qwen3-8b
 
 # =============================================================================
+# Knowledge Base — sync to LocalAI /stores/
+# =============================================================================
+
+# Sync KB research + knowledge-map docs into LocalAI's native /stores/ API
+kb-sync:
+	@bash scripts/sync-kb-to-localai.sh
+
+# =============================================================================
 # Monitoring stack (Prometheus + Grafana)
 # =============================================================================
 
