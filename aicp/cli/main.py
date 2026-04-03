@@ -2191,6 +2191,35 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     backends = _build_backends(config)
 
+    # ── Background services startup ──────��──────────────────────────────
+    # Auto-indexer: watch project files and re-embed into KB
+    _indexer = None
+    rag_cfg = config.get("rag", {})
+    if rag_cfg.get("enabled") and rag_cfg.get("auto_index") and backends.get("local"):
+        try:
+            from aicp.core.kb import KnowledgeBase
+            from aicp.core.indexer import AutoIndexer
+            kb = KnowledgeBase(backends["local"], config)
+            _indexer = AutoIndexer(
+                kb,
+                project_path=args.project.resolve() if hasattr(args, "project") and args.project else Path("."),
+                extensions=rag_cfg.get("auto_index_extensions"),
+                poll_interval=rag_cfg.get("auto_index_interval", 30),
+            )
+            _indexer.start()
+        except Exception:
+            pass  # auto-indexer is optional
+
+    # Prometheus metrics server: expose /metrics on :9101
+    _metrics_collector = None
+    if not args.check:  # don't start metrics for --check
+        try:
+            from aicp.core.prometheus import MetricsCollector, start_metrics_server
+            _metrics_collector = MetricsCollector()
+            start_metrics_server(_metrics_collector, port=9101)
+        except Exception:
+            pass  # metrics server is optional
+
     # --kb commands (knowledge base / RAG management)
     if args.kb:
         return _run_kb(args.kb, args.kb_arg, args.project.resolve(), config, backends)
@@ -2639,10 +2668,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     session_messages: List = []
     if args.session and actual_backend == "local":
         from aicp.core.session import load_session
+        from aicp.core.compaction import compact_messages, should_compact, get_context_budget
         session_messages = load_session(args.session)
         turns = (len(session_messages) - 1) // 2 if session_messages else 0
         if turns > 0:
-            console.print(f"  [dim]Session '{args.session}': {turns} previous turn(s) loaded[/]")
+            # Auto-compact if history exceeds model context budget
+            model_name = get_backend_config(config, "local").get("model", "qwen3-8b")
+            ctx_budget = get_context_budget(model_name)
+            if should_compact(session_messages, context_window=ctx_budget):
+                session_messages = compact_messages(session_messages, max_tokens=ctx_budget)
+                new_turns = (len(session_messages) - 1) // 2
+                console.print(f"  [dim]Session '{args.session}': compacted {turns}→{new_turns} turns (fit {model_name} context)[/]")
+            else:
+                console.print(f"  [dim]Session '{args.session}': {turns} previous turn(s) loaded[/]")
     elif args.session and actual_backend != "local":
         print_warning("--session is only supported with --backend local (LocalAI).")
 

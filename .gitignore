@@ -43,3 +43,5 @@ Thumbs.db
 # LocalAI persistent data — track knowledge, ignore runtime temp files
 data/*.lock
 data/*.pid
+
+.aicp/rag.db

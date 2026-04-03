@@ -31,7 +31,25 @@
       "Bash(python3 -m py_compile aicp/**/*.py)",
       "Bash(wc -l tests/test_*.py)",
       "Bash(grep -c \"def test_\" tests/test_*.py)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(.venv/bin/pytest tests/test_localai_backend.py -v --timeout=10)",
+      "Bash(.venv/bin/pytest tests/test_localai_backend.py -v)",
+      "Bash(.venv/bin/pytest tests/ --ignore=tests/test_integration.py -q)",
+      "Bash(.venv/bin/pytest tests/test_localai_backend.py tests/test_router.py tests/test_controller.py -v)",
+      "Bash(.venv/bin/pytest tests/test_router.py tests/test_localai_backend.py tests/test_controller.py -v)",
+      "Bash(.venv/bin/pytest tests/test_router.py -v)",
+      "Bash(.venv/bin/pytest tests/test_router.py tests/test_controller.py tests/test_localai_backend.py -v)",
+      "Bash(.venv/bin/pytest tests/test_controller.py::TestFailoverChain::test_failover_all_fail_raises -v)",
+      "Bash(.venv/bin/pytest tests/test_router.py tests/test_controller.py -v)",
+      "Bash(.venv/bin/pytest tests/test_controller.py tests/test_router.py -v)",
+      "Bash(.venv/bin/pytest tests/test_prometheus.py tests/test_controller.py -v)",
+      "Bash(.venv/bin/pytest tests/test_indexer.py -v)",
+      "Bash(.venv/bin/pytest tests/test_indexer.py tests/test_rag.py tests/test_controller.py tests/test_router.py -v)",
+      "Bash(.venv/bin/pytest tests/test_lightrag.py tests/test_indexer.py -v)",
+      "Bash(.venv/bin/pytest tests/test_lightrag.py::test_search_with_reranking -vv)",
+      "Bash(.venv/bin/pytest tests/test_navigator.py -v)",
+      "Bash(.venv/bin/pytest tests/test_controller.py tests/test_navigator.py tests/test_router.py -v)",
+      "Bash(.venv/bin/pytest tests/test_compaction.py tests/test_navigator.py -v)"
     ]
   }
 }
