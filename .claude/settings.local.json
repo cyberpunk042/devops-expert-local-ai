@@ -23,7 +23,14 @@
       "Bash(python3 -m pip list)",
       "Bash(nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader,nounits)",
       "WebSearch",
-      "Bash(timeout 5 .venv/bin/aicp-mcp)"
+      "Bash(timeout 5 .venv/bin/aicp-mcp)",
+      "Bash(wc -l aicp/core/*.py)",
+      "Bash(wc -l aicp/backends/*.py)",
+      "Bash(wc -l aicp/guardrails/*.py aicp/config/*.py aicp/cli/*.py aicp/agent/*.py aicp/mcp/*.py)",
+      "Bash(xargs cat:*)",
+      "Bash(python3 -m py_compile aicp/**/*.py)",
+      "Bash(wc -l tests/test_*.py)",
+      "Bash(grep -c \"def test_\" tests/test_*.py)"
     ]
   }
 }
