@@ -10,7 +10,7 @@ parameters:
   temperature: 0.2
   top_p: 0.85
   repeat_penalty: 1.1
-threads: 4
+threads: 2
 gpu_layers: 32
 
 # ── KV cache quantization (4x VRAM savings) ──

@@ -15,8 +15,8 @@ parameters:
 # Vision: CLIP multimodal projector (must match the model version)
 mmproj: mmproj-llava-v1.6-vicuna-7b-f16.gguf
 
-threads: 7
-gpu_layers: 24
+threads: 2
+gpu_layers: 32
 
 # Prompt template — LLaVA 1.6 Vicuna uses Vicuna v1.1 format
 template:

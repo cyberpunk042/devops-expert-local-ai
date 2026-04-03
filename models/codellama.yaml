@@ -12,8 +12,8 @@ parameters:
   top_k: 40
   repeat_penalty: 1.1
 
-threads: 7
-gpu_layers: 24
+threads: 2
+gpu_layers: 32
 
 # Prompt template — CodeLlama Instruct uses Llama 2 format
 template:

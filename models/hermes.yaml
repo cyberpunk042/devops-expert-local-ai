@@ -10,8 +10,8 @@ parameters:
   model: hermes-2-pro-mistral-7b.Q4_K_M.gguf
   temperature: 0.1
   top_p: 0.85
-threads: 3
-gpu_layers: 24
+threads: 2
+gpu_layers: 32
 
 # ── KV cache quantization (4x VRAM savings) ──
 cache_type_k: q4_0

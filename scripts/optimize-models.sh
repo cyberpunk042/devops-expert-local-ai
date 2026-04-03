@@ -248,32 +248,28 @@ PCEOF
     set_root_key "$yaml" "reranking" "true" && { log "$name: reranking → true"; changed=1; }
   fi
 
-  # ── 22. n_gpu_layers for hermes — maximize GPU offload ──
+  # ── 22. GPU layers — full offload for all LLMs ──
+  # q4_0 KV cache + flash_attention = 7B fits entirely in 8GB VRAM (~5.6 GB)
+  # Full offload eliminates CPU bottleneck layers — major speed improvement
   case "$name" in
     hermes)
-      set_root_key "$yaml" "gpu_layers" "24" && { log "$name: gpu_layers → 24 (max for 7B on 8GB)"; changed=1; }
+      set_root_key "$yaml" "gpu_layers" "32" && { log "$name: gpu_layers → 32 (full offload, fits 8GB with q4_0 KV)"; changed=1; }
       ;;
     hermes-3b)
-      set_root_key "$yaml" "gpu_layers" "32" && { log "$name: gpu_layers → 32 (all layers for 3B)"; changed=1; }
+      set_root_key "$yaml" "gpu_layers" "32" && { log "$name: gpu_layers → 32 (all layers)"; changed=1; }
       ;;
     codellama)
-      set_root_key "$yaml" "gpu_layers" "24" && { log "$name: gpu_layers → 24"; changed=1; }
+      set_root_key "$yaml" "gpu_layers" "32" && { log "$name: gpu_layers → 32 (full offload)"; changed=1; }
       ;;
     llava)
-      set_root_key "$yaml" "gpu_layers" "24" && { log "$name: gpu_layers → 24"; changed=1; }
+      set_root_key "$yaml" "gpu_layers" "32" && { log "$name: gpu_layers → 32 (full offload)"; changed=1; }
       ;;
   esac
 
-  # ── 23. LLM threads — balance CPU/GPU ──
+  # ── 23. LLM threads — fewer with full GPU offload ──
+  # With all layers on GPU, CPU threads only handle tokenization/post-processing
   if $is_llm; then
-    case "$name" in
-      hermes)
-        set_root_key "$yaml" "threads" "3" && { log "$name: threads → 3 (GPU-heavy, less CPU)"; changed=1; }
-        ;;
-      hermes-3b)
-        set_root_key "$yaml" "threads" "4" && { log "$name: threads → 4"; changed=1; }
-        ;;
-    esac
+    set_root_key "$yaml" "threads" "2" && { log "$name: threads → 2 (full GPU offload, minimal CPU)"; changed=1; }
   fi
 
   if [ $changed -eq 1 ]; then
