@@ -2,14 +2,14 @@ name: hermes
 backend: cuda12-llama-cpp
 parameters:
   batch: 2048
-  seed: -1
+  seed: 42
   max_tokens: 4096
   mirostat: 0
   min_p: 0.05
   repeat_penalty: 1.1
   top_k: 40
   model: hermes-2-pro-mistral-7b.Q4_K_M.gguf
-  temperature: 0.1
+  temperature: 0.0
   top_p: 0.85
 threads: 2
 gpu_layers: 32

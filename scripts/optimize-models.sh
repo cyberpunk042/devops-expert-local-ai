@@ -118,7 +118,7 @@ optimize_model() {
   if $is_llm; then
     case "$name" in
       hermes)
-        set_param "$yaml" "temperature" "0.1" && { log "$name: temperature → 0.1 (structured extraction needs determinism)"; changed=1; }
+        set_param "$yaml" "temperature" "0.0" && { log "$name: temperature → 0.0 (greedy — deterministic extraction)"; changed=1; }
         ;;
       hermes-3b)
         set_param "$yaml" "temperature" "0.2" && { log "$name: temperature → 0.2"; changed=1; }
@@ -225,11 +225,11 @@ PCEOF
     fi
   fi
 
-  # ── 17. Seed — deterministic for extraction reliability ──
+  # ── 17. Seed — FIXED for deterministic extraction ──
+  # seed: -1 = random every request = inconsistent output
+  # seed: 42 = same output for same input = reliable extraction
   if $is_llm; then
-    if ! grep -q "seed:" "$yaml"; then
-      set_param "$yaml" "seed" "-1" && { log "$name: seed → -1 (random but reproducible with cache)"; changed=1; }
-    fi
+    set_param "$yaml" "seed" "42" && { log "$name: seed → 42 (deterministic — was -1 random)"; changed=1; }
   fi
 
   # ── 18. Threads — optimal for CPU operations ──
