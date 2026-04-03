@@ -1,0 +1,23 @@
+# Prometheus configuration for AICP observability stack
+# Scrapes both LocalAI and AICP metrics endpoints.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yaml
+
+scrape_configs:
+  # LocalAI built-in metrics (Go runtime, API call histograms)
+  - job_name: localai
+    static_configs:
+      - targets: ["localai:8080"]
+        labels:
+          service: localai
+
+  # AICP application metrics (routing, quality, cost, cache, warm pool)
+  - job_name: aicp
+    static_configs:
+      - targets: ["host.docker.internal:9101"]
+        labels:
+          service: aicp

@@ -1,0 +1,74 @@
+# AICP alerting rules (E-M45)
+# Evaluated by Prometheus, surfaced in Grafana.
+groups:
+  - name: aicp_alerts
+    rules:
+      # Model stuck — no requests processed in 10 minutes despite being loaded
+      - alert: ModelStuck
+        expr: increase(aicp_requests_total[10m]) == 0 and aicp_loaded_models > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No AICP requests in 10 minutes despite loaded models"
+          description: "Models are loaded but no inference is happening. Check LocalAI watchdog."
+
+      # High latency — average response time > 30s
+      - alert: HighLatency
+        expr: aicp_latency_ms_avg > 30000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AICP average latency > 30s on {{ $labels.backend }}"
+          description: "Backend {{ $labels.backend }} is responding slowly. Consider model swap or resource check."
+
+      # High error rate — more than 20% errors in last 5 minutes
+      - alert: HighErrorRate
+        expr: rate(aicp_errors_total[5m]) / rate(aicp_requests_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate > 20% on {{ $labels.backend }}"
+          description: "Backend {{ $labels.backend }} is failing frequently."
+
+      # Frequent model swaps — more than 10 swaps in 30 minutes
+      - alert: FrequentModelSwaps
+        expr: increase(aicp_model_swaps_total[30m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Excessive model swaps ({{ $value }} in 30m)"
+          description: "Models are being swapped frequently. Consider warm pool tuning or LOCALAI_MAX_ACTIVE_BACKENDS."
+
+      # Low quality responses — average quality below 0.3
+      - alert: LowQualityResponses
+        expr: aicp_quality_avg < 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low response quality on {{ $labels.backend }}"
+          description: "Backend {{ $labels.backend }} quality score is {{ $value }}. Auto-escalation may be triggering frequently."
+
+      # Cost spike — more than $1 spent in 1 hour
+      - alert: CostSpike
+        expr: increase(aicp_cost_usd_total[1h]) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cost spike: ${{ $value }} in last hour on {{ $labels.backend }}"
+          description: "Unusual spending detected. Check routing and escalation patterns."
+
+      # LocalAI high memory — Go heap > 4GB
+      - alert: LocalAIHighMemory
+        expr: go_memstats_alloc_bytes{job="localai"} > 4e9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LocalAI memory usage > 4GB"
+          description: "Go heap is large. May need container restart or model eviction."

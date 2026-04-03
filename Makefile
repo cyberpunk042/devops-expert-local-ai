@@ -1,7 +1,8 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
-        model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 agent-up agent-down \
+        model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
+        monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only \
@@ -55,6 +56,8 @@ help:
 	@echo "  make model-qwen3             Download Qwen3-8B + Qwen3-4B (8GB GPU)"
 	@echo "  make model-qwen3-30b         Download Qwen3-30B MoE (dual GPU only)"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
+	@echo "  make monitoring-up           Start Prometheus + Grafana"
+	@echo "  make monitoring-down         Stop monitoring stack"
 	@echo "  make models-list             Models currently loaded in LocalAI"
 	@echo "  make model-download MODEL=<f> URL=<url>  Download a GGUF model"
 	@echo ""
@@ -267,6 +270,22 @@ model-qwen3: model-qwen3-8b model-qwen3-4b
 # Benchmark Qwen3-8B vs current default model
 benchmark-qwen3:
 	.venv/bin/aicp --models benchmark --models-arg qwen3-8b
+
+# =============================================================================
+# Monitoring stack (Prometheus + Grafana)
+# =============================================================================
+
+# Start monitoring stack (Prometheus on :9090, Grafana on :3000)
+monitoring-up:
+	docker compose --profile monitoring up -d
+	@echo "Prometheus: http://localhost:9090"
+	@echo "Grafana:    http://localhost:3000 (admin/aicp)"
+
+monitoring-down:
+	docker compose --profile monitoring down
+
+monitoring-logs:
+	docker compose --profile monitoring logs --tail 30
 
 # =============================================================================
 # Agent daemon

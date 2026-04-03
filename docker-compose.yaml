@@ -66,5 +66,37 @@ services:
           cpus: "${DOCKER_CPU_LIMIT:-4.0}"
     restart: unless-stopped
 
+  # ── Observability stack (E-M44) ──
+  # Start with: docker compose --profile monitoring up -d
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./config/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    profiles: ["monitoring"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-aicp}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+
 volumes:
   localai-backends:
+  prometheus-data:
+  grafana-data:
