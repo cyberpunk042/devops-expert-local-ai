@@ -154,13 +154,42 @@ The model setup must be:
 
 ---
 
-## Next Steps
+## Benchmark Results (2026-04-03)
 
-1. Download Qwen3-8B Q4_K_M GGUF
-2. Create `models/qwen3-8b.yaml` config (based on hermes.yaml pattern)
-3. Create `models/qwen3-4b.yaml` config (based on hermes-3b.yaml pattern)
-4. Benchmark: Qwen3-8B vs hermes on same prompts
-5. Benchmark: Qwen3-4B vs hermes-3b on same prompts
-6. Update `config/default.yaml` if benchmarks are positive
-7. Update router to leverage thinking mode
-8. Build VRAM-adaptive model selection in `scripts/setup.sh`
+Tested on LocalAI v4.0.0, 8GB VRAM, CUDA 12.
+
+### Qwen3-8B Q4_K_M
+
+| Test | Tokens | Time | Notes |
+|------|--------|------|-------|
+| Thinking mode (default) | 227 total (207 reasoning + 20 content) | ~11s | Detailed CoT in `reasoning` field, "4" in `content` |
+| `/no_think` mode | 7 total | ~9s | Direct "Four." in `content`, no reasoning |
+| Cold start (first load) | — | ~12s | Model swap from another model |
+
+### Qwen3-4B Q6_K
+
+| Test | Tokens | Time | Notes |
+|------|--------|------|-------|
+| Thinking mode (default) | 50 (hit max) | ~15s | Reasoning filled buffer before answering |
+| Cold start | — | ~15s | Slightly slower than 8B (Q6_K is larger per-param) |
+
+### Key Findings
+
+1. **Thinking mode adds tokens** — `reasoning` field consumes tokens before `content`
+2. **`/no_think` works** — append to user message to disable thinking
+3. **`reasoning` field is separate** — backend must handle both fields (fixed in localai.py)
+4. **Warm inference is fast** — ~9-11s including model swap
+5. **VRAM fit confirmed** — Qwen3-8B Q4_K_M loads fine on 8GB with KV cache quant
+
+## Completed Steps
+
+- [x] Download Qwen3-8B Q4_K_M GGUF
+- [x] Download Qwen3-4B Q6_K GGUF
+- [x] Create model YAML configs (in `config/models/`)
+- [x] Verify LocalAI loads both models
+- [x] Benchmark thinking vs no-think modes
+- [x] Fix backend to handle `reasoning` field (`_extract_content()`)
+- [x] VRAM-adaptive selection in `scripts/setup.sh`
+- [ ] Benchmark: Qwen3-8B vs hermes on complex prompts (quality comparison)
+- [ ] Update `config/default.yaml` to use Qwen3 as default
+- [ ] Update router to leverage thinking mode per task type

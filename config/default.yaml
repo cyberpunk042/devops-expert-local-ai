@@ -4,17 +4,19 @@ defaults:
 backends:
   local:
     base_url: http://localhost:8090
-    model: hermes
-    max_tokens: 2048
+    model: qwen3-8b
+    max_tokens: 4096
     embedding_model: nomic-embed
-    code_model: codellama
+    code_model: qwen3-8b
     vision_model: llava
     whisper_model: whisper-1
     tts_model: piper-tts
     image_model: stablediffusion
     reranker_model: bge-reranker-v2-m3
     sound_model: transformers-musicgen
-    fleet_model: hermes-3b
+    fleet_model: qwen3-4b
+    # Qwen3 fast model (no thinking mode) for structured/simple tasks
+    fast_model: qwen3-8b-fast
     cache_prompt: true
     auto_route: true
     # Advanced sampling (uncomment to override defaults):

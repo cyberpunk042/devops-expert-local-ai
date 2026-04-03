@@ -1,10 +1,11 @@
 """Smart routing — pick the best backend for a task.
 
 Routing strategy (from CLAUDE.md):
-  - Fleet ops (heartbeat, status, chat post)    → local (hermes-3b)
+  - Fleet ops (heartbeat, status, chat post)    → local/fast (qwen3-4b or qwen3-8b-fast)
   - Direct HTTP ops (read_context, agent_status) → local (no LLM needed)
-  - Simple tasks (Q&A, summarize, format)        → local (hermes-3b)
-  - Simple reviews (test pass/fail)              → local (hermes-3b)
+  - Simple tasks (Q&A, summarize, format)        → local/fast (qwen3-8b-fast, no thinking)
+  - Simple reviews (test pass/fail)              → local/fast (qwen3-8b-fast, no thinking)
+  - Complex local tasks (analysis, reasoning)    → local (qwen3-8b, with thinking)
   - Complex implementation                       → claude (opus)
   - Architecture / security / planning           → claude (opus)
 """
@@ -201,23 +202,33 @@ def classify_test_output(output: str) -> Optional[str]:
 def recommend_model(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
     """Suggest the best LocalAI model for a prompt.
 
-    Returns a model name (e.g. 'hermes-3b', 'hermes', 'codellama') or None
-    to use the default.
+    Returns a model name (e.g. 'qwen3-4b', 'qwen3-8b', 'qwen3-8b-fast') or
+    None to use the default (main model with thinking enabled).
+
+    Routing logic:
+      - Fleet/heartbeat ops  → fleet_model (lightweight, e.g. qwen3-4b)
+      - Simple tasks          → fast_model (no thinking overhead)
+      - Code tasks            → code_model
+      - Complex/default       → None (use main model with thinking)
     """
     config = config or {}
     local_cfg = config.get("backends", {}).get("local", {})
 
-    # Fleet/heartbeat ops → lightweight 3B model
+    # Fleet/heartbeat ops → lightweight model (zero-overhead)
     if _FLEET_OPS.search(prompt):
-        return local_cfg.get("fleet_model", "hermes-3b")
+        return local_cfg.get("fleet_model", "qwen3-4b")
 
-    # Code tasks → code model
+    # Code tasks → code model (check before simple — code needs reasoning)
     code_keywords = re.search(
         r"\b(code|function|class|method|import|def |return |variable|syntax|compile)\b",
         prompt, re.IGNORECASE,
     )
     if code_keywords:
-        return local_cfg.get("code_model", "codellama")
+        return local_cfg.get("code_model", "qwen3-8b")
 
-    # Default: main model
+    # Simple tasks → fast model (no thinking, fewer tokens)
+    if _SIMPLE_KEYWORDS.search(prompt) and not _COMPLEX_KEYWORDS.search(prompt):
+        return local_cfg.get("fast_model", "qwen3-8b-fast")
+
+    # Default: main model (with thinking enabled for complex reasoning)
     return None

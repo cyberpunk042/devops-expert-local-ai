@@ -143,15 +143,22 @@ def test_sprint_planning_routes_to_claude():
 
 def test_recommend_model_heartbeat():
     model = recommend_model("heartbeat")
-    assert model == "hermes-3b"
+    assert model == "qwen3-4b"
 
 
 def test_recommend_model_code():
     model = recommend_model("write a function to sort a list")
-    assert model == "codellama"
+    assert model == "qwen3-8b"
+
+
+def test_recommend_model_simple():
+    """Simple tasks route to fast model (no thinking overhead)."""
+    model = recommend_model("what is Python?")
+    assert model == "qwen3-8b-fast"
 
 
 def test_recommend_model_default():
+    """Complex or ambiguous prompts use default model (with thinking)."""
     model = recommend_model("tell me about the weather")
     assert model is None
 

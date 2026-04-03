@@ -169,18 +169,18 @@ class LocalAIBackend(Backend):
             params["presence_penalty"] = self.presence_penalty
         return params
 
-    def _select_model(self, prompt: str) -> str:
+    def _select_model(self, prompt: str, config: dict = None) -> str:
         """Pick the best model for this prompt.
 
         Returns the model name to use. When auto_route is off (default),
         always returns self.model. When on, uses router.recommend_model()
-        to pick the best local model (hermes-3b for fleet ops, codellama
-        for code, etc.).
+        to pick the best local model (qwen3-4b for fleet ops, qwen3-8b-fast
+        for simple tasks, qwen3-8b for code/complex, etc.).
         """
         if not self.auto_route:
             return self.model
         from aicp.core.router import recommend_model
-        recommended = recommend_model(prompt)
+        recommended = recommend_model(prompt, config)
         if recommended:
             return recommended
         return self.model
@@ -597,9 +597,25 @@ class LocalAIBackend(Backend):
         }
 
         try:
-            return data["choices"][0]["message"]["content"]
+            return self._extract_content(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
+
+    @staticmethod
+    def _extract_content(message: dict) -> str:
+        """Extract text from a chat completion message.
+
+        Qwen3 models use a ``reasoning`` field for chain-of-thought and may
+        return an empty ``content``.  When both are present we return content
+        (the final answer); when only reasoning exists we return that.
+        """
+        content = message.get("content") or ""
+        reasoning = message.get("reasoning") or ""
+        if content:
+            return content
+        if reasoning:
+            return reasoning
+        return ""
 
     def execute_stream(
         self,
@@ -658,7 +674,7 @@ class LocalAIBackend(Backend):
                         try:
                             data = json.loads(raw)
                             delta = data["choices"][0].get("delta", {})
-                            chunk = delta.get("content", "")
+                            chunk = delta.get("content", "") or delta.get("reasoning", "")
                             if chunk:
                                 yield chunk
                         except (json.JSONDecodeError, KeyError, IndexError):
@@ -739,7 +755,7 @@ class LocalAIBackend(Backend):
         }
 
         try:
-            return data["choices"][0]["message"]["content"]
+            return self._extract_content(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected vision response: {str(data)[:200]}")
 
@@ -843,7 +859,7 @@ class LocalAIBackend(Backend):
         }
 
         try:
-            return data["choices"][0]["message"]["content"]
+            return self._extract_content(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected multimodal response: {str(data)[:200]}")
 
@@ -1777,7 +1793,7 @@ class LocalAIBackend(Backend):
             try:
                 results.append({
                     "index": choice.get("index", len(results)),
-                    "text": choice["message"]["content"],
+                    "text": self._extract_content(choice["message"]),
                     "finish_reason": choice.get("finish_reason", "stop"),
                 })
             except (KeyError, TypeError):
@@ -1863,7 +1879,7 @@ class LocalAIBackend(Backend):
 
         try:
             choice = data["choices"][0]
-            text = choice["message"]["content"]
+            text = self._extract_content(choice["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
 
@@ -1957,7 +1973,7 @@ class LocalAIBackend(Backend):
         }
 
         try:
-            content = data["choices"][0]["message"]["content"]
+            content = self._extract_content(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected LocalAI response: {str(data)[:200]}")
 
@@ -2163,7 +2179,7 @@ class LocalAIBackend(Backend):
         }
 
         try:
-            return data["choices"][0]["message"]["content"]
+            return self._extract_content(data["choices"][0]["message"])
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
 
@@ -2315,7 +2331,7 @@ class LocalAIBackend(Backend):
 
             data = resp.json()
             message = data["choices"][0]["message"]
-            content = message.get("content") or ""
+            content = self._extract_content(message)
             native_tool_calls = message.get("tool_calls")
 
             # ── Native tool_calls in response ──────────────────────────
@@ -2431,8 +2447,8 @@ class LocalAIBackend(Backend):
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 
-                        # ── Text content chunk ──
-                        text_chunk = delta.get("content", "")
+                        # ── Text content chunk (Qwen3: content or reasoning) ──
+                        text_chunk = delta.get("content", "") or delta.get("reasoning", "")
                         if text_chunk:
                             accumulated_content += text_chunk
                             yield text_chunk
