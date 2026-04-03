@@ -1,6 +1,0 @@
-name: stablediffusion
-backend: stablediffusion-ggml
-parameters:
-  model: stable-diffusion-v1-5-Q4_0.gguf
-step: 25
-cfg_scale: 7

@@ -1,4 +1,0 @@
-name: piper-tts
-backend: piper
-parameters:
-  model: en_US-lessac-medium.onnx
