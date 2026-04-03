@@ -425,6 +425,71 @@ def aicp_kb_search(query: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
+def aicp_kb_ingest(path: str) -> str:
+    """Ingest a file or directory into the AICP knowledge base.
+
+    Args:
+        path: File or directory path to ingest.
+
+    Returns:
+        JSON summary with files_ingested, total_chunks, errors.
+    """
+    try:
+        from aicp.core.kb import KnowledgeBase
+        from pathlib import Path as _P
+        backend = _get_backend()
+        kb = KnowledgeBase(backend, _config)
+        p = _P(path)
+        if p.is_dir():
+            result = kb.ingest_directory(p)
+        elif p.is_file():
+            chunks = kb.ingest_file(p)
+            result = {"files_ingested": 1, "total_chunks": chunks, "errors": []}
+        else:
+            return f"Path not found: {path}"
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"KB ingest error: {e}"
+
+
+@mcp.tool()
+def aicp_kb_stats() -> str:
+    """Return knowledge base statistics (chunks, sources, store info)."""
+    try:
+        from aicp.core.kb import KnowledgeBase
+        backend = _get_backend()
+        kb = KnowledgeBase(backend, _config)
+        stats = kb.stats()
+        sources = kb.list_sources()
+        stats["sources"] = sources
+        return json.dumps(stats, indent=2)
+    except Exception as e:
+        return f"KB stats error: {e}"
+
+
+@mcp.tool()
+def aicp_kb_augment(query: str, max_context_chars: int = 3000) -> str:
+    """Build a RAG-augmented prompt by prepending relevant KB context.
+
+    Use this before sending a prompt to an LLM to inject relevant knowledge.
+
+    Args:
+        query: The original prompt/question.
+        max_context_chars: Maximum characters of context to prepend.
+
+    Returns:
+        The augmented prompt string with context block + original query.
+    """
+    try:
+        from aicp.core.kb import KnowledgeBase
+        backend = _get_backend()
+        kb = KnowledgeBase(backend, _config)
+        return kb.augment_prompt(query, max_context_chars=max_context_chars)
+    except Exception as e:
+        return f"KB augment error: {e}"
+
+
+@mcp.tool()
 def aicp_tokenize(text: str) -> str:
     """Count tokens in text using the local model's tokenizer.
 

@@ -39,7 +39,7 @@ backends:
     max_turns: 10
     timeout: 300
 rag:
-  enabled: false
+  enabled: true
   db_path: .aicp/rag.db
   store_name: default
   chunk_size: 512
@@ -48,6 +48,17 @@ rag:
   threshold: 0.3
   rerank: true
   max_context_chars: 3000
+  # Auto-indexing: watch project files and re-embed on change
+  auto_index: true
+  auto_index_interval: 30       # seconds between polls
+  auto_index_extensions:        # file types to index (empty = defaults)
+    - .py
+    - .md
+    - .yaml
+    - .yml
+    - .json
+    - .toml
+    - .sh
 stores:
   default_store: default
 guardrails:

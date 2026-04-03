@@ -1,0 +1,26 @@
+# Docker Compose override for dual-GPU machines (8GB + 11GB)
+# Usage: docker compose -f docker-compose.yaml -f config/docker-compose.dual-gpu.yaml up -d
+#
+# Or set in .env: COMPOSE_FILE=docker-compose.yaml:config/docker-compose.dual-gpu.yaml
+#
+# This override exposes both GPUs to the LocalAI container and increases
+# resource limits for the larger models (qwen3-30b-a3b).
+services:
+  localai:
+    environment:
+      # Both GPUs visible
+      - NVIDIA_VISIBLE_DEVICES=0,1
+      # More context budget with 19GB total VRAM
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-16384}
+      # Allow more active backends with dual GPU
+      - LOCALAI_MAX_ACTIVE_BACKENDS=5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1"]
+              capabilities: [gpu]
+        limits:
+          memory: 24G
+          cpus: "${DOCKER_CPU_LIMIT:-8.0}"
