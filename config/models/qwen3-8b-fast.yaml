@@ -1,0 +1,36 @@
+name: qwen3-8b-fast
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 2048
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  model: Qwen3-8B-Q4_K_M.gguf
+  temperature: 0.0
+  top_p: 0.85
+  repeat_penalty: 1.1
+  # Disable thinking mode for fast structured responses
+  system_prompt: "You are a concise assistant. Respond directly without internal reasoning. /no_think"
+threads: 2
+gpu_layers: 33
+
+# ── KV cache quantization ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: qwen3-8b-fast-cache
+prompt_cache_all: true
+
+# ── Same GGUF as qwen3-8b, different sampling ──
+context_size: 8192
+mmap: true
+mmlock: true

@@ -1,0 +1,20 @@
+name: bge-reranker-v2-m3
+backend: cuda12-llama-cpp
+
+parameters:
+  batch: 1024
+  model: bge-reranker-v2-m3-Q4_K_M.gguf
+
+# Cross-encoder reranker — scores query-document pairs
+embeddings: true
+reranking: true
+
+# Run on CPU to keep GPU VRAM free for the LLM.
+gpu_layers: 0
+context_size: 2048
+threads: 7
+
+# ── KV cache quantization (4x VRAM savings) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true

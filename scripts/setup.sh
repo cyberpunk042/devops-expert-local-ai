@@ -49,8 +49,16 @@ cd "$REPO_ROOT"
 
 # ── Model catalog (keep in sync with scripts/models-catalog.sh) ───────────────
 # Each entry: ALIAS → GGUF_FILENAME / MIN_VRAM_MB (MiB) / DOWNLOAD_URL
-CATALOG_ALIASES=("phi3-mini" "gemma-2b" "hermes" "mistral-7b" "codellama-7b" "hermes-13b" "codellama-13b")
+CATALOG_ALIASES=(
+    "qwen3-8b" "qwen3-4b" "qwen3-30b-a3b"
+    "phi3-mini" "gemma-2b" "hermes" "mistral-7b" "codellama-7b" "hermes-13b" "codellama-13b"
+)
 declare -A MODEL_GGUF=(
+    # ── Qwen3 (2025, recommended) ──
+    [qwen3-8b]="Qwen3-8B-Q4_K_M.gguf"
+    [qwen3-4b]="Qwen3-4B-Q6_K.gguf"
+    [qwen3-30b-a3b]="Qwen3-30B-A3B-Q4_K_M.gguf"
+    # ── Legacy models ──
     [phi3-mini]="Phi-3-mini-4k-instruct-q4.gguf"
     [gemma-2b]="gemma-2b-it.gguf"
     [hermes]="hermes-2-pro-mistral-7b.Q4_K_M.gguf"
@@ -60,6 +68,11 @@ declare -A MODEL_GGUF=(
     [codellama-13b]="codellama-13b-instruct.Q4_K_M.gguf"
 )
 declare -A MODEL_URL=(
+    # ── Qwen3 (official GGUF repos) ──
+    [qwen3-8b]="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+    [qwen3-4b]="https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf"
+    [qwen3-30b-a3b]="https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"
+    # ── Legacy models ──
     [phi3-mini]="https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
     [gemma-2b]="https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it.gguf"
     [hermes]="https://huggingface.co/NousResearch/Hermes-2-Pro-Mistral-7B-GGUF/resolve/main/Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf"
@@ -70,6 +83,11 @@ declare -A MODEL_URL=(
 )
 # Minimum free VRAM (MiB) needed for comfortable use
 declare -A MODEL_MIN_VRAM=(
+    # ── Qwen3 ──
+    [qwen3-8b]=6000
+    [qwen3-4b]=4000
+    [qwen3-30b-a3b]=18000
+    # ── Legacy ──
     [phi3-mini]=3000
     [gemma-2b]=2000
     [hermes]=6000
@@ -225,15 +243,18 @@ if [[ -n "$MODEL_OVERRIDE" ]]; then
         log_info "See full catalog: make model-list-remote"
         exit 1
     }
-elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[hermes-13b]}" ]]; then
-    MODEL_ALIAS="hermes-13b"
-    log_info "Auto-selected: hermes-13b (${VRAM_MB} MiB VRAM, best quality available)"
-elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[hermes]}" ]]; then
-    MODEL_ALIAS="hermes"
-    log_info "Auto-selected: hermes (${VRAM_MB} MiB VRAM, good balance of speed and quality)"
+elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[qwen3-30b-a3b]}" ]]; then
+    MODEL_ALIAS="qwen3-30b-a3b"
+    log_info "Auto-selected: qwen3-30b-a3b (${VRAM_MB} MiB VRAM, MoE: 30B knowledge, 3B speed)"
+elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[qwen3-8b]}" ]]; then
+    MODEL_ALIAS="qwen3-8b"
+    log_info "Auto-selected: qwen3-8b (${VRAM_MB} MiB VRAM, best 8B model with thinking mode)"
+elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[qwen3-4b]}" ]]; then
+    MODEL_ALIAS="qwen3-4b"
+    log_info "Auto-selected: qwen3-4b (${VRAM_MB} MiB VRAM, smart fleet model)"
 elif [[ "$VRAM_MB" -ge "${MODEL_MIN_VRAM[phi3-mini]}" ]]; then
     MODEL_ALIAS="phi3-mini"
-    log_info "Auto-selected: phi3-mini (${VRAM_MB} MiB VRAM, fast 3B model)"
+    log_info "Auto-selected: phi3-mini (${VRAM_MB} MiB VRAM, fast 3B fallback)"
 else
     MODEL_ALIAS="gemma-2b"
     log_info "Auto-selected: gemma-2b (${VRAM_MB} MiB VRAM or CPU, smallest available)"
@@ -292,49 +313,89 @@ else
 fi
 
 # =============================================================================
-# SECTION 5 — Generate LocalAI model YAML
+# SECTION 5 — Deploy model configs + download supplementary models
 # =============================================================================
-log_head "LocalAI model configuration"
+# Source of truth: config/models/*.yaml (tracked in git)
+# Runtime target:  models/*.yaml (gitignored, deployed here)
+# Binaries:        models/*.gguf, *.bin, *.onnx (gitignored, downloaded here)
+# =============================================================================
+log_head "Deploying model configurations"
 
-if [[ -f "models/$MODEL_ALIAS.yaml" && "$FORCE" -eq 0 ]]; then
-    log_skip "models/$MODEL_ALIAS.yaml already exists"
-    STEPS_SKIPPED+=("model-yaml")
+# ── 5a: Deploy all YAML configs from config/models/ → models/ ────────────────
+DEPLOYED=0
+SKIPPED=0
+for src in config/models/*.yaml; do
+    dest="models/$(basename "$src")"
+    if [[ -f "$dest" && "$FORCE" -eq 0 ]]; then
+        SKIPPED=$((SKIPPED + 1))
+    else
+        cp "$src" "$dest"
+        DEPLOYED=$((DEPLOYED + 1))
+    fi
+done
+if [[ "$DEPLOYED" -gt 0 ]]; then
+    log_ok "Deployed $DEPLOYED model config(s) from config/models/"
 else
-    log_step "Generating models/$MODEL_ALIAS.yaml (auto-detecting optimal GPU config)"
+    log_skip "All $SKIPPED model configs already deployed"
+fi
+STEPS_DONE+=("model-yaml-deploy")
+
+# ── 5b: GPU-adaptive tuning for the selected primary model ───────────────────
+# Override gpu_layers and backend based on detected hardware
+if [[ "$FORCE" -eq 1 || "$DEPLOYED" -gt 0 ]]; then
+    log_step "Tuning models/$MODEL_ALIAS.yaml for detected GPU"
     "$VENV_PYTHON" - <<PYEOF
-from aicp.core.gpu import detect_gpus, calculate_optimal_config, generate_model_yaml
+from aicp.core.gpu import detect_gpus, calculate_optimal_config
 from pathlib import Path
+import yaml
 
 gpus = detect_gpus()
 gguf_path = Path("models/${GGUF_FILENAME}")
 cfg = calculate_optimal_config(gguf_path, gpus)
 docker_gpu_ok = "${GPU_DOCKER_OK}" == "1"
 backend = "cuda12-llama-cpp" if (gpus and docker_gpu_ok) else "llama-cpp"
-yaml_str = generate_model_yaml("${MODEL_ALIAS}", "${GGUF_FILENAME}", cfg, backend)
-Path("models/${MODEL_ALIAS}.yaml").write_text(yaml_str)
-print(f"  gpu_layers:   {cfg['gpu_layers']} ({'full GPU offload' if cfg['gpu_layers'] >= 99 else 'partial' if cfg['gpu_layers'] > 0 else 'CPU only'})")
-print(f"  context_size: {cfg['context_size']}")
-print(f"  threads:      {cfg['threads']}")
-print(f"  backend:      {backend}")
+
+yaml_path = Path("models/${MODEL_ALIAS}.yaml")
+if yaml_path.exists():
+    data = yaml.safe_load(yaml_path.read_text())
+    data["backend"] = backend
+    data["gpu_layers"] = cfg["gpu_layers"]
+    data["threads"] = cfg["threads"]
+    data["context_size"] = cfg["context_size"]
+    yaml_path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    print(f"  backend:      {backend}")
+    print(f"  gpu_layers:   {cfg['gpu_layers']} ({'full GPU offload' if cfg['gpu_layers'] >= 99 else 'partial' if cfg['gpu_layers'] > 0 else 'CPU only'})")
+    print(f"  context_size: {cfg['context_size']}")
+    print(f"  threads:      {cfg['threads']}")
 PYEOF
-    log_ok "models/$MODEL_ALIAS.yaml written"
-    STEPS_DONE+=("model-yaml")
+    log_ok "models/$MODEL_ALIAS.yaml tuned for hardware"
 fi
 
-# ── Activate supplementary model YAMLs if their GGUF files exist ─────────────
-if [[ -f "models/$EMBED_GGUF" && ! -f "models/nomic-embed.yaml" ]]; then
-    log_step "Activating nomic-embed model config"
-    # nomic-embed.yaml is committed to the repo — should already be in models/
+# ── 5c: Download supplementary models (embedding, code, vision, audio, etc.) ──
+log_head "Supplementary model downloads"
+
+# Embedding model
+EMBED_GGUF="nomic-embed-text-v1.5.Q8_0.gguf"
+EMBED_URL="https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf"
+if [[ -f "models/$EMBED_GGUF" && "$FORCE" -eq 0 ]]; then
+    log_skip "Embedding model: $EMBED_GGUF"
+else
+    log_step "Downloading embedding model: $EMBED_GGUF (~140 MB)"
+    curl -L --progress-bar -C - -o "models/$EMBED_GGUF" "$EMBED_URL"
+    [[ -s "models/$EMBED_GGUF" ]] || die "Embedding model download failed."
+    log_ok "Downloaded $EMBED_GGUF"
 fi
 
-if [[ -f "models/$CODE_GGUF" ]]; then
-    if [[ ! -f "models/codellama.yaml" ]]; then
-        log_step "Activating codellama model config"
-        cp "config/codellama.yaml.template" "models/codellama.yaml"
-        log_ok "models/codellama.yaml activated"
-    else
-        log_skip "models/codellama.yaml already exists"
-    fi
+# Code model
+CODE_GGUF="codellama-7b-instruct.Q4_K_M.gguf"
+CODE_URL="https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/resolve/main/codellama-7b-instruct.Q4_K_M.gguf"
+if [[ -f "models/$CODE_GGUF" && "$FORCE" -eq 0 ]]; then
+    log_skip "Code model: $CODE_GGUF"
+else
+    log_step "Downloading code model: $CODE_GGUF (~3.8 GB)"
+    curl -L --progress-bar -C - -o "models/$CODE_GGUF" "$CODE_URL"
+    [[ -s "models/$CODE_GGUF" ]] || die "Code model download failed."
+    log_ok "Downloaded $CODE_GGUF"
 fi
 
 # LLaVA vision model
@@ -342,115 +403,69 @@ LLAVA_GGUF="llava-v1.6-vicuna-7b.Q4_K_M.gguf"
 LLAVA_MMPROJ="mmproj-llava-v1.6-vicuna-7b-f16.gguf"
 LLAVA_MODEL_URL="https://huggingface.co/cjpais/llava-v1.6-vicuna-7b-gguf/resolve/main/llava-v1.6-vicuna-7b.Q4_K_M.gguf"
 LLAVA_MMPROJ_URL="https://huggingface.co/cjpais/llava-v1.6-vicuna-7b-gguf/resolve/main/mmproj-model-f16.gguf"
-
 if [[ ! -f "models/$LLAVA_GGUF" ]]; then
-    log_step "Downloading LLaVA 1.6 Vicuna 7B Q4_K_M (~3.9GB)..."
-    wget -q --show-progress -O "models/$LLAVA_GGUF" "$LLAVA_MODEL_URL"
+    log_step "Downloading LLaVA 1.6 Vicuna 7B Q4_K_M (~3.9 GB)"
+    curl -L --progress-bar -C - -o "models/$LLAVA_GGUF" "$LLAVA_MODEL_URL"
     log_ok "Downloaded $LLAVA_GGUF"
 else
-    log_skip "models/$LLAVA_GGUF already exists"
+    log_skip "Vision model: $LLAVA_GGUF"
 fi
-
 if [[ ! -f "models/$LLAVA_MMPROJ" ]]; then
-    log_step "Downloading LLaVA mmproj (CLIP projector, ~600MB)..."
-    wget -q --show-progress -O "models/$LLAVA_MMPROJ" "$LLAVA_MMPROJ_URL"
+    log_step "Downloading LLaVA mmproj (CLIP projector, ~600 MB)"
+    curl -L --progress-bar -C - -o "models/$LLAVA_MMPROJ" "$LLAVA_MMPROJ_URL"
     log_ok "Downloaded $LLAVA_MMPROJ"
 else
-    log_skip "models/$LLAVA_MMPROJ already exists"
+    log_skip "Vision projector: $LLAVA_MMPROJ"
 fi
 
-if [[ -f "models/$LLAVA_GGUF" && -f "models/$LLAVA_MMPROJ" ]]; then
-    if [[ ! -f "models/llava.yaml" ]]; then
-        log_step "Activating llava model config"
-        cp "config/llava.yaml.template" "models/llava.yaml"
-        log_ok "models/llava.yaml activated"
-    else
-        log_skip "models/llava.yaml already exists"
-    fi
-fi
-
-# ── Audio models (whisper STT + piper TTS) ────────────────────────────────────
+# Whisper STT
 WHISPER_MODEL="ggml-base.bin"
 WHISPER_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+if [[ ! -f "models/$WHISPER_MODEL" ]]; then
+    log_step "Downloading Whisper base model (~142 MB)"
+    curl -L --progress-bar -C - -o "models/$WHISPER_MODEL" "$WHISPER_URL"
+    log_ok "Downloaded $WHISPER_MODEL"
+else
+    log_skip "Whisper model: $WHISPER_MODEL"
+fi
+
+# Piper TTS voice + config
 PIPER_VOICE="en_US-lessac-medium.onnx"
 PIPER_VOICE_JSON="en_US-lessac-medium.onnx.json"
 PIPER_VOICE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
 PIPER_JSON_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
-
-if [[ ! -f "models/$WHISPER_MODEL" ]]; then
-    log_step "Downloading Whisper base model (~142MB)..."
-    curl -L --progress-bar -C - -o "models/$WHISPER_MODEL" "$WHISPER_URL"
-    log_ok "Downloaded $WHISPER_MODEL"
-else
-    log_skip "models/$WHISPER_MODEL already exists"
-fi
-
 if [[ ! -f "models/$PIPER_VOICE" ]]; then
-    log_step "Downloading Piper TTS voice (~61MB)..."
+    log_step "Downloading Piper TTS voice (~61 MB)"
     curl -L --progress-bar -C - -o "models/$PIPER_VOICE" "$PIPER_VOICE_URL"
     curl -L --progress-bar -C - -o "models/$PIPER_VOICE_JSON" "$PIPER_JSON_URL"
     log_ok "Downloaded $PIPER_VOICE"
 else
-    log_skip "models/$PIPER_VOICE already exists"
+    log_skip "Piper voice: $PIPER_VOICE"
 fi
 
-# Activate audio model configs
-if [[ -f "models/$WHISPER_MODEL" && ! -f "models/whisper-1.yaml" ]]; then
-    log_step "Activating whisper-1 model config"
-    cp "config/whisper-1.yaml.template" "models/whisper-1.yaml"
-    log_ok "models/whisper-1.yaml activated"
-elif [[ -f "models/whisper-1.yaml" ]]; then
-    log_skip "models/whisper-1.yaml already exists"
-fi
-
-if [[ -f "models/$PIPER_VOICE" && ! -f "models/piper-tts.yaml" ]]; then
-    log_step "Activating piper-tts model config"
-    cp "config/piper-tts.yaml.template" "models/piper-tts.yaml"
-    log_ok "models/piper-tts.yaml activated"
-elif [[ -f "models/piper-tts.yaml" ]]; then
-    log_skip "models/piper-tts.yaml already exists"
-fi
-
-# ── Image generation model (Stable Diffusion v1.5 GGUF) ───────────────────────
+# Stable Diffusion
 SD_MODEL="stable-diffusion-v1-5-Q4_0.gguf"
 SD_URL="https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf"
-
 if [[ ! -f "models/$SD_MODEL" ]]; then
     log_step "Downloading Stable Diffusion v1.5 GGUF (Q4_0, ~1.6 GB)"
     curl -L --progress-bar -C - -o "models/$SD_MODEL" "$SD_URL"
-    log_ok "Downloaded models/$SD_MODEL"
-    STEPS_DONE+=("sd-download")
+    log_ok "Downloaded $SD_MODEL"
 else
-    log_skip "models/$SD_MODEL already exists"
+    log_skip "Stable Diffusion: $SD_MODEL"
 fi
 
-if [[ -f "models/$SD_MODEL" && ! -f "models/stablediffusion.yaml" ]]; then
-    log_step "Activating stablediffusion model config"
-    cp "config/stablediffusion.yaml.template" "models/stablediffusion.yaml"
-    log_ok "models/stablediffusion.yaml activated"
-elif [[ -f "models/stablediffusion.yaml" ]]; then
-    log_skip "models/stablediffusion.yaml already exists"
-fi
-
-# ── Reranker model (BGE-reranker-v2-m3 GGUF) ─────────────────────────────────
+# BGE Reranker
 RERANKER_MODEL="bge-reranker-v2-m3-Q4_K_M.gguf"
 RERANKER_URL="https://huggingface.co/nicoboss/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q4_K_M.gguf"
-
 if [[ ! -f "models/$RERANKER_MODEL" ]]; then
-    log_step "Downloading BGE-reranker-v2-m3 (~420MB)..."
+    log_step "Downloading BGE-reranker-v2-m3 (~420 MB)"
     curl -L --progress-bar -C - -o "models/$RERANKER_MODEL" "$RERANKER_URL"
     log_ok "Downloaded $RERANKER_MODEL"
 else
-    log_skip "models/$RERANKER_MODEL already exists"
+    log_skip "Reranker: $RERANKER_MODEL"
 fi
 
-if [[ -f "models/$RERANKER_MODEL" && ! -f "models/bge-reranker-v2-m3.yaml" ]]; then
-    log_step "Activating bge-reranker-v2-m3 model config"
-    cp "config/bge-reranker-v2-m3.yaml.template" "models/bge-reranker-v2-m3.yaml"
-    log_ok "models/bge-reranker-v2-m3.yaml activated"
-elif [[ -f "models/bge-reranker-v2-m3.yaml" ]]; then
-    log_skip "models/bge-reranker-v2-m3.yaml already exists"
-fi
+STEPS_DONE+=("supplementary-models")
 
 # =============================================================================
 # SECTION 6 — Sync config/default.yaml model name

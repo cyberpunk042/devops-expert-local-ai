@@ -1,7 +1,7 @@
 .PHONY: setup setup-force setup-claude-only setup-local-only setup-low-vram check-prereqs \
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
-        model-download models-list model-list-remote agent-up agent-down \
+        model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only \
@@ -52,6 +52,9 @@ help:
 	@echo ""
 	@echo "MODELS"
 	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
+	@echo "  make model-qwen3             Download Qwen3-8B + Qwen3-4B (8GB GPU)"
+	@echo "  make model-qwen3-30b         Download Qwen3-30B MoE (dual GPU only)"
+	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
 	@echo "  make models-list             Models currently loaded in LocalAI"
 	@echo "  make model-download MODEL=<f> URL=<url>  Download a GGUF model"
 	@echo ""
@@ -235,6 +238,35 @@ models-list:
 # Filter by VRAM: make model-list-remote VRAM=8
 model-list-remote:
 	@bash scripts/models-catalog.sh
+
+# Download Qwen3-8B (main reasoning model, ~4.9 GB, needs 6+ GB VRAM)
+model-qwen3-8b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/Qwen3-8B-Q4_K_M.gguf \
+		"https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download Qwen3-4B (lightweight fleet model, ~3.3 GB, needs 4+ GB VRAM)
+model-qwen3-4b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/Qwen3-4B-Q6_K.gguf \
+		"https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download Qwen3-30B-A3B MoE (dual GPU only, ~17 GB, needs 18+ GB VRAM)
+model-qwen3-30b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/Qwen3-30B-A3B-Q4_K_M.gguf \
+		"https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download both Qwen3 models for 8GB single GPU setup
+model-qwen3: model-qwen3-8b model-qwen3-4b
+	@echo "Qwen3 models ready. Restart LocalAI: make local-down && make local-up"
+
+# Benchmark Qwen3-8B vs current default model
+benchmark-qwen3:
+	.venv/bin/aicp --models benchmark --models-arg qwen3-8b
 
 # =============================================================================
 # Agent daemon

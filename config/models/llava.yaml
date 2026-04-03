@@ -1,0 +1,50 @@
+name: llava
+backend: cuda12-llama-cpp
+
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  repeat_penalty: 1.1
+  model: llava-v1.6-vicuna-7b.Q4_K_M.gguf
+  temperature: 0.2
+  top_p: 0.85
+  top_k: 40
+
+# Vision: CLIP multimodal projector (must match the model version)
+mmproj: mmproj-llava-v1.6-vicuna-7b-f16.gguf
+
+threads: 2
+gpu_layers: 32
+
+# Prompt template — LLaVA 1.6 Vicuna uses Vicuna v1.1 format
+template:
+  chat_message: |
+    {{if eq .RoleName "user"}}USER: {{.Content}}
+    {{else if eq .RoleName "assistant"}}ASSISTANT: {{.Content}}</s>
+    {{else if eq .RoleName "system"}}{{.Content}}
+    {{end}}
+  chat: |
+    {{.Input}}
+    ASSISTANT:
+stopwords:
+  - "USER:"
+  - "</s>"
+
+prompt_cache_path: llava-cache
+prompt_cache_all: true
+
+# ── KV cache quantization (4x VRAM savings) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling (grammar-constrained) ──
+function:
+  parallel_calls: false
+  mixed_mode: false
+context_size: 16384
+mmap: true
+mmlock: true

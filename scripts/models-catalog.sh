@@ -28,7 +28,23 @@ declare -A SIZES
 declare -A VRAMS
 declare -A QUALITY
 
-# ── 7B models (good balance of speed and quality) ──────────────────────────
+# ── Qwen3 models (next-gen, 2025 — recommended) ──────────────────────────
+VRAMS[qwen3-8b]="6"
+SIZES[qwen3-8b]="4.9 GB"
+QUALITY[qwen3-8b]="⭐⭐⭐⭐⭐ best 8B: thinking mode, 119 langs, native tool calling"
+URLS[qwen3-8b]="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+
+VRAMS[qwen3-4b]="4"
+SIZES[qwen3-4b]="3.3 GB"
+QUALITY[qwen3-4b]="⭐⭐⭐⭐  fast, smart fleet model (replaces hermes-3b)"
+URLS[qwen3-4b]="https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf"
+
+VRAMS[qwen3-30b-a3b]="18"
+SIZES[qwen3-30b-a3b]="17 GB"
+QUALITY[qwen3-30b-a3b]="⭐⭐⭐⭐⭐ MoE: 30B knowledge, 3B speed — needs dual GPU (8+11GB)"
+URLS[qwen3-30b-a3b]="https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"
+
+# ── 7B models (legacy — kept for compatibility) ──────────────────────────
 VRAMS[hermes]="6"
 SIZES[hermes]="4.4 GB"
 QUALITY[hermes]="⭐⭐⭐⭐  instruction-following, tool use"
@@ -67,7 +83,7 @@ QUALITY[gemma-2b]="⭐⭐     very fast, limited context"
 URLS[gemma-2b]="https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it.gguf"
 
 # ── Print catalog ──────────────────────────────────────────────────────────
-ALIASES=("phi3-mini" "gemma-2b" "hermes" "mistral-7b" "codellama-7b" "hermes-13b" "codellama-13b")
+ALIASES=("qwen3-8b" "qwen3-4b" "qwen3-30b-a3b" "hermes" "mistral-7b" "codellama-7b" "phi3-mini" "gemma-2b" "hermes-13b" "codellama-13b")
 
 for alias in "${ALIASES[@]}"; do
     vram="${VRAMS[$alias]}"

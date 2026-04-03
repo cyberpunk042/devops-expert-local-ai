@@ -30,7 +30,8 @@
       "Bash(xargs cat:*)",
       "Bash(python3 -m py_compile aicp/**/*.py)",
       "Bash(wc -l tests/test_*.py)",
-      "Bash(grep -c \"def test_\" tests/test_*.py)"
+      "Bash(grep -c \"def test_\" tests/test_*.py)",
+      "Bash(git check-ignore:*)"
     ]
   }
 }

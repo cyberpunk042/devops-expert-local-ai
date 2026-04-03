@@ -119,18 +119,28 @@ tests/                     # Test suite (67 test files)
 config/                    # Default config files
   default.yaml             # Default AICP configuration
   fleet.yaml               # Fleet network topology
-  *.yaml.template          # Model config templates
-models/                    # LocalAI model files (gitignored binaries, tracked YAML configs)
-  hermes.yaml              # Hermes 2 Pro Mistral 7B (complex reasoning)
-  hermes-3b.yaml           # Hermes 3 Llama 3.2 3B (fleet heartbeats target)
-  codellama.yaml           # CodeLlama 7B (code tasks)
-  phi-2.yaml               # Phi-2 2.7B (CPU fallback)
-  llava.yaml               # LLaVA 7B (vision)
-  whisper-1.yaml           # Whisper (speech-to-text)
-  piper-tts.yaml           # Piper (text-to-speech)
-  bge-reranker-v2-m3.yaml  # BGE reranker (search)
-  stablediffusion.yaml     # Stable Diffusion (image generation)
+  models/                  # Model YAML configs (IaC source of truth, tracked in git)
+    qwen3-8b.yaml          # Qwen3 8B (main reasoning model — recommended)
+    qwen3-8b-fast.yaml     # Qwen3 8B fast mode (no thinking, structured tasks)
+    qwen3-4b.yaml          # Qwen3 4B (lightweight fleet model — replaces hermes-3b)
+    qwen3-30b-a3b.yaml     # Qwen3 30B MoE (dual GPU only: 8+11GB)
+    hermes.yaml            # Hermes 2 Pro Mistral 7B (legacy)
+    hermes-3b.yaml         # Hermes 3 Llama 3.2 3B (legacy)
+    codellama.yaml         # CodeLlama 7B (code tasks)
+    phi-2.yaml             # Phi-2 2.7B (CPU fallback)
+    llava.yaml             # LLaVA 7B (vision)
+    nomic-embed.yaml       # Nomic Embed (embeddings, CPU)
+    whisper-1.yaml         # Whisper (speech-to-text)
+    piper-tts.yaml         # Piper (text-to-speech)
+    bge-reranker-v2-m3.yaml # BGE reranker (search)
+    stablediffusion.yaml   # Stable Diffusion (image generation)
+models/                    # Runtime directory (gitignored entirely)
+                           # Populated by: make setup (configs from config/models/ + binary downloads)
 docs/                      # Architecture and planning documents
+  kb/                      # Knowledge base (syncs to LocalAI collections)
+    research/              # Investigation findings, model evaluations
+    models/                # Model benchmarks, VRAM maps
+    infrastructure/        # Docker, GPU, networking decisions
 ```
 
 ## LocalAI Assessment (Stage 1 — 2026-03-29)
@@ -139,17 +149,34 @@ LocalAI is running and functional on Docker with GPU acceleration.
 
 ### Models Available
 
-| Model | Config | Size | Cold Start | Warm | GPU Layers | Use Case |
-|-------|--------|------|------------|------|------------|----------|
-| hermes (7B) | `hermes.yaml` | 4.4GB | ~80s | ~1s | 24 | Complex reasoning, multi-step |
-| **hermes-3b (3B)** | `hermes-3b.yaml` | 2.0GB | **~10s** | **~1.2s** | 32 | **Fleet heartbeats** (target) |
-| codellama (7B) | `codellama.yaml` | 4.4GB | ~80s | ~1s | GPU | Code generation, completion |
-| phi-2 (2.7B) | `phi-2.yaml` | 1.6GB | fast | fast | 0 (CPU) | Fallback, light tasks |
-| llava (7B) | `llava.yaml` | 4.4GB | ~80s | ~1s | GPU | Vision + language |
-| whisper | `whisper-1.yaml` | — | — | — | — | Speech-to-text |
-| piper-tts | `piper-tts.yaml` | — | — | — | — | Text-to-speech |
-| bge-reranker | `bge-reranker-v2-m3.yaml` | — | — | — | — | Search reranking |
-| stablediffusion | `stablediffusion.yaml` | — | — | — | — | Image generation |
+#### Qwen3 (Recommended — 2025, next-gen)
+
+| Model | Config | Size | VRAM | GPU Layers | Use Case |
+|-------|--------|------|------|------------|----------|
+| **qwen3-8b** | `qwen3-8b.yaml` | 4.9GB | 6GB+ | 33 | **Main reasoning** — thinking mode, 119 langs, native tool calling |
+| qwen3-8b-fast | `qwen3-8b-fast.yaml` | 4.9GB | 6GB+ | 33 | Fast mode — no thinking, structured tasks |
+| **qwen3-4b** | `qwen3-4b.yaml` | 3.3GB | 4GB+ | 33 | **Fleet lightweight** — replaces hermes-3b |
+| qwen3-30b-a3b | `qwen3-30b-a3b.yaml` | 17GB | 18GB+ | 48 | MoE flagship — dual GPU (8+11GB) only |
+
+#### Legacy Models
+
+| Model | Config | Size | VRAM | GPU Layers | Use Case |
+|-------|--------|------|------|------------|----------|
+| hermes (7B) | `hermes.yaml` | 4.4GB | 6GB+ | 32 | Complex reasoning (legacy) |
+| hermes-3b (3B) | `hermes-3b.yaml` | 2.0GB | 3GB+ | 32 | Fleet heartbeats (legacy) |
+| codellama (7B) | `codellama.yaml` | 4.4GB | 6GB+ | 32 | Code generation |
+| phi-2 (2.7B) | `phi-2.yaml` | 1.6GB | CPU | 0 | CPU fallback |
+
+#### Specialized Models (CPU, no GPU needed)
+
+| Model | Config | Use Case |
+|-------|--------|----------|
+| llava (7B) | `llava.yaml` | Vision + language |
+| whisper | `whisper-1.yaml` | Speech-to-text |
+| piper-tts | `piper-tts.yaml` | Text-to-speech |
+| bge-reranker | `bge-reranker-v2-m3.yaml` | Search reranking |
+| nomic-embed | `nomic-embed.yaml` | Embeddings |
+| stablediffusion | `stablediffusion.yaml` | Image generation |
 
 ### Key Findings
 
@@ -276,7 +303,13 @@ ruff format aicp/ tests/
 # Test LocalAI
 curl http://localhost:8090/v1/models
 curl http://localhost:8090/v1/chat/completions -H "Content-Type: application/json" \
-  -d '{"model":"hermes-3b","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"qwen3-8b","messages":[{"role":"user","content":"Hello"}]}'
+
+# Model management
+make model-qwen3             # Download Qwen3-8B + Qwen3-4B (8GB GPU)
+make model-qwen3-30b         # Download Qwen3-30B MoE (dual GPU 8+11GB only)
+make model-list-remote       # Show full model catalog with VRAM info
+make benchmark-qwen3         # Benchmark Qwen3-8B
 
 # Docker
 docker compose up -d                    # Start LocalAI

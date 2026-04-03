@@ -1,0 +1,43 @@
+name: qwen3-30b-a3b
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  model: Qwen3-30B-A3B-Q4_K_M.gguf
+  temperature: 0.2
+  top_p: 0.85
+  repeat_penalty: 1.1
+threads: 2
+
+# ── MoE model: 30B total, ~3B active per token ──
+# Requires dual GPU (8GB + 11GB = 19GB minimum)
+# Set gpu_layers high enough to offload all layers
+gpu_layers: 48
+
+# ── Tensor split for dual GPU (8GB / 11GB) ──
+# Proportional: 8/(8+11) = 0.42, 11/(8+11) = 0.58
+# Uncomment when dual GPU is available:
+# tensor_split: "0.42,0.58"
+
+# ── KV cache quantization (critical for MoE — saves significant VRAM) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: qwen3-30b-a3b-cache
+prompt_cache_all: true
+
+# ── Context: conservative for 19GB total VRAM ──
+context_size: 8192
+mmap: true
+mmlock: true

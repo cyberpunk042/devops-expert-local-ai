@@ -32,11 +32,11 @@ logs/
 .DS_Store
 Thumbs.db
 
-# LocalAI models — track configs, ignore binaries
-models/*.gguf
-models/*.bin
-models/*.safetensors
-models/*.pt
+# LocalAI models — runtime directory, entirely gitignored.
+# Source of truth for model configs: config/models/*.yaml
+# Binaries downloaded by: make setup / make model-qwen3 / make model-download
+/models/
+!config/models/
 /backends/
 .aicp/agent.pid
 

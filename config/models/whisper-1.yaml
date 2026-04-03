@@ -1,0 +1,6 @@
+name: whisper-1
+backend: whisper
+parameters:
+  model: ggml-base.bin
+  language: en
+  # threads defaults to container THREADS env var
