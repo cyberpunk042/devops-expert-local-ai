@@ -1,15 +1,25 @@
-"""Main controller — routes tasks to backends with mode enforcement."""
+"""Main controller — routes tasks to backends with mode enforcement.
+
+Features:
+  - Mode enforcement (think/edit/act)
+  - Multi-backend failover (local → fleet → openrouter → claude)
+  - Auto-escalation on low-quality responses (E-M49)
+  - Response caching with TTL (E-M50)
+  - Token budget enforcement (E-M51)
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import socket
 import sys
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 from aicp.core.modes import Mode
 from aicp.backends.base import Backend
@@ -20,10 +30,73 @@ from aicp.core.cluster import (
     load_cluster_config,
 )
 from aicp.core.history import save_task
-from aicp.core.router import intercept_operation
+from aicp.core.router import intercept_operation, score_response_quality
 from aicp.guardrails.checks import run_preflight_checks
 
 logger = logging.getLogger("aicp")
+
+
+# ---------------------------------------------------------------------------
+# Response cache (E-M50)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _CacheEntry:
+    response: str
+    timestamp: float
+    backend: str
+    quality: float
+
+
+class ResponseCache:
+    """Simple in-memory cache for LLM responses.
+
+    Cache key is hash(prompt + mode + backend). TTL-based expiry.
+    Helps avoid redundant inference for identical repeated requests.
+    """
+
+    def __init__(self, ttl_seconds: float = 300.0, max_entries: int = 256) -> None:
+        self.ttl = ttl_seconds
+        self.max_entries = max_entries
+        self._store: Dict[str, _CacheEntry] = {}
+
+    @staticmethod
+    def _key(prompt: str, mode: str, backend: str) -> str:
+        raw = f"{prompt}|{mode}|{backend}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    def get(self, prompt: str, mode: str, backend: str) -> Optional[str]:
+        key = self._key(prompt, mode, backend)
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        if time.time() - entry.timestamp > self.ttl:
+            del self._store[key]
+            return None
+        return entry.response
+
+    def put(
+        self, prompt: str, mode: str, backend: str,
+        response: str, quality: float = 0.5,
+    ) -> None:
+        # Evict oldest if full
+        if len(self._store) >= self.max_entries:
+            oldest_key = min(self._store, key=lambda k: self._store[k].timestamp)
+            del self._store[oldest_key]
+        key = self._key(prompt, mode, backend)
+        self._store[key] = _CacheEntry(
+            response=response,
+            timestamp=time.time(),
+            backend=backend,
+            quality=quality,
+        )
+
+    @property
+    def size(self) -> int:
+        return len(self._store)
+
+    def clear(self) -> None:
+        self._store.clear()
 
 
 @dataclass
@@ -50,7 +123,13 @@ def _local_ips() -> Set[str]:
 
 
 class Controller:
-    """Orchestrates backend selection, mode enforcement, and task execution."""
+    """Orchestrates backend selection, mode enforcement, and task execution.
+
+    Features:
+      - Response caching (skip inference for repeated prompts)
+      - Quality-based auto-escalation (LocalAI garbage → retry with Claude)
+      - Token budget tracking (warn/block when budget exhausted)
+    """
 
     def __init__(
         self,
@@ -61,7 +140,20 @@ class Controller:
         self.config = config or {}
         self._fleet_checked = False
         self._fleet_nodes: list = []
-        self.last_route: Optional[str] = None  # tracks where the last task ran
+        self.last_route: Optional[str] = None
+        # Response cache (E-M50)
+        cache_cfg = self.config.get("cache", {})
+        self._cache = ResponseCache(
+            ttl_seconds=cache_cfg.get("ttl_seconds", 300.0),
+            max_entries=cache_cfg.get("max_entries", 256),
+        )
+        self.cache_enabled = cache_cfg.get("enabled", True)
+        # Quality threshold for auto-escalation (E-M49)
+        self.quality_threshold = self.config.get("quality_threshold", 0.25)
+        # Token budget (E-M51)
+        budget_cfg = self.config.get("budget", {})
+        self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
+        self.tokens_used = 0
 
     def _check_fleet(self) -> None:
         """Load and health-check fleet nodes (cached per controller lifetime)."""
@@ -151,6 +243,49 @@ class Controller:
 
         return None
 
+    def _try_quality_escalation(self, task: Task, result: str) -> Optional[str]:
+        """Check response quality; escalate to a better backend if too low.
+
+        Only escalates from local → openrouter → claude. Never re-escalates
+        on the same tier or downward. Returns improved result or None.
+        """
+        quality = score_response_quality(result, task.prompt)
+        if quality >= self.quality_threshold:
+            return None
+
+        logger.warning(
+            "Low quality response (%.2f < %.2f) from %s — escalating",
+            quality, self.quality_threshold, task.backend_name,
+        )
+
+        # Escalation chain based on current backend
+        escalation_order = []
+        if task.backend_name == "local":
+            or_backend = self.backends.get("openrouter")
+            if or_backend:
+                escalation_order.append(("openrouter", or_backend))
+            claude_backend = self.backends.get("claude")
+            if claude_backend:
+                escalation_order.append(("claude", claude_backend))
+        elif task.backend_name == "openrouter":
+            claude_backend = self.backends.get("claude")
+            if claude_backend:
+                escalation_order.append(("claude", claude_backend))
+
+        for name, backend in escalation_order:
+            try:
+                logger.info("Quality escalation: trying %s", name)
+                better = backend.execute(task.prompt, task.mode, task.project_path)
+                better_quality = score_response_quality(better, task.prompt)
+                if better_quality > quality:
+                    self.last_route = f"escalated:{name} (quality {quality:.2f}→{better_quality:.2f})"
+                    return better
+            except Exception as e:
+                logger.warning("Quality escalation to %s failed: %s", name, e)
+                continue
+
+        return None
+
     def run(self, task: Task) -> str:
         """Run a task through the selected backend with mode enforcement."""
         issues = run_preflight_checks(
@@ -165,6 +300,21 @@ class Controller:
 
         for warning in warnings:
             print(warning, file=sys.stderr)
+
+        # Budget enforcement (E-M51)
+        if self.budget_limit > 0 and self.tokens_used >= self.budget_limit:
+            raise ValueError(
+                f"Token budget exhausted ({self.tokens_used}/{self.budget_limit}). "
+                "Increase budget or start a new session."
+            )
+
+        # Cache check (E-M50)
+        if self.cache_enabled:
+            cached = self._cache.get(task.prompt, task.mode.value, task.backend_name)
+            if cached is not None:
+                self.last_route = "cache"
+                logger.info("Cache hit (0 tokens)")
+                return cached
 
         start = datetime.utcnow()
 
@@ -199,6 +349,13 @@ class Controller:
 
                 try:
                     result = backend.execute(task.prompt, task.mode, task.project_path)
+
+                    # Auto-escalation on low quality (E-M49)
+                    if task.backend_name in ("local", "openrouter"):
+                        better = self._try_quality_escalation(task, result)
+                        if better is not None:
+                            result = better
+
                 except Exception as local_err:
                     if not failover_enabled:
                         raise
@@ -262,6 +419,10 @@ class Controller:
                 "tokens": usage,
                 "timestamp": datetime.utcnow().isoformat(),
             }))
+            # Track token budget (E-M51)
+            total_tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+            self.tokens_used += total_tokens
+
             save_task(
                 prompt=task.prompt,
                 mode=task.mode.value,
@@ -276,5 +437,10 @@ class Controller:
                 estimated_cost_usd=usage.get("estimated_cost_usd"),
                 route=self.last_route,
             )
+
+        # Cache successful responses (E-M50)
+        if self.cache_enabled and result and not error:
+            quality = score_response_quality(result, task.prompt)
+            self._cache.put(task.prompt, task.mode.value, task.backend_name, result, quality)
 
         return result
