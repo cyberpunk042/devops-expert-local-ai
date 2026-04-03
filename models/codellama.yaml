@@ -8,7 +8,6 @@ parameters:
   top_k: 40
   repeat_penalty: 1.1
 
-context_size: 8192
 threads: 7
 gpu_layers: 99
 
@@ -34,3 +33,4 @@ flash_attention: true
 function:
   parallel_calls: false
   mixed_mode: false
+context_size: 16384

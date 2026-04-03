@@ -10,7 +10,6 @@ parameters:
 # Vision: CLIP multimodal projector (must match the model version)
 mmproj: mmproj-llava-v1.6-vicuna-7b-f16.gguf
 
-context_size: 16384
 threads: 7
 gpu_layers: 99
 
@@ -40,3 +39,4 @@ flash_attention: true
 function:
   parallel_calls: false
   mixed_mode: false
+context_size: 16384

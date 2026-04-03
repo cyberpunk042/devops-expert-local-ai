@@ -4,7 +4,6 @@ parameters:
   model: phi-2.Q4_K_M.gguf
   temperature: 0.7
   top_p: 0.9
-context_size: 2048
 threads: 4
 gpu_layers: 0
 # ── KV cache quantization (4x VRAM savings) ──
@@ -20,3 +19,4 @@ function:
 # ── Prompt caching ──
 prompt_cache_path: phi-2-cache
 prompt_cache_all: true
+context_size: 16384

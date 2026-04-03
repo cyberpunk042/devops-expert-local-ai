@@ -86,10 +86,40 @@ PCEOF
     esac
   fi
 
-  # Bump context_size to 8192 if still at 4096
-  if grep -q "context_size: 4096" "$yaml"; then
-    sed -i 's/context_size: 4096/context_size: 8192/' "$yaml"
-    log "$name: bumped context_size 4096 → 8192 (KV cache quant makes this safe)"
+  # Batch size for embedding models (must handle full chunk inputs)
+  if ! grep -q "batch_size" "$yaml"; then
+    case "$name" in
+      nomic-embed|bge-*)
+        echo "batch_size: 2048" >> "$yaml"
+        log "$name: added batch_size: 2048 (embedding inputs can exceed default 512)"
+        changed=1
+        ;;
+    esac
+  fi
+
+  # Ensure context_size at ROOT level (NOT under parameters: — LocalAI ignores it there)
+  # Must account for LLAMACPP_PARALLEL: LocalAI divides total context by parallel slots
+  # With PARALLEL=4, need context_size=32768 so each slot gets 8192
+  local target_ctx=16384
+  if grep -q "^  context_size:" "$yaml"; then
+    # Wrong location: under parameters — move to root
+    sed -i '/^  context_size:/d' "$yaml"
+    if ! grep -q "^context_size:" "$yaml"; then
+      echo "context_size: $target_ctx" >> "$yaml"
+      log "$name: moved context_size to root level → $target_ctx (8192 per parallel slot)"
+      changed=1
+    fi
+  elif grep -q "^context_size:" "$yaml"; then
+    local cur
+    cur=$(grep "^context_size:" "$yaml" | awk '{print $2}')
+    if [ "$cur" -lt "$target_ctx" ] 2>/dev/null; then
+      sed -i "s/^context_size: .*/context_size: $target_ctx/" "$yaml"
+      log "$name: bumped context_size $cur → $target_ctx (8192 per parallel slot)"
+      changed=1
+    fi
+  elif ! grep -q "context_size:" "$yaml"; then
+    echo "context_size: $target_ctx" >> "$yaml"
+    log "$name: added context_size: $target_ctx at root level"
     changed=1
   fi
 
@@ -100,8 +130,8 @@ PCEOF
 
 echo "=== Model Optimization ==="
 
-# Apply to all chat/LLM models
-for yaml in "$MODELS_DIR"/hermes.yaml "$MODELS_DIR"/hermes-3b.yaml "$MODELS_DIR"/codellama.yaml "$MODELS_DIR"/llava.yaml "$MODELS_DIR"/phi-2.yaml; do
+# Apply to all models (chat/LLM + embedding)
+for yaml in "$MODELS_DIR"/hermes.yaml "$MODELS_DIR"/hermes-3b.yaml "$MODELS_DIR"/codellama.yaml "$MODELS_DIR"/llava.yaml "$MODELS_DIR"/phi-2.yaml "$MODELS_DIR"/nomic-embed.yaml; do
   optimize_model "$yaml"
 done
 

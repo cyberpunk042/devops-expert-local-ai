@@ -19,17 +19,20 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - LOCALAI_LOG_LEVEL=${LOCALAI_LOG_LEVEL:-info}
       # ── Performance ──
-      - LLAMACPP_PARALLEL=${LLAMACPP_PARALLEL:-4}
-      - CONTEXT_SIZE=${CONTEXT_SIZE:-8192}
+      # LocalAI divides context by LLAMACPP_PARALLEL slots
+      # PARALLEL=2, CONTEXT=16384 → 8192 per slot (fits 8GB VRAM)
+      # PARALLEL=4 with 32768 overwhelms VRAM (179s+ per inference)
+      - LLAMACPP_PARALLEL=${LLAMACPP_PARALLEL:-2}
+      - CONTEXT_SIZE=${CONTEXT_SIZE:-16384}
       # ── Watchdog: auto-recover stuck or idle backends ──
       - LOCALAI_WATCHDOG_IDLE=true
       - LOCALAI_WATCHDOG_IDLE_TIMEOUT=15m
       - LOCALAI_WATCHDOG_BUSY=true
       - LOCALAI_WATCHDOG_BUSY_TIMEOUT=5m
       # ── Model management ──
-      # Single-active: only one GPU model loaded at a time (swap on demand)
-      # Essential for 8GB VRAM with multiple 7B models (hermes, codellama, llava)
-      - LOCALAI_SINGLE_ACTIVE_BACKEND=true
+      # Multiple models needed simultaneously (hermes LLM + nomic-embed embeddings)
+      # nomic-embed runs on CPU (gpu_layers:0), hermes on GPU — no VRAM conflict
+      - LOCALAI_SINGLE_ACTIVE_BACKEND=false
       # ── Persistence ──
       # Stores, KB collections, and agent state persist to host via ./data
       - LOCALAI_DATA_PATH=/data

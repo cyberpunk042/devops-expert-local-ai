@@ -10,5 +10,11 @@ embeddings: true
 # Run on CPU to keep GPU VRAM free for the LLM.
 # nomic-embed-text is tiny (~140MB) and fast on CPU.
 gpu_layers: 0
-context_size: 2048
 threads: 7
+
+# ── KV cache quantization (4x VRAM savings) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+context_size: 16384
+batch_size: 2048

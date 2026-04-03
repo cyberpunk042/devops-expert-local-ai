@@ -5,7 +5,6 @@ parameters:
   temperature: 0.3
   top_p: 0.9
   repeat_penalty: 1.1
-context_size: 8192
 threads: 4
 gpu_layers: 32
 
@@ -22,3 +21,4 @@ function:
 # ── Prompt caching ──
 prompt_cache_path: hermes-3b-cache
 prompt_cache_all: true
+context_size: 16384
