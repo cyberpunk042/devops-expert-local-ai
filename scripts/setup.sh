@@ -585,20 +585,35 @@ fi
 log_head "Waiting for LocalAI to load model '$MODEL_ALIAS'"
 log_info "Model GGUF loading into VRAM can take 15–60 seconds. Polling up to 2 minutes..."
 
-MAX_WAIT=120
-INTERVAL=5
+MAX_WAIT=180
+INTERVAL=10
 ELAPSED=0
 READY=0
 
+# First wait for API to be reachable
+while [[ "$ELAPSED" -lt 60 ]]; do
+    if curl -s -o /dev/null "http://localhost:${LOCALAI_PORT}/v1/models" 2>/dev/null; then
+        log_info "API reachable. Warming up model '${MODEL_ALIAS}'..."
+        break
+    fi
+    printf "        waiting for API... (%ds elapsed)\r" "$ELAPSED"
+    sleep "$INTERVAL"
+    ELAPSED=$(( ELAPSED + INTERVAL ))
+done
+
+# Then send a real inference request to trigger model loading into VRAM
+# This is the slow part — GGUF loading + KV cache allocation
 while [[ "$ELAPSED" -lt "$MAX_WAIT" ]]; do
     if "$VENV_PYTHON" - <<PYEOF 2>/dev/null
-import sys, json
+import sys
 try:
     import httpx
-    resp = httpx.get("http://localhost:${LOCALAI_PORT}/v1/models", timeout=3.0)
-    data = resp.json()
-    ids = [m["id"] for m in data.get("data", [])]
-    sys.exit(0 if "${MODEL_ALIAS}" in ids else 1)
+    resp = httpx.post(
+        "http://localhost:${LOCALAI_PORT}/v1/chat/completions",
+        json={"model": "${MODEL_ALIAS}", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+        timeout=60.0,
+    )
+    sys.exit(0 if resp.status_code == 200 else 1)
 except Exception:
     sys.exit(1)
 PYEOF
@@ -606,7 +621,7 @@ PYEOF
         READY=1
         break
     fi
-    printf "        waiting... (%ds elapsed)\r" "$ELAPSED"
+    printf "        waiting for model... (%ds elapsed)\r" "$ELAPSED"
     sleep "$INTERVAL"
     ELAPSED=$(( ELAPSED + INTERVAL ))
 done
