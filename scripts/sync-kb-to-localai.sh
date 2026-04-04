@@ -5,13 +5,21 @@
 # Uses /api/agents/collections API — persistent chromem-backed storage.
 # Visible at http://localhost:8090/app/collections
 #
-# Usage: make kb-sync
+# Usage:
+#   make kb-sync              # upload new files (skip existing)
+#   make kb-sync-force        # reset collection + re-upload everything
 # =============================================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCALAI_URL="${LOCALAI_URL:-http://localhost:8090}"
 COLLECTION="${KB_COLLECTION:-aicp-kb}"
+FORCE="${FORCE:-0}"
+
+# Parse --force flag
+for arg in "$@"; do
+    [[ "$arg" == "--force" ]] && FORCE=1
+done
 
 if [ -t 1 ]; then
     GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; RESET='\033[0m'
@@ -29,13 +37,19 @@ if ! curl -sf "${LOCALAI_URL}/v1/models" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Create collection (idempotent — no error if exists)
+# Force mode: reset collection first
+if [[ "$FORCE" -eq 1 ]]; then
+    log_info "Force mode: resetting collection '${COLLECTION}'..."
+    curl -sf -X POST "${LOCALAI_URL}/api/agents/collections/${COLLECTION}/reset" >/dev/null 2>&1 || true
+fi
+
+# Create collection (idempotent)
 log_info "Creating collection '${COLLECTION}'..."
 curl -sf -X POST "${LOCALAI_URL}/api/agents/collections" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"${COLLECTION}\"}" >/dev/null 2>&1 || true
 
-# Verify collection exists
+# Verify
 COLLECTIONS=$(curl -sf "${LOCALAI_URL}/api/agents/collections" 2>/dev/null)
 if ! echo "$COLLECTIONS" | grep -q "$COLLECTION"; then
     log_fail "Could not create collection '${COLLECTION}'"
@@ -89,6 +103,18 @@ if [ -d "$REPO_ROOT/docs/knowledge-map" ]; then
     done < <(find "$REPO_ROOT/docs/knowledge-map" -maxdepth 1 -name '*.md' -type f | sort)
     echo ""
 fi
+
+# Sync key project docs (CLAUDE.md, architecture, evolution plan)
+log_info "Uploading project docs ..."
+for f in \
+    "$REPO_ROOT/CLAUDE.md" \
+    "$REPO_ROOT/IMPROVEMENTS.md" \
+    "$REPO_ROOT/docs/aicp-evolution-plan.md" \
+    "$REPO_ROOT/docs/aicp-fleet-architecture.md" \
+    "$REPO_ROOT/docs/aicp-skills-inventory.md"; do
+    [ -f "$f" ] && upload_file "$f"
+done
+echo -ne "\r  ${SYNCED} synced, ${FAILED} failed\n"
 
 log_ok "Done: ${SYNCED} files synced to collection '${COLLECTION}', ${FAILED} failures"
 

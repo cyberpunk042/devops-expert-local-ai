@@ -279,10 +279,14 @@ benchmark-qwen3:
 build-local-store:
 	@bash scripts/build-local-store.sh
 
-# Sync KB research + knowledge-map docs into LocalAI's native /stores/ API
-# Requires: make build-local-store (once), then docker compose restart localai
+# Sync KB + knowledge-map + project docs into LocalAI Collections
+# Visible at http://localhost:8090/app/collections
 kb-sync:
 	@bash scripts/sync-kb-to-localai.sh
+
+# Force re-sync: reset collection and re-upload everything
+kb-sync-force:
+	@bash scripts/sync-kb-to-localai.sh --force
 
 # =============================================================================
 # Monitoring stack (Prometheus + Grafana)
