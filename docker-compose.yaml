@@ -43,6 +43,9 @@ services:
       - LOCALAI_ENABLE_TRACING=${LOCALAI_ENABLE_TRACING:-true}
       - LOCALAI_TRACING_MAX_ITEMS=${LOCALAI_TRACING_MAX_ITEMS:-2048}
       - LOCALAI_LOG_FORMAT=${LOCALAI_LOG_FORMAT:-json}
+      # ── Agent Pool / Collections ──
+      # Use our installed nomic-embed for collection embeddings
+      - LOCALAI_AGENT_POOL_EMBEDDING_MODEL=nomic-embed
       # ── Auth (set in .env, empty = disabled) ──
       - LOCALAI_API_KEY=${LOCALAI_API_KEY:-}
     # ── Health check: model API responsive ──
