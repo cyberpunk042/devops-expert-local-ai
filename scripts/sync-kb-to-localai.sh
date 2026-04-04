@@ -80,6 +80,16 @@ if [ -d "$REPO_ROOT/docs/knowledge-map/systems" ]; then
     echo ""
 fi
 
+# Sync docs/knowledge-map/ root docs (tool-manual, module-manual, etc.)
+if [ -d "$REPO_ROOT/docs/knowledge-map" ]; then
+    log_info "Uploading docs/knowledge-map/*.md ..."
+    while IFS= read -r f; do
+        upload_file "$f"
+        echo -ne "\r  ${SYNCED} synced, ${FAILED} failed"
+    done < <(find "$REPO_ROOT/docs/knowledge-map" -maxdepth 1 -name '*.md' -type f | sort)
+    echo ""
+fi
+
 log_ok "Done: ${SYNCED} files synced to collection '${COLLECTION}', ${FAILED} failures"
 
 # Verify
