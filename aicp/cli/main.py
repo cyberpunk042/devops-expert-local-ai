@@ -553,9 +553,28 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     console.print(f"    Fleet auto-route:  {'[green]ON[/]' if fleet_route else '[dim]OFF[/]'}")
     console.print(f"    Model auto-route:  {'[green]ON[/]' if model_route else '[dim]OFF[/]'}")
     if fleet_route:
-        console.print("    Failover chain:    local → fleet peer → Claude")
+        console.print("    Failover chain:    local → fleet peer → openrouter → Claude")
     if model_route:
-        console.print("    Model selection:   hermes-3b (fleet ops) / codellama (code) / hermes (default)")
+        console.print("    Model selection:   qwen3-4b (fleet) / qwen3-8b (code) / qwen3-8b-fast (simple)")
+
+    # KB collection check
+    if local_backend and local_backend.is_available():
+        try:
+            import httpx as _httpx
+            kb_resp = _httpx.get(
+                f"{local_backend.base_url}/api/agents/collections/aicp-kb/entries",
+                timeout=3.0,
+            )
+            if kb_resp.status_code == 200:
+                entry_count = kb_resp.json().get("count", 0)
+                if entry_count > 0:
+                    console.print(f"    KB collection:     [green]{entry_count} entries[/] (aicp-kb)")
+                else:
+                    console.print("    KB collection:     [yellow]EMPTY[/] — run: make kb-sync")
+            else:
+                console.print("    KB collection:     [yellow]NOT FOUND[/] — run: make kb-sync")
+        except Exception:
+            pass
 
     # Offload summary (if history exists)
     try:

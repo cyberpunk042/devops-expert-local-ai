@@ -113,25 +113,26 @@ def test_assemble_context_heartbeat():
     assert result == "heartbeat"
 
 
-def test_assemble_context_with_kb():
-    """When KB is available, context is augmented."""
-    kb = MagicMock()
-    kb.search.return_value = [
-        {"text": "The router selects backends", "source": "docs/router.md", "score": 0.9},
-    ]
-    nav = Navigator(_PROJECT_PATH, kb=kb)
+def test_assemble_context_with_collection(monkeypatch):
+    """When collection has content, context is augmented."""
+    nav = Navigator(_PROJECT_PATH)
+    # Mock the collection search to return results
+    monkeypatch.setattr(nav, "_search_collection", lambda q, top_k=3: [
+        {"content": "The router selects backends based on complexity"},
+    ])
     result = nav.assemble_context(
         "how does routing work", Mode.THINK,
         model="qwen3-8b", context_window=8192,
     )
     assert "Context:" in result
-    assert "router.md" in result
+    assert "router selects backends" in result
     assert "how does routing work" in result
 
 
-def test_assemble_context_no_kb():
-    """Without KB, returns original prompt."""
+def test_assemble_context_empty_collection(monkeypatch):
+    """When collection is empty, returns original prompt."""
     nav = Navigator(_PROJECT_PATH)
+    monkeypatch.setattr(nav, "_search_collection", lambda q, top_k=3: [])
     result = nav.assemble_context(
         "explain the system", Mode.THINK,
         model="qwen3-8b",

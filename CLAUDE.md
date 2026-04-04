@@ -188,20 +188,23 @@ LocalAI is running and functional on Docker with GPU acceleration.
 - **Watchdog**: Auto-recover stuck backends (`LOCALAI_WATCHDOG_IDLE=true`, 15m timeout)
 - **GPU**: NVIDIA via WSL2 `/dev/dxg`, CUDA 12
 
-### Routing Strategy (Stage 2 target)
+### Routing Strategy (Implemented)
 
-| Operation | Backend | Why |
-|-----------|---------|-----|
-| Heartbeat (no work) | hermes-3b (LocalAI) | Just read context + HEARTBEAT_OK, 0 Claude tokens |
-| fleet_read_context | Direct HTTP (no LLM) | Just API calls to MC |
-| fleet_agent_status | Direct HTTP (no LLM) | Same |
-| fleet_chat post | hermes-3b (LocalAI) | Posting a message ≠ reasoning |
-| Simple task acceptance | hermes-3b (LocalAI) | Structured plan output |
-| Simple review (test pass/fail) | hermes-3b (LocalAI) | Pattern matching |
-| Complex implementation | Claude (opus) | Deep reasoning needed |
-| Architecture design | Claude (opus) | Creative thinking needed |
-| Security analysis | Claude (opus) | Cannot compromise |
-| Sprint planning | Claude (opus) | Strategic thinking needed |
+4-tier routing with confidence scoring and auto-escalation:
+
+| Operation | Backend | Model | Why |
+|-----------|---------|-------|-----|
+| Heartbeat (no work) | Intercepted (0 tokens) | — | Template response, no LLM needed |
+| Fleet ops (status, chat) | local | qwen3-4b | Lightweight, zero Claude tokens |
+| Simple Q&A, format, translate | local | qwen3-8b-fast | No thinking mode, fewer tokens |
+| Code tasks (implement, debug) | local | qwen3-8b | Thinking mode enabled |
+| Medium complexity | openrouter | qwen3-8b:free | Free cloud fallback |
+| Complex implementation | claude | opus | Deep reasoning needed |
+| Architecture / security | claude | opus | Cannot compromise |
+| Edit/Act modes | claude | opus | Hard CLI enforcement |
+
+Failover chain: local → fleet peer → openrouter → claude
+Quality escalation: score < 0.25 → auto-retry on next tier
 
 ### Infrastructure Target
 
@@ -274,16 +277,38 @@ LocalAI runs via `docker-compose.yaml`:
 ```yaml
 # Key environment variables:
 THREADS=4                          # CPU threads for inference
-LLAMACPP_PARALLEL=4                # Parallel request handling
-CONTEXT_SIZE=8192                  # Max context window
-LOCALAI_SINGLE_ACTIVE_BACKEND=true # One GPU model at a time (8GB VRAM)
+LLAMACPP_PARALLEL=2                # Parallel request slots
+CONTEXT_SIZE=16384                 # Max context window (divided by PARALLEL)
+LOCALAI_SINGLE_ACTIVE_BACKEND=false
+LOCALAI_MAX_ACTIVE_BACKENDS=3      # LRU eviction (GPU model + embed + reranker)
 LOCALAI_WATCHDOG_IDLE=true         # Auto-recover stuck backends
 LOCALAI_WATCHDOG_IDLE_TIMEOUT=15m
 LOCALAI_WATCHDOG_BUSY=true
-LOCALAI_WATCHDOG_BUSY_TIMEOUT=5m
+LOCALAI_WATCHDOG_BUSY_TIMEOUT=10m
+LOCALAI_AGENT_POOL_EMBEDDING_MODEL=nomic-embed  # For collections
 ```
 
 Port: `8090` (host) → `8080` (container)
+
+### Knowledge Base
+
+KB content lives in **LocalAI Collections** (persistent, chromem-backed).
+- Visible at: `http://localhost:8090/app/collections`
+- Synced via: `make kb-sync` (or `make kb-sync-force` to reset + re-upload)
+- Source files: `docs/kb/` (research) + `docs/knowledge-map/` (system/tool/module manuals)
+- Collection name: `aicp-kb`
+- Searchable via: `/api/agents/collections/aicp-kb/search`
+
+### Observability Stack
+
+Optional Prometheus + Grafana behind a Docker Compose profile:
+```bash
+make monitoring-up    # Prometheus :9090, Grafana :3000 (admin/aicp)
+make monitoring-down
+```
+- AICP metrics: `aicp/core/prometheus.py` → `:9101/metrics`
+- LocalAI metrics: built-in at `:8090/metrics`
+- Alerting: `config/alerts.yaml` (7 rules: stuck model, latency, errors, swaps, quality, cost, memory)
 
 ## Commands
 
@@ -310,6 +335,14 @@ make model-qwen3             # Download Qwen3-8B + Qwen3-4B (8GB GPU)
 make model-qwen3-30b         # Download Qwen3-30B MoE (dual GPU 8+11GB only)
 make model-list-remote       # Show full model catalog with VRAM info
 make benchmark-qwen3         # Benchmark Qwen3-8B
+
+# Knowledge Base (syncs to LocalAI Collections — visible at :8090/app/collections)
+make kb-sync                 # Upload KB docs to LocalAI collection
+make kb-sync-force           # Reset collection + re-upload everything
+
+# Observability
+make monitoring-up           # Start Prometheus (:9090) + Grafana (:3000)
+make monitoring-down         # Stop monitoring stack
 
 # Docker
 docker compose up -d                    # Start LocalAI

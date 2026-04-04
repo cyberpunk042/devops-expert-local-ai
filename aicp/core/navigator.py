@@ -3,12 +3,12 @@
 The navigator is the runtime engine of the knowledge map. It:
   1. Analyzes the prompt to determine intent (via intent-map.yaml)
   2. Selects an injection profile based on the target model
-  3. Reads _map.yaml entries to find relevant content
+  3. Queries LocalAI Collections for relevant content
   4. Assembles the context block within the token budget
   5. Returns the augmented prompt
 
-This connects the static knowledge map (YAML metadata) to the dynamic
-context assembly pipeline (RAG, KB, prompt augmentation).
+KB content lives in LocalAI Collections (persistent, synced via make kb-sync).
+The navigator queries it via /api/agents/collections/{name}/search.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 import yaml
 
 from aicp.core.modes import Mode
@@ -32,21 +33,29 @@ _INTENT_MAP_FILE = _MAP_DIR / "intent-map.yaml"
 class Navigator:
     """Reads the knowledge map and assembles context for prompts.
 
+    Queries LocalAI Collections API for KB content (persistent, synced
+    via make kb-sync). Falls back gracefully if LocalAI is unreachable.
+
     Args:
         project_path: Root path of the AICP project.
-        kb: Optional KnowledgeBase for RAG augmentation.
         config: AICP config dict.
+        base_url: LocalAI base URL (for collections search).
+        collection: Collection name (default: aicp-kb).
     """
 
     def __init__(
         self,
         project_path: Path,
-        kb=None,
         config: Optional[Dict] = None,
+        base_url: str = "",
+        collection: str = "aicp-kb",
+        kb=None,  # legacy — ignored, kept for API compat
     ) -> None:
         self.project_path = Path(project_path)
-        self.kb = kb
         self.config = config or {}
+        local_cfg = self.config.get("backends", {}).get("local", {})
+        self.base_url = base_url or local_cfg.get("base_url", "http://localhost:8090")
+        self.collection = collection
         self._profiles = self._load_yaml(_PROFILES_FILE)
         self._intent_map = self._load_yaml(_INTENT_MAP_FILE)
 
@@ -208,19 +217,18 @@ class Navigator:
         parts: List[str] = []
         total = 0
 
-        # KB/RAG augmentation
-        if spec["inject_kb"] and self.kb:
+        # KB context from LocalAI Collections
+        if spec["inject_kb"]:
             try:
-                kb_results = self.kb.search(prompt, top_k=3)
-                for r in kb_results:
-                    text = r["text"]
-                    if total + len(text) > max_chars:
+                results = self._search_collection(prompt, top_k=3)
+                for r in results:
+                    text = r.get("content", r.get("text", ""))
+                    if not text or total + len(text) > max_chars:
                         break
-                    source = Path(r["source"]).name if "/" in r["source"] else r["source"]
-                    parts.append(f"[kb:{source}] {text}")
+                    parts.append(f"[kb] {text}")
                     total += len(text)
             except Exception as e:
-                logger.warning("KB search for context assembly failed: %s", e)
+                logger.warning("Collection search failed: %s", e)
 
         if not parts:
             return prompt
@@ -232,6 +240,34 @@ class Navigator:
             f"Question: {prompt}"
         )
 
+    def _search_collection(self, query: str, top_k: int = 3) -> List[Dict]:
+        """Search the LocalAI collection for relevant content."""
+        resp = httpx.post(
+            f"{self.base_url}/api/agents/collections/{self.collection}/search",
+            json={"query": query, "max_results": top_k},
+            timeout=15.0,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        # Response format varies — handle list or dict with results key
+        if isinstance(data, list):
+            return data
+        return data.get("results", data.get("chunks", []))
+
+    def _collection_entries(self) -> int:
+        """Count entries in the collection."""
+        try:
+            resp = httpx.get(
+                f"{self.base_url}/api/agents/collections/{self.collection}/entries",
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("count", 0)
+        except Exception:
+            pass
+        return 0
+
     def stats(self) -> Dict[str, Any]:
         """Return navigator status."""
         return {
@@ -239,6 +275,8 @@ class Navigator:
             "intent_map_loaded": bool(self._intent_map),
             "profile_count": len(self._profiles),
             "intent_count": len(self._intent_map.get("intents", {})),
-            "kb_available": self.kb is not None,
+            "collection": self.collection,
+            "collection_entries": self._collection_entries(),
+            "base_url": self.base_url,
             "map_dir": str(self.project_path / _MAP_DIR),
         }

@@ -658,7 +658,22 @@ else
 fi
 
 # =============================================================================
-# SECTION 11 — Verify
+# SECTION 11 — Sync KB to LocalAI Collections
+# =============================================================================
+if [[ "$READY" -eq 1 ]]; then
+    log_head "Knowledge Base sync"
+    log_step "Syncing KB docs to LocalAI collection 'aicp-kb'..."
+    if bash "$REPO_ROOT/scripts/sync-kb-to-localai.sh" 2>&1 | tail -3; then
+        STEPS_DONE+=("kb-sync")
+    else
+        log_warn "KB sync failed — run manually: make kb-sync"
+    fi
+else
+    log_warn "Skipping KB sync (LocalAI not ready)"
+fi
+
+# =============================================================================
+# SECTION 12 — Verify
 # =============================================================================
 log_head "Verification"
 .venv/bin/aicp --check || true   # non-fatal: check prints its own output
