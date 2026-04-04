@@ -14,6 +14,9 @@ for backend in /aicp-backends/*/; do
 done
 
 # Install gallery backends (downloaded at runtime, not OCI-extracted)
+# Note: local-store is built from source via make build-local-store
+# (gallery version has "not implemented" bug). It persists in the
+# localai-backends Docker volume after first build.
 GALLERY_BACKENDS="localai@cuda12-stablediffusion-ggml"
 for gb in $GALLERY_BACKENDS; do
     short_name="${gb##*@}"

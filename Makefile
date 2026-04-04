@@ -275,7 +275,12 @@ benchmark-qwen3:
 # Knowledge Base — sync to LocalAI /stores/
 # =============================================================================
 
+# Build the local-store backend from source (gallery version is broken)
+build-local-store:
+	@bash scripts/build-local-store.sh
+
 # Sync KB research + knowledge-map docs into LocalAI's native /stores/ API
+# Requires: make build-local-store (once), then docker compose restart localai
 kb-sync:
 	@bash scripts/sync-kb-to-localai.sh
 

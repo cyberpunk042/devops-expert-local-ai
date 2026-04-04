@@ -9,6 +9,7 @@ FROM localai/localai:v4.0.0-gpu-nvidia-cuda-12
 COPY backends/cuda12-llama-cpp /aicp-backends/cuda12-llama-cpp
 COPY backends/whisper /aicp-backends/whisper
 COPY backends/piper /aicp-backends/piper
+COPY backends/local-store /aicp-backends/local-store
 
 COPY scripts/entrypoint.sh /aicp-entrypoint.sh
 ENTRYPOINT ["/aicp-entrypoint.sh"]
