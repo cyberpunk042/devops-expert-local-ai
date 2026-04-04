@@ -99,7 +99,8 @@ class TestExecuteGrammar:
             )
 
         payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
-        assert payload["model"] == "codellama"
+        # Router returns qwen3-8b for code prompts (default code_model)
+        assert payload["model"] == "qwen3-8b"
 
     def test_grammar_includes_sampling_params(self):
         backend = _backend(temperature=0.1, top_p=0.8)

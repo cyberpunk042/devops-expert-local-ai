@@ -2665,7 +2665,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.session and actual_backend != "local":
         print_warning("--session is only supported with --backend local (LocalAI).")
 
-    controller = Controller(backends, config=config)
+    # Start metrics collector (optional — records to /metrics on :9101)
+    _mc = None
+    try:
+        from aicp.core.prometheus import MetricsCollector, start_metrics_server
+        _mc = MetricsCollector()
+        start_metrics_server(_mc, port=9101)
+    except Exception:
+        pass
+
+    controller = Controller(backends, config=config, metrics_collector=_mc)
     task = Task(
         prompt=args.prompt,
         mode=Mode(args.mode),

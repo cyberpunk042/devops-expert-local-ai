@@ -126,6 +126,8 @@ class Controller:
     """Orchestrates backend selection, mode enforcement, and task execution.
 
     Features:
+      - KB context injection (navigator queries LocalAI Collections)
+      - Prometheus metrics (per-backend request/token/cost tracking)
       - Response caching (skip inference for repeated prompts)
       - Quality-based auto-escalation (LocalAI garbage → retry with Claude)
       - Token budget tracking (warn/block when budget exhausted)
@@ -135,6 +137,7 @@ class Controller:
         self,
         backends: Dict[str, Backend],
         config: Dict[str, Any] = None,
+        metrics_collector=None,
     ) -> None:
         self.backends = backends
         self.config = config or {}
@@ -154,6 +157,16 @@ class Controller:
         budget_cfg = self.config.get("budget", {})
         self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
         self.tokens_used = 0
+        # Prometheus metrics collector
+        self._metrics = metrics_collector
+        # Knowledge map navigator (queries LocalAI Collections)
+        self._navigator = None
+        if self.config.get("rag", {}).get("enabled", False):
+            try:
+                from aicp.core.navigator import Navigator
+                self._navigator = Navigator(Path("."), config=self.config)
+            except Exception:
+                pass
 
     def _check_fleet(self) -> None:
         """Load and health-check fleet nodes (cached per controller lifetime)."""
@@ -275,6 +288,8 @@ class Controller:
         for name, backend in escalation_order:
             try:
                 logger.info("Quality escalation: trying %s", name)
+                if self._metrics:
+                    self._metrics.record_escalation(task.backend_name)
                 better = backend.execute(task.prompt, task.mode, task.project_path)
                 better_quality = score_response_quality(better, task.prompt)
                 if better_quality > quality:
@@ -314,6 +329,8 @@ class Controller:
             if cached is not None:
                 self.last_route = "cache"
                 logger.info("Cache hit (0 tokens)")
+                if self._metrics:
+                    self._metrics.record_cache_hit(task.backend_name)
                 return cached
 
         start = datetime.utcnow()
@@ -341,6 +358,21 @@ class Controller:
             elif (fleet_result := self._try_fleet_route(task)) is not None:
                 result = fleet_result
             else:
+                # KB context injection for local backend
+                effective_prompt = task.prompt
+                if self._navigator and task.backend_name == "local":
+                    try:
+                        augmented = self._navigator.assemble_context(
+                            task.prompt, task.mode,
+                            model=getattr(self.backends.get("local"), "model", ""),
+                        )
+                        if augmented != task.prompt:
+                            effective_prompt = augmented
+                            logger.info("Navigator injected KB context (%d → %d chars)",
+                                        len(task.prompt), len(augmented))
+                    except Exception:
+                        pass
+
                 # Execute
                 self.last_route = "local"
                 backend = self.backends.get(task.backend_name)
@@ -348,7 +380,7 @@ class Controller:
                     raise ValueError(f"Unknown backend: {task.backend_name}")
 
                 try:
-                    result = backend.execute(task.prompt, task.mode, task.project_path)
+                    result = backend.execute(effective_prompt, task.mode, task.project_path)
 
                     # Auto-escalation on low quality (E-M49)
                     if task.backend_name in ("local", "openrouter"):
@@ -422,6 +454,22 @@ class Controller:
             # Track token budget (E-M51)
             total_tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
             self.tokens_used += total_tokens
+
+            # Prometheus metrics
+            if self._metrics:
+                quality = score_response_quality(result or "", task.prompt) if result else 0.0
+                self._metrics.record_request(
+                    backend=task.backend_name,
+                    model=usage.get("model", ""),
+                    quality=quality,
+                    total_tokens=total_tokens,
+                    cost_usd=usage.get("estimated_cost_usd") or 0.0,
+                    latency_ms=elapsed * 1000,
+                    prompt_tokens=usage.get("prompt_tokens") or 0,
+                    completion_tokens=usage.get("completion_tokens") or 0,
+                    route=self.last_route or "",
+                    error=bool(error),
+                )
 
             save_task(
                 prompt=task.prompt,
