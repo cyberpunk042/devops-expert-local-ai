@@ -550,6 +550,15 @@ else
     log_skip "All backends already extracted (cuda12-llama-cpp, whisper, piper)"
 fi
 
+# Build local-store backend from source if not already built
+if [[ ! -d "$REPO_ROOT/backends/local-store" ]]; then
+    log_step "Building local-store backend from source..."
+    bash "$REPO_ROOT/scripts/build-local-store.sh" || log_warn "local-store build failed — KB stores will not work"
+    STEPS_DONE+=("local-store-build")
+else
+    log_skip "local-store backend already built"
+fi
+
 # Check if image already exists
 IMAGE_EXISTS=0
 docker image inspect aicp-localai:latest >/dev/null 2>&1 && IMAGE_EXISTS=1
