@@ -326,6 +326,16 @@ DEPLOYED=0
 SKIPPED=0
 for src in config/models/*.yaml; do
     dest="models/$(basename "$src")"
+    # Skip configs whose backend isn't pre-extracted (avoids runtime downloads)
+    backend=$(grep "^backend:" "$src" 2>/dev/null | awk '{print $2}')
+    if [[ -n "$backend" ]]; then
+        # Check if backend exists (exact match or cuda12- variant)
+        if [[ ! -d "backends/$backend" && ! -d "backends/cuda12-$backend" ]]; then
+            log_info "Skipping $(basename "$src") — backend '$backend' not extracted"
+            SKIPPED=$((SKIPPED + 1))
+            continue
+        fi
+    fi
     if [[ -f "$dest" && "$FORCE" -eq 0 ]]; then
         SKIPPED=$((SKIPPED + 1))
     else
@@ -333,6 +343,16 @@ for src in config/models/*.yaml; do
         DEPLOYED=$((DEPLOYED + 1))
     fi
 done
+# Remove stale configs for backends we don't have
+for deployed in models/*.yaml; do
+    [[ -f "$deployed" ]] || continue
+    dbackend=$(grep "^backend:" "$deployed" 2>/dev/null | awk '{print $2}')
+    if [[ -n "$dbackend" && ! -d "backends/$dbackend" && ! -d "backends/cuda12-$dbackend" ]]; then
+        rm -f "$deployed"
+        log_info "Removed stale $(basename "$deployed") — backend '$dbackend' not available"
+    fi
+done
+
 if [[ "$DEPLOYED" -gt 0 ]]; then
     log_ok "Deployed $DEPLOYED model config(s) from config/models/"
 else
