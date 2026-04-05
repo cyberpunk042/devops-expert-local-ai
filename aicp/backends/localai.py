@@ -2967,18 +2967,32 @@ class LocalAIBackend(Backend):
     # ── Health & Readiness ───────────────────────────────────────────────────
 
     def health_check(self) -> dict:
-        """Check LocalAI health via /healthz. Returns {"healthy": bool, ...}."""
-        try:
-            resp = httpx.get(
-                f"{self.base_url}/healthz",
-                headers=self._headers(),
-                timeout=5.0,
-            )
-            return {"healthy": resp.status_code == 200, "status_code": resp.status_code}
-        except (httpx.ConnectError, httpx.RemoteProtocolError):
-            return {"healthy": False, "error": "connection refused"}
-        except httpx.TimeoutException:
-            return {"healthy": False, "error": "timeout"}
+        """Check LocalAI health via /healthz. Returns {"healthy": bool, ...}.
+
+        Retries on connection reset — LocalAI resets connections while
+        loading models into VRAM (first inference after startup).
+        """
+        for attempt in range(3):
+            try:
+                resp = httpx.get(
+                    f"{self.base_url}/healthz",
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+                return {"healthy": resp.status_code == 200, "status_code": resp.status_code}
+            except (httpx.ConnectError, httpx.RemoteProtocolError):
+                if attempt < 2:
+                    import time; time.sleep(5)
+                    continue
+                return {"healthy": False, "error": "connection refused"}
+            except httpx.ReadError:
+                # Connection reset by peer — model loading in progress
+                if attempt < 2:
+                    import time; time.sleep(10)
+                    continue
+                return {"healthy": False, "error": "connection reset (model loading)"}
+            except httpx.TimeoutException:
+                return {"healthy": False, "error": "timeout"}
 
     def is_ready(self) -> bool:
         """Check if LocalAI is ready to serve via /readyz."""
