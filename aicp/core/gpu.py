@@ -54,10 +54,27 @@ def detect_gpus() -> List[GpuInfo]:
 
 
 def estimate_model_vram_mb(gguf_path: Path) -> int:
-    """Estimate VRAM needed for a GGUF model (rough: file size + 20% overhead)."""
+    """Estimate VRAM needed for a GGUF model weights only (file size ≈ VRAM for quantized)."""
     size_bytes = gguf_path.stat().st_size
     size_mb = size_bytes / (1024 * 1024)
-    return int(size_mb * 1.2)  # 20% overhead for KV cache base allocation
+    return int(size_mb * 1.05)  # 5% overhead for metadata — Q4_K_M doesn't expand much
+
+
+def estimate_kv_cache_mb(context_size: int, n_layers: int = 32, kv_quantized: bool = True) -> int:
+    """Estimate KV cache VRAM for a given context size.
+
+    With q4_0 KV cache quantization (our default), VRAM is ~4x less than f16.
+    Formula: 2 * n_layers * n_kv_heads * head_dim * context_size * bytes_per_element
+    For 7-8B models: ~32 layers, 8 KV heads, 128 head_dim
+    """
+    bytes_per_element = 0.5 if kv_quantized else 2.0  # q4_0 vs f16
+    # Simplified: ~0.5MB per 1K context with q4_0, ~2MB with f16
+    per_1k = 0.5 if kv_quantized else 2.0
+    return int(context_size / 1000 * per_1k * (n_layers / 32))
+
+
+# VRAM reserve for system, driver, CUDA overhead, display
+SYSTEM_VRAM_RESERVE_MB = 800
 
 
 def calculate_optimal_config(
@@ -67,20 +84,22 @@ def calculate_optimal_config(
 ) -> dict:
     """Calculate optimal LocalAI model config based on available hardware.
 
+    Uses TOTAL VRAM (not free) with a fixed system reserve.
+    Accounts for KV cache quantization (q4_0 — our default via optimize-models.sh).
+    Never downgrades below the model's designed config from config/models/.
+
     Returns a dict suitable for writing to a model YAML file.
     """
     model_vram = estimate_model_vram_mb(gguf_path)
     cpu_count = os.cpu_count() or 4
 
     if not gpus:
-        # CPU-only fallback
         return {
             "gpu_layers": 0,
             "context_size": 2048,
             "threads": max(1, cpu_count - 1),
         }
 
-    # Filter to target GPUs
     if target_gpu_indices is not None:
         available = [g for g in gpus if g.index in target_gpu_indices]
     else:
@@ -89,39 +108,61 @@ def calculate_optimal_config(
     if not available:
         return {"gpu_layers": 0, "context_size": 2048, "threads": max(1, cpu_count - 1)}
 
-    total_free = sum(g.vram_free_mb for g in available)
+    # Use TOTAL VRAM minus system reserve — not FREE (which varies by moment)
+    total_vram = sum(g.vram_total_mb for g in available)
+    usable_vram = total_vram - SYSTEM_VRAM_RESERVE_MB
 
-    if model_vram < total_free * 0.8:
-        # Model fits in GPU with room for KV cache
-        gpu_layers = 99  # offload all layers
-        remaining_vram = total_free - model_vram
-        # Rough: ~2MB per 1K context for a 3B model
-        context_size = min(8192, max(512, (remaining_vram // 2) * 1000))
-        # Round to nearest power of 2
-        for size in [512, 1024, 2048, 4096, 8192]:
-            if size >= context_size:
+    # Check existing model YAML for KV cache quantization
+    model_yaml = gguf_path.parent / (gguf_path.stem.split(".")[0] + ".yaml")
+    kv_quantized = True  # assume yes — optimize-models.sh sets this for all models
+    existing_context = 0
+    existing_gpu_layers = 0
+    if model_yaml.exists():
+        try:
+            with open(model_yaml) as f:
+                data = yaml.safe_load(f) or {}
+            kv_quantized = data.get("cache_type_k", "f16") != "f16"
+            existing_context = data.get("context_size", 0)
+            existing_gpu_layers = data.get("gpu_layers", 0)
+        except Exception:
+            pass
+
+    if model_vram < usable_vram:
+        # Model fits fully in GPU
+        gpu_layers = 99
+        remaining = usable_vram - model_vram
+        # Calculate max context that fits in remaining VRAM
+        # With q4_0 KV cache: ~0.5MB per 1K context per 32 layers
+        per_1k = 0.5 if kv_quantized else 2.0
+        max_context = int(remaining / per_1k * 1000) if per_1k > 0 else 8192
+        # Round down to nearest standard size
+        for size in [16384, 8192, 4096, 2048, 1024]:
+            if max_context >= size:
                 context_size = size
                 break
-    elif model_vram < total_free * 1.5:
-        # Partial offload
-        fit_ratio = total_free * 0.7 / model_vram
-        gpu_layers = max(1, int(fit_ratio * 40))  # assume ~40 layers for typical model
-        context_size = 2048
+        else:
+            context_size = 512
     else:
-        # Model too large for available VRAM
-        gpu_layers = 0
-        context_size = 2048
+        # Model needs partial offload — shouldn't happen for Q4 7-8B on 8GB
+        fit_ratio = usable_vram / model_vram
+        gpu_layers = max(1, int(fit_ratio * 33))  # typical 7-8B has ~33 layers
+        context_size = 4096  # conservative but usable, not 2048
+
+    # Never downgrade below existing config values (from config/models/ source of truth)
+    if existing_gpu_layers > gpu_layers:
+        gpu_layers = existing_gpu_layers
+    if existing_context > context_size:
+        context_size = existing_context
 
     config = {
         "gpu_layers": gpu_layers,
         "context_size": context_size,
-        "threads": max(1, cpu_count - 1),
+        "threads": max(1, cpu_count // 2),  # half CPU cores — GPU does most work
     }
 
-    # Multi-GPU tensor split
     if len(available) > 1 and gpu_layers > 0:
-        total_vram = sum(g.vram_total_mb for g in available)
-        splits = [round(g.vram_total_mb / total_vram, 2) for g in available]
+        total = sum(g.vram_total_mb for g in available)
+        splits = [round(g.vram_total_mb / total, 2) for g in available]
         config["tensor_split"] = ",".join(str(s) for s in splits)
         config["main_gpu"] = available[0].index
 
