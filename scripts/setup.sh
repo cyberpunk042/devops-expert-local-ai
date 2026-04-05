@@ -604,17 +604,22 @@ done
 # Then send a real inference request to trigger model loading into VRAM
 # This is the slow part — GGUF loading + KV cache allocation
 while [[ "$ELAPSED" -lt "$MAX_WAIT" ]]; do
-    if "$VENV_PYTHON" - <<PYEOF 2>/dev/null
+    if "$VENV_PYTHON" - <<PYEOF
 import sys
 try:
     import httpx
     resp = httpx.post(
         "http://localhost:${LOCALAI_PORT}/v1/chat/completions",
         json={"model": "${MODEL_ALIAS}", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
-        timeout=60.0,
+        timeout=120.0,
     )
+    if resp.status_code == 200:
+        print("        Model loaded successfully.", flush=True)
+    else:
+        print(f"        Model response: {resp.status_code}", flush=True)
     sys.exit(0 if resp.status_code == 200 else 1)
-except Exception:
+except Exception as e:
+    print(f"        Warmup attempt: {e}", flush=True)
     sys.exit(1)
 PYEOF
     then

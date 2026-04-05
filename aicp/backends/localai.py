@@ -2972,25 +2972,21 @@ class LocalAIBackend(Backend):
         Retries on connection reset — LocalAI resets connections while
         loading models into VRAM (first inference after startup).
         """
-        for attempt in range(3):
+        import time as _time
+        for attempt in range(5):
             try:
                 resp = httpx.get(
                     f"{self.base_url}/healthz",
                     headers=self._headers(),
-                    timeout=10.0,
+                    timeout=15.0,
                 )
                 return {"healthy": resp.status_code == 200, "status_code": resp.status_code}
-            except (httpx.ConnectError, httpx.RemoteProtocolError):
-                if attempt < 2:
-                    import time; time.sleep(5)
+            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError):
+                # Model loading in progress — LocalAI resets/disconnects connections
+                if attempt < 4:
+                    _time.sleep(15)
                     continue
-                return {"healthy": False, "error": "connection refused"}
-            except httpx.ReadError:
-                # Connection reset by peer — model loading in progress
-                if attempt < 2:
-                    import time; time.sleep(10)
-                    continue
-                return {"healthy": False, "error": "connection reset (model loading)"}
+                return {"healthy": False, "error": "model loading (retried 5x)"}
             except httpx.TimeoutException:
                 return {"healthy": False, "error": "timeout"}
 
