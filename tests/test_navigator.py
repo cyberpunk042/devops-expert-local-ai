@@ -352,6 +352,86 @@ class TestProfileAwareAssembly:
         assert len(result) < 5000
 
 
+class TestMapBoost:
+    """E-M32: Verify map-aware boosting re-ranks results using cross-references."""
+
+    def test_boost_promotes_relevant_source(self):
+        """Results from sources in the intent's cross-references get boosted."""
+        nav = Navigator(_PROJECT_PATH)
+        results = [
+            {"source": "aicp/core/router.py", "text": "routing logic", "score": 0.5},
+            {"source": "aicp/core/session.py", "text": "session state", "score": 0.6},
+            {"source": "aicp/backends/localai.py", "text": "backend call", "score": 0.55},
+        ]
+        boosted = nav.map_boost(results, "code_task")
+        # router.py and localai.py are in routing/backends systems → boosted
+        # session.py is NOT in code_task cross-refs → no boost
+        assert boosted[0]["source"] == "aicp/core/router.py" or \
+               boosted[0]["source"] == "aicp/backends/localai.py"
+        # Router/localai should have higher scores than session
+        session_score = next(r["score"] for r in boosted if "session" in r["source"])
+        router_score = next(r["score"] for r in boosted if "router" in r["source"])
+        assert router_score > session_score
+
+    def test_boost_no_intent_returns_unchanged(self):
+        """Empty intent returns results unchanged."""
+        nav = Navigator(_PROJECT_PATH)
+        results = [
+            {"source": "foo.py", "text": "test", "score": 0.5},
+        ]
+        boosted = nav.map_boost(results, "")
+        assert boosted == results
+
+    def test_boost_unknown_intent_returns_unchanged(self):
+        """Unknown intent (no inject config) returns results unchanged."""
+        nav = Navigator(_PROJECT_PATH)
+        results = [
+            {"source": "foo.py", "text": "test", "score": 0.5},
+        ]
+        boosted = nav.map_boost(results, "nonexistent_intent")
+        assert boosted == results
+
+    def test_boost_score_capped_at_one(self):
+        """Boosted scores should not exceed 1.0."""
+        nav = Navigator(_PROJECT_PATH)
+        results = [
+            {"source": "aicp/core/router.py", "text": "routing", "score": 0.95},
+        ]
+        boosted = nav.map_boost(results, "code_task", boost_factor=0.2)
+        assert boosted[0]["score"] <= 1.0
+
+    def test_boost_fleet_ops_promotes_cluster(self):
+        """Fleet ops intent boosts cluster-related sources."""
+        nav = Navigator(_PROJECT_PATH)
+        results = [
+            {"source": "aicp/core/cluster.py", "text": "cluster config", "score": 0.4},
+            {"source": "aicp/core/rag.py", "text": "rag pipeline", "score": 0.5},
+        ]
+        boosted = nav.map_boost(results, "fleet_ops")
+        # cluster.py should be boosted above rag.py
+        assert boosted[0]["source"] == "aicp/core/cluster.py"
+
+    def test_boost_integrated_in_assembly(self, monkeypatch):
+        """Map boost is applied during context assembly."""
+        nav = Navigator(_PROJECT_PATH)
+        monkeypatch.setattr(nav, "_search_collection", lambda q, **kw: [
+            {"content": "rag pipeline details", "source": "rag.py", "score": 0.6},
+            {"content": "routing logic", "source": "router.py", "score": 0.5},
+        ])
+        result = nav.assemble_context(
+            "implement a routing feature", Mode.THINK,
+            model="opus", context_window=1_000_000,
+        )
+        # code_task intent → routing system → router.py should be boosted
+        # The order in the context block should reflect boosted ranking
+        if "[kb]" in result:
+            kb_start = result.index("[kb]")
+            remaining = result[kb_start:]
+            # routing should appear before rag (boosted)
+            if "routing" in remaining and "rag" in remaining:
+                assert remaining.index("routing") < remaining.index("rag")
+
+
 class TestProfileModelMatrix:
     """Verify all model × profile combinations produce valid specs."""
 

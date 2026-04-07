@@ -52,8 +52,40 @@ def load_session(name: str) -> List[Dict[str, str]]:
         return []
 
 
-def save_session(name: str, messages: List[Dict[str, str]]) -> None:
-    """Persist message history for a named session."""
+def load_session_with_state(name: str) -> Dict[str, Any]:
+    """Load full session data including navigator state (E-M36).
+
+    Returns dict with keys: messages, navigator (may be empty).
+    Returns empty messages list if session doesn't exist.
+    """
+    path = _sessions_dir() / f"{_safe_name(name)}.json"
+    if not path.exists():
+        return {"messages": [], "navigator": {}}
+
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return {
+            "messages": data.get("messages", []),
+            "navigator": data.get("navigator", {}),
+        }
+    except (json.JSONDecodeError, OSError):
+        return {"messages": [], "navigator": {}}
+
+
+def save_session(
+    name: str,
+    messages: List[Dict[str, str]],
+    navigator_state: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Persist message history and navigator state for a named session.
+
+    Args:
+        name: Session name.
+        messages: Full message history.
+        navigator_state: Optional navigator metadata (profile, intent, model)
+                         for cross-session knowledge continuity (E-M36).
+    """
     path = _sessions_dir() / f"{_safe_name(name)}.json"
     data = {
         "name": name,
@@ -61,6 +93,8 @@ def save_session(name: str, messages: List[Dict[str, str]]) -> None:
         "message_count": len(messages),
         "messages": messages,
     }
+    if navigator_state:
+        data["navigator"] = navigator_state
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 

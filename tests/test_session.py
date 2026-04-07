@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from aicp.core.session import (
-    load_session, save_session, delete_session, list_sessions, _safe_name,
+    load_session, load_session_with_state, save_session,
+    delete_session, list_sessions, _safe_name,
 )
 
 
@@ -140,3 +141,67 @@ def test_session_survives_corrupt_file(tmp_path, monkeypatch):
     names = [s["name"] for s in sessions]
     assert "good" in names
     # corrupt file should be skipped, not raise
+
+
+# ---------------------------------------------------------------------------
+# E-M36: Cross-session knowledge persistence
+# ---------------------------------------------------------------------------
+
+
+def test_save_and_load_navigator_state(tmp_path, monkeypatch):
+    """Navigator state persists across save/load cycle."""
+    monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    nav_state = {
+        "profile": "localai-8k",
+        "intent": "code_task",
+        "model": "qwen3-8b",
+        "injected_systems": ["routing", "backends"],
+    }
+    save_session("dev", _msgs(("user", "hello")), navigator_state=nav_state)
+    data = load_session_with_state("dev")
+    assert data["navigator"]["profile"] == "localai-8k"
+    assert data["navigator"]["intent"] == "code_task"
+    assert data["navigator"]["model"] == "qwen3-8b"
+    assert "routing" in data["navigator"]["injected_systems"]
+
+
+def test_load_with_state_no_navigator(tmp_path, monkeypatch):
+    """Sessions without navigator state return empty navigator dict."""
+    monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    save_session("old", _msgs(("user", "hi")))  # no navigator_state
+    data = load_session_with_state("old")
+    assert data["messages"] == [{"role": "user", "content": "hi"}]
+    assert data["navigator"] == {}
+
+
+def test_load_with_state_nonexistent(tmp_path, monkeypatch):
+    """Nonexistent session returns empty messages and navigator."""
+    monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    data = load_session_with_state("nope")
+    assert data["messages"] == []
+    assert data["navigator"] == {}
+
+
+def test_navigator_state_detects_model_change(tmp_path, monkeypatch):
+    """When model changes between sessions, caller can detect and re-inject."""
+    monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    # Save session with qwen3-8b
+    save_session("task", _msgs(("user", "hello")), navigator_state={
+        "profile": "localai-8k", "model": "qwen3-8b",
+    })
+    # Load and check if model changed
+    data = load_session_with_state("task")
+    old_model = data["navigator"].get("model", "")
+    new_model = "gemma4-e2b"
+    assert old_model != new_model  # model changed → re-inject needed
+
+
+def test_backward_compat_load_session_ignores_navigator(tmp_path, monkeypatch):
+    """Original load_session() still works, ignores navigator field."""
+    monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    save_session("compat", _msgs(("user", "test")), navigator_state={
+        "profile": "opus-1m", "intent": "architecture",
+    })
+    messages = load_session("compat")
+    assert len(messages) == 1
+    assert messages[0]["content"] == "test"

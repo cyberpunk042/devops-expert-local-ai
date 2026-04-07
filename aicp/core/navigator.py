@@ -244,13 +244,17 @@ class Navigator:
                     parts.append(f"[modules] {content}")
                     total += len(content)
 
-        # 3. KB context from LocalAI Collections
+        # 3. KB context from LocalAI Collections (E-M32: map-boosted reranking)
         kb_branch = branches.get("kb_context", {})
         kb_level = kb_branch.get("level", "none") if isinstance(kb_branch, dict) else "none"
         if kb_level != "none" and spec.get("inject_kb", False):
             top_k = {"full": 5, "condensed": 3, "minimal": 1}.get(kb_level, 3)
             try:
-                results = self._search_collection(prompt, top_k=top_k)
+                results = self._search_collection(prompt, top_k=top_k * 2)
+                # Apply map-aware boosting based on intent cross-references
+                if results:
+                    results = self.map_boost(results, spec["intent"])
+                    results = results[:top_k]
                 for r in results:
                     text = r.get("content", r.get("text", ""))
                     if not text or total + len(text) > max_chars:
@@ -410,6 +414,70 @@ class Navigator:
         except Exception:
             pass
         return 0
+
+    def map_boost(
+        self,
+        results: List[Dict],
+        intent: str,
+        boost_factor: float = 0.15,
+    ) -> List[Dict]:
+        """Boost search result scores based on knowledge map cross-references.
+
+        Results whose source file belongs to a system/module referenced by the
+        intent get a score boost. This re-ranks pure embedding results using
+        structured metadata from the knowledge map.
+
+        Args:
+            results: Search results with 'source', 'score' keys.
+            intent: Intent name from match_intent() (e.g. 'code_task').
+            boost_factor: Score boost for matching sources (0.0-1.0).
+
+        Returns:
+            Results re-sorted with boosted scores.
+        """
+        if not results or not intent:
+            return results
+
+        # Get systems and modules this intent cares about
+        intent_cfg = self._intent_map.get("intents", {}).get(intent, {})
+        inject = intent_cfg.get("inject", {})
+        relevant_systems = inject.get("systems", [])
+        relevant_modules = inject.get("modules", [])
+
+        # Build set of relevant source file stems from cross-references
+        xrefs = self._load_yaml(Path("docs/knowledge-map/cross-references.yaml"))
+        relevant_sources: set = set()
+
+        for sys_name in relevant_systems:
+            sys_data = xrefs.get("systems", {}).get(sys_name, {})
+            for mod in sys_data.get("modules", []):
+                relevant_sources.add(mod.lower().replace(".py", ""))
+            # Also add connected systems' modules
+            for connected in sys_data.get("connected_systems", []):
+                conn_data = xrefs.get("systems", {}).get(connected, {})
+                for mod in conn_data.get("modules", []):
+                    relevant_sources.add(mod.lower().replace(".py", ""))
+
+        for mod in relevant_modules:
+            relevant_sources.add(mod.lower().replace(".py", ""))
+
+        if not relevant_sources:
+            return results
+
+        # Apply boost
+        boosted = []
+        for r in results:
+            source = r.get("source", "")
+            source_stem = Path(source).stem.lower() if source else ""
+            score = r.get("score", r.get("similarity", 0.0))
+
+            if any(rs in source_stem or source_stem in rs for rs in relevant_sources):
+                score = min(1.0, score + boost_factor)
+
+            boosted.append({**r, "score": round(score, 4)})
+
+        boosted.sort(key=lambda x: x["score"], reverse=True)
+        return boosted
 
     def stats(self) -> Dict[str, Any]:
         """Return navigator status."""
