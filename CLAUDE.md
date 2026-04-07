@@ -57,7 +57,7 @@ User → AICP Controller → Router → (LocalAI | Claude Code) → Project/Repo
 ## Tech Stack
 
 - **Language**: Python 3.11+
-- **Local AI Gateway**: LocalAI (OpenAI-compatible API, Docker, GPU via WSL2)
+- **Local AI Gateway**: LocalAI v4.1.3 (OpenAI-compatible API, Docker, GPU via WSL2)
 - **Cloud Backend**: Claude Code CLI (invoked as subprocess)
 - **Config**: YAML files in `config/`
 - **Logging**: structured JSON logs
@@ -212,16 +212,17 @@ LocalAI is running and functional on Docker with GPU acceleration.
 | Operation | Backend | Model | Why |
 |-----------|---------|-------|-----|
 | Heartbeat (no work) | Intercepted (0 tokens) | — | Template response, no LLM needed |
-| Fleet ops (status, chat) | local | qwen3-4b | Lightweight, zero Claude tokens |
+| Fleet ops (status, chat) | local | gemma4-e2b | 53 tok/s, 2.9GB, multimodal |
 | Simple Q&A, format, translate | local | qwen3-8b-fast | No thinking mode, fewer tokens |
 | Code tasks (implement, debug) | local | qwen3-8b | Thinking mode enabled |
 | Medium complexity | openrouter | qwen3-8b:free | Free cloud fallback |
 | Complex implementation | claude | opus | Deep reasoning needed |
 | Architecture / security | claude | opus | Cannot compromise |
-| Edit/Act modes | claude | opus | Hard CLI enforcement |
+| Edit/Act modes | claude | opus | Configurable via `force_cloud_modes` |
 
-Failover chain: local → fleet peer → openrouter → claude
-Quality escalation: score < 0.25 → auto-retry on next tier
+Failover chain: configurable per profile (default: local → fleet → openrouter → claude)
+Quality escalation: configurable threshold (default: score < 0.25 → auto-retry on next tier)
+Complexity thresholds: configurable (default: [0.3, 0.6] → local/openrouter/claude)
 
 ### Infrastructure Target
 
