@@ -221,6 +221,26 @@ status:
 	.venv/bin/aicp --status
 
 # =============================================================================
+# Profile management
+# =============================================================================
+
+profile-list:
+	.venv/bin/aicp --profile-cmd list
+
+profile-show:
+	.venv/bin/aicp --profile-cmd show --profile $(or $(PROFILE),default)
+
+profile-diff:
+	.venv/bin/aicp --profile-cmd diff --profile $(or $(PROFILE_A),default) --profile-arg $(or $(PROFILE_B),fast)
+
+profile-validate:
+	.venv/bin/aicp --profile-cmd validate
+
+profile-use:
+	@test -n "$(PROFILE)" || (echo "ERROR: set PROFILE=<name>  (e.g. make profile-use PROFILE=fast)"; exit 1)
+	.venv/bin/aicp --profile-cmd use --profile $(PROFILE)
+
+# =============================================================================
 # Model management
 # =============================================================================
 

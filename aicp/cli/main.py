@@ -55,6 +55,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Config file path (default: config/default.yaml)",
     )
     parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        default=None,
+        help="Configuration profile (e.g. default, fast, offline). See: aicp --profile-cmd list",
+    )
+    parser.add_argument(
+        "--profile-cmd",
+        metavar="CMD",
+        help="Profile commands: list, show <name>, diff <a> <b>, validate, use <name>",
+    )
+    parser.add_argument(
+        "--profile-arg",
+        metavar="ARG",
+        help="Second argument for --profile-cmd (e.g. second profile name for diff)",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Check config validity and backend availability, then exit",
@@ -421,6 +437,129 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
         )
 
     return backends
+
+
+def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optional[str]) -> int:
+    """Handle --profile-cmd subcommands."""
+    from aicp.core.profiles import (
+        PROFILES_DIR,
+        diff_profiles,
+        get_active_profile,
+        list_profiles,
+        load_profile,
+        resolve_profile,
+        validate_profile,
+    )
+
+    if cmd == "list":
+        profiles = list_profiles()
+        active = profile_name or get_active_profile()
+        if not profiles:
+            print("No profiles found in", PROFILES_DIR)
+            return 1
+        print(f"{'Name':<20} {'Description':<50} {'Active'}")
+        print("-" * 78)
+        for p in profiles:
+            marker = " *" if p["name"] == active else ""
+            print(f"{p['name']:<20} {p['description']:<50}{marker}")
+        if active:
+            print(f"\nActive profile: {active}")
+        return 0
+
+    if cmd == "show":
+        name = profile_name or profile_arg or get_active_profile() or "default"
+        try:
+            import yaml
+            overlay = resolve_profile(name)
+            print(f"# Resolved profile: {name}")
+            print(yaml.dump(overlay, default_flow_style=False, sort_keys=False))
+        except (FileNotFoundError, ValueError) as e:
+            print_error(str(e))
+            return 1
+        return 0
+
+    if cmd == "diff":
+        name_a = profile_name or "default"
+        name_b = profile_arg or "fast"
+        try:
+            diffs = diff_profiles(name_a, name_b)
+            if not diffs:
+                print(f"Profiles '{name_a}' and '{name_b}' are identical.")
+                return 0
+            print(f"{'Section':<20} {name_a:<30} {name_b}")
+            print("-" * 78)
+            for key, sides in diffs.items():
+                a_val = str(sides["a"])[:28] if sides["a"] is not None else "(not set)"
+                b_val = str(sides["b"])[:28] if sides["b"] is not None else "(not set)"
+                print(f"{key:<20} {a_val:<30} {b_val}")
+        except (FileNotFoundError, ValueError) as e:
+            print_error(str(e))
+            return 1
+        return 0
+
+    if cmd == "validate":
+        profiles = list_profiles()
+        if not profiles:
+            print("No profiles found.")
+            return 1
+        all_valid = True
+        for p in profiles:
+            try:
+                profile = load_profile(p["name"])
+                errors = validate_profile(profile)
+                # Also check merged config
+                config = load_config(profile=p["name"])
+                config_errors = validate_config(config)
+                if errors or config_errors:
+                    print(f"  FAIL  {p['name']}: {errors + config_errors}")
+                    all_valid = False
+                else:
+                    print(f"  OK    {p['name']}")
+            except Exception as e:
+                print(f"  FAIL  {p['name']}: {e}")
+                all_valid = False
+        return 0 if all_valid else 1
+
+    if cmd == "use":
+        name = profile_name or profile_arg
+        if not name:
+            print_error("Usage: aicp --profile-cmd use --profile <name>")
+            return 1
+        # Validate profile exists and is valid
+        try:
+            load_profile(name)
+        except (FileNotFoundError, ValueError) as e:
+            print_error(str(e))
+            return 1
+        # Write to .env
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        lines = []
+        found = False
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    if line.strip().startswith("AICP_PROFILE="):
+                        lines.append(f"AICP_PROFILE={name}\n")
+                        found = True
+                    else:
+                        lines.append(line)
+        if not found:
+            lines.append(f"AICP_PROFILE={name}\n")
+        with open(env_path, "w") as f:
+            f.writelines(lines)
+        print(f"Active profile set to: {name}")
+        # Check if docker settings changed
+        try:
+            current_overlay = resolve_profile(name)
+            if "docker" in current_overlay:
+                print("NOTE: Docker settings changed. Run 'docker compose restart localai' to apply.")
+        except Exception:
+            pass
+        return 0
+
+    print_error(f"Unknown profile command: {cmd}")
+    print("Available: list, show, diff, validate, use")
+    return 1
 
 
 def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
@@ -2202,13 +2341,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         return 0
 
-    # Load config
+    # --profile-cmd: profile management (runs before config load)
+    if getattr(args, "profile_cmd", None):
+        return _run_profile_cmd(args.profile_cmd, args.profile, getattr(args, "profile_arg", None))
+
+    # Load config (with optional profile overlay)
     try:
         project_path = args.project.resolve() if hasattr(args, "project") and args.project else None
+        profile_name = getattr(args, "profile", None)
         config = (
-            load_config(args.config, project_path=project_path)
+            load_config(args.config, project_path=project_path, profile=profile_name)
             if args.config
-            else load_config(project_path=project_path)
+            else load_config(project_path=project_path, profile=profile_name)
         )
     except (FileNotFoundError, ValueError) as e:
         print_error(f"Config: {e}")
