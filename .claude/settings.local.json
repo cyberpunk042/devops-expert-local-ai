@@ -74,7 +74,15 @@
       "Bash(.venv/bin/aicp --profile-cmd list)",
       "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py tests/test_router.py tests/test_controller.py tests/test_localai_backend.py -q)",
       "Bash(.venv/bin/aicp --profile-cmd use --profile fast)",
-      "Bash(.venv/bin/aicp --profile-cmd use --profile default)"
+      "Bash(.venv/bin/aicp --profile-cmd use --profile default)",
+      "Bash(curl -s \"https://huggingface.co/api/models?search=gemma-4-gguf&limit=30\")",
+      "Bash(curl -s \"https://huggingface.co/api/models?search=gemma+4+gguf&limit=30\")",
+      "Bash(curl -s \"https://huggingface.co/api/models/unsloth/gemma-4-26B-A4B-it-GGUF/tree/main\")",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-E2B-it-GGUF/tree/main\")",
+      "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-E4B-it-GGUF/tree/main\")",
+      "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-26B-A4B-it-GGUF/tree/main\")",
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py -q)"
     ]
   }
 }

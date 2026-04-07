@@ -1,0 +1,39 @@
+name: gemma4-e4b
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  model: gemma-4-E4B-it-Q4_K_M.gguf
+  temperature: 0.2
+  top_p: 0.85
+  repeat_penalty: 1.1
+threads: 2
+
+# ── Gemma 4 E4B: 4.5B effective params, 5.0 GB file, ~6 GB VRAM ──
+# Mid-range Gemma 4 — 128K context, multimodal (text+image+audio)
+# Native tool calling, reasoning, vision in a single model
+# Could replace separate vision model (llava) for multimodal tasks
+gpu_layers: 33
+
+# ── KV cache quantization (needed on 8 GB — model takes ~6 GB) ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling (Gemma 4 has native tool calling) ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: gemma4-e4b-cache
+prompt_cache_all: true
+
+# ── Tighter fit on 8 GB — conservative context ──
+context_size: 8192
+mmap: true
+mmlock: true

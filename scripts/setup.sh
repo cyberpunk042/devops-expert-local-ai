@@ -51,6 +51,7 @@ cd "$REPO_ROOT"
 # Each entry: ALIAS → GGUF_FILENAME / MIN_VRAM_MB (MiB) / DOWNLOAD_URL
 CATALOG_ALIASES=(
     "qwen3-8b" "qwen3-4b" "qwen3-30b-a3b"
+    "gemma4-e2b" "gemma4-e4b" "gemma4-26b-a4b"
     "phi3-mini" "gemma-2b" "hermes" "mistral-7b" "codellama-7b" "hermes-13b" "codellama-13b"
 )
 declare -A MODEL_GGUF=(
@@ -58,6 +59,10 @@ declare -A MODEL_GGUF=(
     [qwen3-8b]="Qwen3-8B-Q4_K_M.gguf"
     [qwen3-4b]="Qwen3-4B-Q6_K.gguf"
     [qwen3-30b-a3b]="Qwen3-30B-A3B-Q4_K_M.gguf"
+    # ── Gemma 4 (2026, multimodal) ──
+    [gemma4-e2b]="gemma-4-E2B-it-Q4_K_M.gguf"
+    [gemma4-e4b]="gemma-4-E4B-it-Q4_K_M.gguf"
+    [gemma4-26b-a4b]="gemma-4-26B-A4B-it-Q4_K_M.gguf"
     # ── Legacy models ──
     [phi3-mini]="Phi-3-mini-4k-instruct-q4.gguf"
     [gemma-2b]="gemma-2b-it.gguf"
@@ -72,6 +77,10 @@ declare -A MODEL_URL=(
     [qwen3-8b]="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
     [qwen3-4b]="https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf"
     [qwen3-30b-a3b]="https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf"
+    # ── Gemma 4 (unsloth GGUF for E2B/E4B, ggml-org for 26B) ──
+    [gemma4-e2b]="https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf"
+    [gemma4-e4b]="https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf"
+    [gemma4-26b-a4b]="https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf"
     # ── Legacy models ──
     [phi3-mini]="https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
     [gemma-2b]="https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it.gguf"
@@ -87,6 +96,10 @@ declare -A MODEL_MIN_VRAM=(
     [qwen3-8b]=6000
     [qwen3-4b]=4000
     [qwen3-30b-a3b]=18000
+    # ── Gemma 4 ──
+    [gemma4-e2b]=4000
+    [gemma4-e4b]=6000
+    [gemma4-26b-a4b]=18000
     # ── Legacy ──
     [phi3-mini]=3000
     [gemma-2b]=2000

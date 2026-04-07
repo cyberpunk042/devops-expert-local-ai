@@ -167,6 +167,14 @@ LocalAI is running and functional on Docker with GPU acceleration.
 | **qwen3-4b** | `qwen3-4b.yaml` | 3.3GB | 4GB+ | 33 | **Fleet lightweight** — replaces hermes-3b |
 | qwen3-30b-a3b | `qwen3-30b-a3b.yaml` | 17GB | 18GB+ | 48 | MoE flagship — dual GPU (8+11GB) only |
 
+#### Gemma 4 (Google — 2026, multimodal)
+
+| Model | Config | Size | VRAM | GPU Layers | Use Case |
+|-------|--------|------|------|------------|----------|
+| gemma4-e2b | `gemma4-e2b.yaml` | 3.1GB | 4GB+ | 33 | Lightweight multimodal — text+image+audio, 128K context |
+| gemma4-e4b | `gemma4-e4b.yaml` | 5.0GB | 6GB+ | 33 | Mid-range multimodal — could replace llava for vision tasks |
+| gemma4-26b-a4b | `gemma4-26b-a4b.yaml` | 16.8GB | 18GB+ | 48 | MoE multimodal — dual GPU (8+11GB) only, 256K context |
+
 #### Legacy Models
 
 | Model | Config | Size | VRAM | GPU Layers | Use Case |
@@ -404,6 +412,8 @@ make profile-use PROFILE=fast                  # Set active profile (writes .env
 # Model management
 make model-qwen3             # Download Qwen3-8B + Qwen3-4B (8GB GPU)
 make model-qwen3-30b         # Download Qwen3-30B MoE (dual GPU 8+11GB only)
+make model-gemma4            # Download Gemma 4 E2B + E4B (8GB GPU)
+make model-gemma4-26b        # Download Gemma 4 26B MoE (dual GPU 8+11GB only)
 make model-list-remote       # Show full model catalog with VRAM info
 make benchmark-qwen3         # Benchmark Qwen3-8B
 

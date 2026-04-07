@@ -2,6 +2,7 @@
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
+        model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b \
         monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -55,6 +56,8 @@ help:
 	@echo "  make model-list-remote       Curated catalog with VRAM/size info"
 	@echo "  make model-qwen3             Download Qwen3-8B + Qwen3-4B (8GB GPU)"
 	@echo "  make model-qwen3-30b         Download Qwen3-30B MoE (dual GPU only)"
+	@echo "  make model-gemma4            Download Gemma 4 E2B + E4B (8GB GPU)"
+	@echo "  make model-gemma4-26b        Download Gemma 4 26B MoE (dual GPU only)"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
 	@echo "  make monitoring-up           Start Prometheus + Grafana"
 	@echo "  make monitoring-down         Stop monitoring stack"
@@ -286,6 +289,34 @@ model-qwen3-30b:
 # Download both Qwen3 models for 8GB single GPU setup
 model-qwen3: model-qwen3-8b model-qwen3-4b
 	@echo "Qwen3 models ready. Restart LocalAI: make local-down && make local-up"
+
+# ── Gemma 4 models (Google, April 2026) ──────────────────────────────────────
+# Multimodal (text+image+audio), 128K-256K context, native tool calling
+
+# Download Gemma 4 E2B (2.3B effective, ~3.1 GB, needs 4+ GB VRAM)
+model-gemma4-e2b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/gemma-4-E2B-it-Q4_K_M.gguf \
+		"https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download Gemma 4 E4B (4.5B effective, ~5.0 GB, needs 6+ GB VRAM)
+model-gemma4-e4b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/gemma-4-E4B-it-Q4_K_M.gguf \
+		"https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download Gemma 4 26B-A4B MoE (dual GPU only, ~16.8 GB, needs 18+ GB VRAM)
+model-gemma4-26b:
+	mkdir -p models
+	curl -L --progress-bar -C - -o models/gemma-4-26B-A4B-it-Q4_K_M.gguf \
+		"https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download both Gemma 4 models for 8GB single GPU setup
+model-gemma4: model-gemma4-e2b model-gemma4-e4b
+	@echo "Gemma 4 models ready. Restart LocalAI: make local-down && make local-up"
 
 # Benchmark Qwen3-8B vs current default model
 benchmark-qwen3:

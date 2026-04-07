@@ -1,0 +1,38 @@
+name: gemma4-e2b
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  model: gemma-4-E2B-it-Q4_K_M.gguf
+  temperature: 0.2
+  top_p: 0.85
+  repeat_penalty: 1.1
+threads: 2
+
+# ── Gemma 4 E2B: 2.3B effective params, 3.1 GB file, ~4 GB VRAM ──
+# Google's smallest Gemma 4 — 128K context, multimodal (text+image+audio)
+# Fits easily on 8 GB GPU with room for large context
+gpu_layers: 33
+
+# ── KV cache quantization ──
+cache_type_k: q4_0
+cache_type_v: q4_0
+flash_attention: true
+
+# ── Function calling (Gemma 4 has native tool calling) ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: gemma4-e2b-cache
+prompt_cache_all: true
+
+# ── Small model + KV quant = plenty of room for large context on 8GB ──
+context_size: 16384
+mmap: true
+mmlock: true
