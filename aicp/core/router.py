@@ -280,11 +280,16 @@ def classify_task_with_reason(
 ) -> Tuple[str, str]:
     """Classify a task and return (backend_name, reason).
 
-    4-tier routing:
-      1. local   — free, fast, private (fleet ops, simple tasks)
-      2. openrouter — free cloud models (medium complexity, local unavailable)
-      3. claude  — expensive, powerful (complex, edit/act modes)
+    Uses analyze_complexity() to score the prompt, then maps the score to a
+    backend tier using configurable thresholds.
+
+    Configurable via config["router"]:
+      - complexity_thresholds: [low, high] — score cutoffs for tier selection
+      - failover_chain: ordered backend preference list
+      - force_cloud_modes: list of modes that always route to cloud (default: [edit, act])
     """
+    config = config or {}
+    router_cfg = config.get("router", {})
 
     local = backends.get("local")
     claude = backends.get("claude")
@@ -308,47 +313,55 @@ def classify_task_with_reason(
             return "openrouter", "fleet op, local unavailable"
         return "local", "fleet operation (local down)"
 
-    # Act mode → Claude (hard enforcement via CLI flags)
-    if mode == Mode.ACT:
-        return "claude", "act mode needs hard enforcement"
-
-    # Edit mode → Claude (hard enforcement via CLI flags)
-    if mode == Mode.EDIT:
-        return "claude", "edit mode needs hard enforcement"
-
-    # Complex keywords → Claude (or OpenRouter as fallback)
-    complex_matches = _COMPLEX_KEYWORDS.findall(prompt)
-    if complex_matches:
-        if claude_available:
-            return "claude", "complex task ({})".format(complex_matches[0])
-        if or_available:
-            return "openrouter", "complex task, claude unavailable"
-        return "local", "complex task, no cloud backends"
-
-    # Long prompts → Claude or OpenRouter
-    if len(prompt) > 500:
-        if claude_available:
-            return "claude", "long prompt ({} chars)".format(len(prompt))
-        if or_available:
-            return "openrouter", "long prompt, claude unavailable"
-
-    # Simple keywords → Local (or cheapest available fallback)
-    simple_matches = _SIMPLE_KEYWORDS.findall(prompt)
-    if simple_matches:
+    # Mode-based cloud enforcement (configurable — offline profile sets [] to disable)
+    force_cloud = router_cfg.get("force_cloud_modes", ["edit", "act"])
+    if mode.value in force_cloud:
+        # Try cloud backends in failover chain order
+        chain = router_cfg.get("failover_chain", ["local", "fleet", "openrouter", "claude"])
+        cloud_backends = [b for b in chain if b in ("claude", "openrouter")]
+        for name in cloud_backends:
+            if backends.get(name) and backends[name].is_available():
+                return name, f"{mode.value} mode (force_cloud_modes)"
+        # No cloud available — fall through to score-based routing
         if local_available:
-            return "local", "simple task"
-        if or_available:
-            return "openrouter", "simple task, local unavailable"
-        if claude_available:
-            return "claude", "simple task, local unavailable"
+            return "local", f"{mode.value} mode, no cloud backends available"
 
-    # Default: prefer local → openrouter → claude
-    if local_available:
-        return "local", "default for think mode" if mode == Mode.THINK else "default"
-    if or_available:
-        return "openrouter", "local unavailable"
-    if claude_available:
-        return "claude", "local unavailable"
+    # Score-based routing via analyze_complexity
+    complexity = analyze_complexity(prompt, mode, config)
+    tier = complexity.recommended_tier
+
+    # Map tier to available backend
+    if tier == "local":
+        if local_available:
+            return "local", f"complexity {complexity.summary}"
+        if or_available:
+            return "openrouter", f"complexity {complexity.summary}, local unavailable"
+        if claude_available:
+            return "claude", f"complexity {complexity.summary}, local unavailable"
+
+    if tier == "openrouter":
+        if or_available:
+            return "openrouter", f"complexity {complexity.summary}"
+        if local_available:
+            return "local", f"complexity {complexity.summary}, openrouter unavailable"
+        if claude_available:
+            return "claude", f"complexity {complexity.summary}"
+
+    if tier == "claude":
+        if claude_available:
+            return "claude", f"complexity {complexity.summary}"
+        if or_available:
+            return "openrouter", f"complexity {complexity.summary}, claude unavailable"
+        if local_available:
+            return "local", f"complexity {complexity.summary}, no cloud backends"
+
+    # Fallback: first available in chain
+    chain = router_cfg.get("failover_chain", ["local", "fleet", "openrouter", "claude"])
+    for name in chain:
+        if name == "fleet":
+            continue  # fleet handled by controller
+        if backends.get(name) and backends[name].is_available():
+            return name, "fallback"
     return "local", "no backends available"
 
 

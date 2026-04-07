@@ -33,9 +33,11 @@ backends:
 #   score < high → openrouter
 #   score >= high → claude
 # failover_chain: ordered list of backends to try on failure
+# force_cloud_modes: modes that always route to cloud ([] to disable)
 router:
   complexity_thresholds: [0.3, 0.6]
   failover_chain: [local, fleet, openrouter, claude]
+  force_cloud_modes: [edit, act]
 
 # --- Sampling per mode ---
 mode_profiles:

@@ -156,6 +156,21 @@ def validate_profile(data: Dict[str, Any]) -> List[str]:
             elif not all(isinstance(b, str) for b in failover):
                 errors.append("router.failover_chain entries must be strings")
 
+        force_cloud = router.get("force_cloud_modes")
+        if force_cloud is not None:
+            if not isinstance(force_cloud, list):
+                errors.append("router.force_cloud_modes must be a list")
+            elif not all(isinstance(m, str) for m in force_cloud):
+                errors.append("router.force_cloud_modes entries must be strings")
+            else:
+                valid_modes = {"think", "edit", "act"}
+                for m in force_cloud:
+                    if m not in valid_modes:
+                        errors.append(
+                            f"router.force_cloud_modes: unknown mode '{m}' "
+                            f"(valid: {', '.join(sorted(valid_modes))})"
+                        )
+
     # Timeouts validation
     timeouts = data.get("timeouts", {})
     if isinstance(timeouts, dict):

@@ -82,7 +82,14 @@
       "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-E2B-it-GGUF/tree/main\")",
       "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-E4B-it-GGUF/tree/main\")",
       "Bash(curl -s \"https://huggingface.co/api/models/ggml-org/gemma-4-26B-A4B-it-GGUF/tree/main\")",
-      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py -q)"
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py -q)",
+      "Bash(.venv/bin/pytest tests/test_router.py tests/test_profiles.py -q)",
+      "Bash(.venv/bin/pytest tests/test_router.py tests/test_profiles.py tests/test_controller.py -q)",
+      "Bash(curl -sf http://localhost:8090/v1/models)",
+      "Bash(curl -sf http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":64}')",
+      "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":32}')",
+      "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"model\"\":\"\"gemma4-e2b\"\",\"\"messages\"\":[{\"\"role\"\":\"\"user\"\",\"\"content\"\":\"\"What is 2+2? Answer in one word.\"\"}],\"\"max_tokens\"\":32}')",
+      "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":256}')"
     ]
   }
 }

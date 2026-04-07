@@ -1,6 +1,6 @@
 # Pinned version — update deliberately after testing: make setup-force
 # To upgrade: change the version tag here, then run: make setup-force
-FROM localai/localai:v4.0.0-gpu-nvidia-cuda-12
+FROM localai/localai:v4.1.3-gpu-nvidia-cuda-12
 
 # Backends extracted from quay.io OCI images via scripts/extract-backend.sh.
 # Staged to /aicp-backends/ at build time, then copied into the /backends

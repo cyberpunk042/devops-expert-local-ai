@@ -40,35 +40,58 @@ def test_simple_question_routes_to_local():
     assert backend == "local"
 
 
-def test_complex_task_routes_to_claude():
+def test_complex_task_stays_local_in_think():
+    """Single complex keyword in THINK mode scores ~0.15 — stays local with default thresholds."""
     backend, reason = classify_task_with_reason(
         "Refactor the authentication module", Mode.THINK, _backends()
     )
+    assert backend == "local"
+    assert "complexity" in reason.lower()
+
+
+def test_highly_complex_task_routes_to_claude():
+    """Multiple complex keywords + multi-step → score > 0.6 → claude."""
+    backend, reason = classify_task_with_reason(
+        "Refactor the entire authentication module, then implement a new security "
+        "audit system, and after that deploy the architecture changes across files",
+        Mode.THINK, _backends()
+    )
     assert backend == "claude"
-    assert "refactor" in reason.lower()
 
 
 def test_edit_mode_routes_to_claude():
+    """Edit mode is in force_cloud_modes by default."""
     backend, reason = classify_task_with_reason(
         "Fix the typo", Mode.EDIT, _backends()
     )
     assert backend == "claude"
-    assert "edit" in reason.lower()
+    assert "force_cloud" in reason.lower()
 
 
 def test_act_mode_routes_to_claude():
+    """Act mode is in force_cloud_modes by default."""
     backend, reason = classify_task_with_reason(
         "Run the tests", Mode.ACT, _backends()
     )
     assert backend == "claude"
 
 
-def test_long_prompt_routes_to_claude():
+def test_edit_mode_stays_local_with_offline_config():
+    """Offline profile sets force_cloud_modes=[] — edit stays local."""
+    config = {"router": {"force_cloud_modes": []}}
+    backend, reason = classify_task_with_reason(
+        "Fix the typo", Mode.EDIT, _backends(), config=config
+    )
+    assert backend == "local"
+
+
+def test_long_prompt_stays_local():
+    """Long prompt in THINK mode scores ~0.25 — stays local with default thresholds."""
     backend, reason = classify_task_with_reason(
         "x " * 300, Mode.THINK, _backends()
     )
-    assert backend == "claude"
-    assert "long" in reason.lower()
+    assert backend == "local"
+    assert "complexity" in reason.lower()
 
 
 def test_only_local_available():
@@ -76,7 +99,7 @@ def test_only_local_available():
         "Refactor everything", Mode.THINK, _backends(claude_avail=False)
     )
     assert backend == "local"
-    assert "unavailable" in reason.lower() or "only" in reason.lower()
+    assert "unavailable" in reason.lower() or "only" in reason.lower() or "complexity" in reason.lower()
 
 
 def test_only_claude_available():
@@ -93,7 +116,7 @@ def test_default_think_mode():
         "some random prompt with no keywords", Mode.THINK, _backends()
     )
     assert backend == "local"
-    assert "default" in reason.lower()
+    assert "complexity" in reason.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -126,18 +149,32 @@ def test_fleet_ops_override_edit_mode():
     assert "fleet" in reason.lower()
 
 
-def test_security_routes_to_claude():
+def test_security_audit_routes_based_on_score():
+    """Security audit has 2 complex keywords (security + audit) → score ~0.3."""
     backend, reason = classify_task_with_reason(
         "security audit of the auth module", Mode.THINK, _backends()
     )
+    # score ≈ 0.30 (2 complex keywords × 0.15) — right at the threshold
+    assert backend in ("local", "openrouter")
+
+
+def test_heavy_security_task_routes_to_claude():
+    """Heavy security task with multiple signals → claude."""
+    backend, reason = classify_task_with_reason(
+        "Perform a full security audit and threat model review of the auth module, "
+        "then implement fixes and deploy the vulnerability patches",
+        Mode.THINK, _backends()
+    )
     assert backend == "claude"
 
 
-def test_sprint_planning_routes_to_claude():
+def test_sprint_planning_stays_local():
+    """Single planning keyword in THINK mode → local."""
     backend, reason = classify_task_with_reason(
         "sprint planning for next week", Mode.THINK, _backends()
     )
-    assert backend == "claude"
+    # score ≈ 0.15 (1 complex keyword) → local
+    assert backend == "local"
 
 
 # ---------------------------------------------------------------------------

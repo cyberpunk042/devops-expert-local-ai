@@ -17,6 +17,8 @@ backends:
 router:
   complexity_thresholds: [0.5, 0.9]
   failover_chain: [local, fleet]
+  # No cloud enforcement — edit/act mode stays local
+  force_cloud_modes: []
 
 rag:
   enabled: true
