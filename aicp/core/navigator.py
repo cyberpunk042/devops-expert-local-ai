@@ -194,9 +194,11 @@ class Navigator:
 
         This is the main entry point. It:
           1. Determines intent and profile
-          2. Gathers relevant content from KB
-          3. Assembles within token budget
-          4. Returns the augmented prompt
+          2. Reads system/module docs based on intent (E-M31)
+          3. Gathers KB content from LocalAI Collections
+          4. Applies profile branch levels (full/condensed/minimal/none)
+          5. Assembles within token budget
+          6. Returns the augmented prompt
 
         Args:
             prompt: Original user prompt.
@@ -214,13 +216,41 @@ class Navigator:
         if spec["profile"] == "heartbeat" or spec["budget_tokens"] == 0:
             return prompt
 
+        branches = spec.get("branches", {})
         parts: List[str] = []
         total = 0
 
-        # KB context from LocalAI Collections
-        if spec["inject_kb"]:
+        # 1. System docs (based on intent + profile branch level)
+        systems_branch = branches.get("systems", {})
+        systems_level = systems_branch.get("level", "none") if isinstance(systems_branch, dict) else "none"
+        if systems_level != "none":
+            inject_systems = spec.get("inject_systems", [])
+            for sys_name in inject_systems:
+                if total >= max_chars:
+                    break
+                content = self._load_system_doc(sys_name, systems_level)
+                if content:
+                    parts.append(f"[system:{sys_name}] {content}")
+                    total += len(content)
+
+        # 2. Module docs (based on intent + profile branch level)
+        modules_branch = branches.get("modules", {})
+        modules_level = modules_branch.get("level", "none") if isinstance(modules_branch, dict) else "none"
+        if modules_level != "none":
+            inject_modules = spec.get("inject_modules", [])
+            if inject_modules and total < max_chars:
+                content = self._load_module_docs(inject_modules, modules_level, max_chars - total)
+                if content:
+                    parts.append(f"[modules] {content}")
+                    total += len(content)
+
+        # 3. KB context from LocalAI Collections
+        kb_branch = branches.get("kb_context", {})
+        kb_level = kb_branch.get("level", "none") if isinstance(kb_branch, dict) else "none"
+        if kb_level != "none" and spec.get("inject_kb", False):
+            top_k = {"full": 5, "condensed": 3, "minimal": 1}.get(kb_level, 3)
             try:
-                results = self._search_collection(prompt, top_k=3)
+                results = self._search_collection(prompt, top_k=top_k)
                 for r in results:
                     text = r.get("content", r.get("text", ""))
                     if not text or total + len(text) > max_chars:
@@ -239,6 +269,119 @@ class Navigator:
             f"Context:\n{context_block}\n\n"
             f"Question: {prompt}"
         )
+
+    def _load_system_doc(self, name: str, level: str) -> Optional[str]:
+        """Load a system manual at the requested detail level.
+
+        Supports fuzzy matching: 'router' matches 'routing.md',
+        'controller' matches 'controller.md', etc.
+
+        Levels:
+          - full: entire document
+          - condensed: first section (up to first ## heading)
+          - minimal: first paragraph only
+          - none: skip
+        """
+        systems_dir = self.project_path / _MAP_DIR / "systems"
+        path = systems_dir / f"{name}.md"
+        if not path.exists():
+            # Fallback: try substring match (e.g. "cluster" matches "cluster.md")
+            if systems_dir.is_dir():
+                name_lower = name.lower()
+                for candidate in systems_dir.glob("*.md"):
+                    stem = candidate.stem.lower()
+                    if name_lower in stem or stem in name_lower:
+                        path = candidate
+                        break
+        if not path.exists():
+            return None
+        try:
+            text = path.read_text().strip()
+        except Exception:
+            return None
+        if not text:
+            return None
+
+        if level == "full":
+            return text
+        if level == "condensed":
+            # Up to second ## heading
+            lines = text.split("\n")
+            result = []
+            heading_count = 0
+            for line in lines:
+                if line.startswith("## "):
+                    heading_count += 1
+                    if heading_count > 1:
+                        break
+                result.append(line)
+            return "\n".join(result).strip()
+        if level == "minimal":
+            # First non-empty paragraph
+            for para in text.split("\n\n"):
+                stripped = para.strip()
+                if stripped and not stripped.startswith("#"):
+                    return stripped
+            return text[:200]
+        return None
+
+    def _load_module_docs(
+        self, modules: List[str], level: str, max_chars: int,
+    ) -> Optional[str]:
+        """Load module documentation at the requested detail level.
+
+        Reads from docs/knowledge-map/module-manual.md and extracts
+        sections matching the requested module names.
+        """
+        path = self.project_path / _MAP_DIR / "module-manual.md"
+        if not path.exists():
+            return None
+        try:
+            text = path.read_text()
+        except Exception:
+            return None
+
+        if level == "full":
+            return text[:max_chars]
+
+        # Extract sections matching module names
+        sections: List[str] = []
+        current_section = ""
+        current_name = ""
+
+        for line in text.split("\n"):
+            if line.startswith("### "):
+                if current_name and current_section:
+                    sections.append((current_name, current_section.strip()))
+                current_name = line.lstrip("# ").strip().lower()
+                current_section = line + "\n"
+            elif current_name:
+                current_section += line + "\n"
+        if current_name and current_section:
+            sections.append((current_name, current_section.strip()))
+
+        # Filter to requested modules
+        matched = []
+        total = 0
+        for name, content in sections:
+            if total >= max_chars:
+                break
+            # Match module names loosely
+            for mod in modules:
+                mod_lower = mod.lower().replace("_", "").replace("-", "")
+                name_clean = name.replace("_", "").replace("-", "").replace(".py", "")
+                if mod_lower in name_clean or name_clean in mod_lower:
+                    if level == "condensed":
+                        # First 3 lines of section
+                        content = "\n".join(content.split("\n")[:3])
+                    elif level == "minimal":
+                        # Just the heading
+                        content = content.split("\n")[0]
+                    matched.append(content)
+                    total += len(content)
+                    break
+
+        return "\n\n".join(matched) if matched else None
 
     def _search_collection(self, query: str, top_k: int = 3) -> List[Dict]:
         """Search the LocalAI collection for relevant content."""

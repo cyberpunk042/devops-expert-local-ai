@@ -266,6 +266,92 @@ class TestEndToEndPipeline:
         assert spec2["profile"] == "heartbeat"
 
 
+class TestProfileAwareAssembly:
+    """E-M31: Verify profile-based context assembly injects system/module docs."""
+
+    def test_code_task_injects_system_docs(self, monkeypatch):
+        """Code task with opus profile injects routing + backends system docs."""
+        nav = Navigator(_PROJECT_PATH)
+        monkeypatch.setattr(nav, "_search_collection", lambda q, **kw: [])
+        result = nav.assemble_context(
+            "implement a new router feature", Mode.THINK,
+            model="opus", context_window=1_000_000,
+        )
+        # Opus profile has systems: full, code_task intent injects routing + backends
+        assert "[system:routing]" in result
+        assert "[system:backends]" in result
+        assert "Context:" in result
+
+    def test_heartbeat_injects_nothing(self):
+        """Heartbeat profile returns prompt unchanged — no docs, no KB."""
+        nav = Navigator(_PROJECT_PATH)
+        result = nav.assemble_context(
+            "heartbeat", Mode.THINK, model="qwen3-8b-fast",
+        )
+        assert result == "heartbeat"
+
+    def test_localai_profile_skips_system_docs(self, monkeypatch):
+        """localai-8k profile has systems: none — no system docs injected."""
+        nav = Navigator(_PROJECT_PATH)
+        monkeypatch.setattr(nav, "_search_collection", lambda q, top_k=3: [
+            {"content": "some kb result"},
+        ])
+        result = nav.assemble_context(
+            "implement a function", Mode.THINK,
+            model="qwen3-8b", context_window=8192,
+        )
+        # localai-8k has systems: none, so no [system:*] blocks
+        assert "[system:" not in result
+
+    def test_load_system_doc_full(self):
+        """_load_system_doc at 'full' level returns entire document."""
+        nav = Navigator(_PROJECT_PATH)
+        doc = nav._load_system_doc("routing", "full")
+        assert doc is not None
+        assert len(doc) > 500  # routing.md is ~1500 chars
+
+    def test_load_system_doc_condensed(self):
+        """_load_system_doc at 'condensed' level returns first section only."""
+        nav = Navigator(_PROJECT_PATH)
+        full = nav._load_system_doc("routing", "full")
+        condensed = nav._load_system_doc("routing", "condensed")
+        assert condensed is not None
+        assert len(condensed) < len(full)
+
+    def test_load_system_doc_minimal(self):
+        """_load_system_doc at 'minimal' level returns first paragraph."""
+        nav = Navigator(_PROJECT_PATH)
+        minimal = nav._load_system_doc("routing", "minimal")
+        full = nav._load_system_doc("routing", "full")
+        assert minimal is not None
+        assert len(minimal) < len(full)
+
+    def test_load_system_doc_none(self):
+        """_load_system_doc at 'none' level returns None."""
+        nav = Navigator(_PROJECT_PATH)
+        assert nav._load_system_doc("routing", "none") is None
+
+    def test_load_system_doc_missing(self):
+        """_load_system_doc for nonexistent system returns None."""
+        nav = Navigator(_PROJECT_PATH)
+        assert nav._load_system_doc("nonexistent", "full") is None
+
+    def test_context_respects_max_chars(self, monkeypatch):
+        """Assembled context stays within max_chars budget."""
+        nav = Navigator(_PROJECT_PATH)
+        monkeypatch.setattr(nav, "_search_collection", lambda q, top_k=5: [
+            {"content": "x" * 5000},
+            {"content": "y" * 5000},
+        ])
+        result = nav.assemble_context(
+            "review the architecture", Mode.THINK,
+            model="opus", context_window=1_000_000,
+            max_chars=2000,
+        )
+        # Context block + question wrapper should be bounded
+        assert len(result) < 5000
+
+
 class TestProfileModelMatrix:
     """Verify all model × profile combinations produce valid specs."""
 

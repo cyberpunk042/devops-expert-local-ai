@@ -29,7 +29,7 @@ intents:
     inject:
       kb_context: true
       modules: ["relevant to task files"]
-      systems: [router, controller]
+      systems: [routing, backends]
     model_hint: "qwen3-8b"       # thinking mode helps
 
   # Architecture — user asks about system design
@@ -39,7 +39,7 @@ intents:
       complexity_above: 0.5
     inject:
       kb_context: true
-      systems: [router, controller, rag, lightrag, observability]
+      systems: [routing, backends, rag, observability]
       modules: ["core/*.py overview"]
       backends: [all]
     model_hint: null              # let router decide (likely claude)
