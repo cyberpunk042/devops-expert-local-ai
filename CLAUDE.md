@@ -134,6 +134,15 @@ config/                    # Default config files
     piper-tts.yaml         # Piper (text-to-speech)
     bge-reranker-v2-m3.yaml # BGE reranker (search)
     stablediffusion.yaml   # Stable Diffusion (image generation)
+  profiles/                # Configuration profiles (operational presets)
+    default.yaml           # Balanced defaults
+    fast.yaml              # Low-latency, no thinking
+    offline.yaml           # No cloud backends
+    thorough.yaml          # Max quality, deep RAG
+    code-review.yaml       # Code analysis, low temperature
+    fleet-light.yaml       # Minimal footprint heartbeat duty
+    dual-gpu.yaml          # Two GPUs, 30B MoE model
+    benchmark.yaml         # Deterministic evaluation (temp=0)
 models/                    # Runtime directory (gitignored entirely)
                            # Populated by: make setup (configs from config/models/ + binary downloads)
 docs/                      # Architecture and planning documents
@@ -310,6 +319,61 @@ make monitoring-down
 - LocalAI metrics: built-in at `:8090/metrics`
 - Alerting: `config/alerts.yaml` (7 rules: stuck model, latency, errors, swaps, quality, cost, memory)
 
+## Configuration Profiles
+
+Profiles are named configuration bundles that coordinate settings across backends,
+router, RAG, budget, cache, timeouts, and Docker with a single switch. They sit
+between `config/default.yaml` (base) and user/project overrides in the merge chain.
+
+### Config Load Order
+
+```
+1. config/default.yaml             — repo defaults (committed)
+2. config/profiles/<name>.yaml     — profile overlay (selected)
+3. ~/.aicp/config.yaml             — user-level overrides
+4. <project>/.aicp/config.yaml     — per-project overrides
+5. --config <path>                 — explicit CLI override
+```
+
+### Available Profiles
+
+| Profile | Primary Model | Failover | Use Case |
+|---------|--------------|----------|----------|
+| **default** | qwen3-8b | local→fleet→openrouter→claude | Balanced everyday use |
+| **fast** | qwen3-8b-fast | local→openrouter | Quick responses, low latency |
+| **offline** | qwen3-8b | local→fleet | No cloud, air-gapped environments |
+| **thorough** | qwen3-8b | full chain | Architecture reviews, security audits |
+| **code-review** | qwen3-8b | local→openrouter→claude | Code analysis, structured output |
+| **fleet-light** | qwen3-4b | local→fleet | Heartbeat node duty, minimal footprint |
+| **dual-gpu** | qwen3-30b-a3b | full chain | Two GPUs, MoE model, expanded context |
+| **benchmark** | qwen3-8b | local only | Deterministic evaluation (temp=0, seed=42) |
+
+### What Profiles Control
+
+Each profile can override: `backends`, `router` (complexity thresholds, failover chain),
+`mode_profiles` (sampling per mode), `rag`, `budget`, `cache`, `quality` (escalation threshold),
+`timeouts` (request, cold start, retries), `docker` (context size, threads, memory limit).
+
+Profiles do NOT control: model internals (GGUF, gpu_layers), mode definitions (Think/Edit/Act),
+guardrail rules, fleet topology, GPU detection, model binary downloads.
+
+### Profile Activation (3 methods, in precedence order)
+
+1. CLI flag: `aicp --profile fast "..."`
+2. Environment variable: `AICP_PROFILE=fast`
+3. `.env` file: set via `make profile-use PROFILE=fast`
+
+### Profile Inheritance
+
+Profiles can extend other profiles via `extends: default`. The extends chain is
+resolved bottom-up with deep merge (derived overrides base). Circular extends are detected.
+
+### Key Files
+
+- `config/profiles/*.yaml` — profile definitions
+- `aicp/core/profiles.py` — profile loader, validator, resolver, diff engine
+- `tests/test_profiles.py` — 49 profile tests
+
 ## Commands
 
 ```bash
@@ -329,6 +393,13 @@ ruff format aicp/ tests/
 curl http://localhost:8090/v1/models
 curl http://localhost:8090/v1/chat/completions -H "Content-Type: application/json" \
   -d '{"model":"qwen3-8b","messages":[{"role":"user","content":"Hello"}]}'
+
+# Profile management
+make profile-list                              # List available profiles
+make profile-show PROFILE=fast                 # Show resolved config for a profile
+make profile-diff PROFILE_A=fast PROFILE_B=offline  # Compare two profiles
+make profile-validate                          # Validate all profiles
+make profile-use PROFILE=fast                  # Set active profile (writes .env + docker vars)
 
 # Model management
 make model-qwen3             # Download Qwen3-8B + Qwen3-4B (8GB GPU)
