@@ -1,0 +1,44 @@
+# benchmark profile — deterministic output for model evaluation.
+#
+# Sets temperature=0 and seed=42 across all modes for reproducible
+# inference. Disables cache so every request hits the model. Enables
+# metrics collection. Ideal for A/B testing models or parameter sweeps.
+
+name: benchmark
+description: "Deterministic output — temp=0, seed=42, no cache, for model evaluation"
+extends: default
+
+backends:
+  local:
+    model: qwen3-8b
+    max_tokens: 4096
+    cache_prompt: false
+    auto_route: false
+
+router:
+  complexity_thresholds: [0.3, 0.6]
+  failover_chain: [local]
+
+mode_profiles:
+  think: { temperature: 0.0 }
+  edit:  { temperature: 0.0 }
+  act:   { temperature: 0.0 }
+
+rag:
+  enabled: false
+
+budget:
+  max_cost_usd: 0.0
+  max_duration_seconds: 300
+  max_steps: 10
+
+cache:
+  enabled: false
+
+quality:
+  threshold: 0.0
+
+timeouts:
+  request: 120
+  cold_start: 60
+  retries: 1

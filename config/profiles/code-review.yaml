@@ -1,0 +1,44 @@
+# code-review profile — optimized for code analysis and structured output.
+#
+# Uses the code model as primary, low temperature for deterministic output,
+# and enables auto-routing so code tasks stay on the code model.
+
+name: code-review
+description: "Code analysis — low temperature, structured output, code model primary"
+extends: default
+
+backends:
+  local:
+    model: qwen3-8b
+    code_model: qwen3-8b
+    max_tokens: 4096
+    cache_prompt: true
+    auto_route: true
+
+router:
+  complexity_thresholds: [0.3, 0.6]
+  failover_chain: [local, openrouter, claude]
+
+mode_profiles:
+  think: { temperature: 0.2 }
+  edit:  { temperature: 0.15 }
+  act:   { temperature: 0.1 }
+
+rag:
+  enabled: true
+  top_k: 5
+  rerank: true
+  max_context_chars: 4000
+
+budget:
+  max_cost_usd: 5.0
+  max_duration_seconds: 600
+  max_steps: 30
+
+quality:
+  threshold: 0.30
+
+timeouts:
+  request: 120
+  cold_start: 60
+  retries: 3

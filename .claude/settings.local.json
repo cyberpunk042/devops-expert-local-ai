@@ -70,7 +70,11 @@
       "Bash(.venv/bin/aicp --profile-cmd show --profile fast)",
       "Bash(.venv/bin/aicp --profile-cmd diff --profile fast --profile-arg offline)",
       "Bash(.venv/bin/aicp --profile-cmd validate)",
-      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py tests/test_router.py tests/test_controller.py tests/test_localai_backend.py tests/test_mode_sampling_wiring.py tests/test_vad_detect_profiles.py -q)"
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py tests/test_router.py tests/test_controller.py tests/test_localai_backend.py tests/test_mode_sampling_wiring.py tests/test_vad_detect_profiles.py -q)",
+      "Bash(.venv/bin/aicp --profile-cmd list)",
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_config.py tests/test_router.py tests/test_controller.py tests/test_localai_backend.py -q)",
+      "Bash(.venv/bin/aicp --profile-cmd use --profile fast)",
+      "Bash(.venv/bin/aicp --profile-cmd use --profile default)"
     ]
   }
 }

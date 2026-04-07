@@ -531,30 +531,51 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
         except (FileNotFoundError, ValueError) as e:
             print_error(str(e))
             return 1
-        # Write to .env
+        # Resolve profile to get docker settings
+        try:
+            overlay = resolve_profile(name)
+        except (FileNotFoundError, ValueError) as e:
+            print_error(str(e))
+            return 1
+
+        # Map docker profile settings to .env variables
+        docker_cfg = overlay.get("docker", {})
+        env_updates = {"AICP_PROFILE": name}
+        if "context_size" in docker_cfg:
+            env_updates["CONTEXT_SIZE"] = str(docker_cfg["context_size"])
+        if "threads" in docker_cfg:
+            env_updates["THREADS"] = str(docker_cfg["threads"])
+        if "parallel_slots" in docker_cfg:
+            env_updates["LLAMACPP_PARALLEL"] = str(docker_cfg["parallel_slots"])
+        if "mem_limit" in docker_cfg:
+            env_updates["DOCKER_MEM_LIMIT"] = str(docker_cfg["mem_limit"])
+
+        # Update .env file (preserve existing lines, update/add profile vars)
         env_path = Path(__file__).parent.parent.parent / ".env"
         lines = []
-        found = False
+        written_keys: set = set()
         if env_path.exists():
             with open(env_path) as f:
                 for line in f:
-                    if line.strip().startswith("AICP_PROFILE="):
-                        lines.append(f"AICP_PROFILE={name}\n")
-                        found = True
+                    key = line.strip().split("=", 1)[0] if "=" in line and not line.strip().startswith("#") else None
+                    if key and key in env_updates:
+                        lines.append(f"{key}={env_updates[key]}\n")
+                        written_keys.add(key)
                     else:
                         lines.append(line)
-        if not found:
-            lines.append(f"AICP_PROFILE={name}\n")
+        # Append any new keys not already in .env
+        for key, val in env_updates.items():
+            if key not in written_keys:
+                lines.append(f"{key}={val}\n")
         with open(env_path, "w") as f:
             f.writelines(lines)
+
         print(f"Active profile set to: {name}")
-        # Check if docker settings changed
-        try:
-            current_overlay = resolve_profile(name)
-            if "docker" in current_overlay:
-                print("NOTE: Docker settings changed. Run 'docker compose restart localai' to apply.")
-        except Exception:
-            pass
+        if docker_cfg:
+            docker_changes = {k: v for k, v in env_updates.items() if k != "AICP_PROFILE"}
+            if docker_changes:
+                print(f"Docker env updated: {', '.join(f'{k}={v}' for k, v in docker_changes.items())}")
+                print("Run 'docker compose restart localai' to apply Docker changes.")
         return 0
 
     print_error(f"Unknown profile command: {cmd}")

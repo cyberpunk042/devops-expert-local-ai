@@ -65,7 +65,7 @@ services:
               device_ids: ["0"]
               capabilities: [gpu]
         limits:
-          memory: 12G
+          memory: "${DOCKER_MEM_LIMIT:-12G}"
           cpus: "${DOCKER_CPU_LIMIT:-4.0}"
     restart: unless-stopped
 

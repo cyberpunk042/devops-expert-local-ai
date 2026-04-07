@@ -1,0 +1,53 @@
+# dual-gpu profile — both GPUs active, MoE model enabled.
+#
+# For the two-machine setup (8GB + 11GB VRAM) or single machine with
+# two GPUs. Enables the Qwen3-30B MoE model which needs ~18GB VRAM
+# split across GPUs via tensor_split.
+
+name: dual-gpu
+description: "Both GPUs active — 30B MoE model, expanded context, higher capacity"
+extends: default
+
+backends:
+  local:
+    model: qwen3-30b-a3b
+    fast_model: qwen3-8b-fast
+    fleet_model: qwen3-4b
+    code_model: qwen3-8b
+    max_tokens: 8192
+    cache_prompt: true
+    auto_route: true
+
+router:
+  complexity_thresholds: [0.3, 0.6]
+  failover_chain: [local, fleet, openrouter, claude]
+
+mode_profiles:
+  think: { temperature: 0.7 }
+  edit:  { temperature: 0.4 }
+  act:   { temperature: 0.1 }
+
+rag:
+  enabled: true
+  top_k: 8
+  rerank: true
+  max_context_chars: 5000
+
+budget:
+  max_cost_usd: 10.0
+  max_duration_seconds: 900
+  max_steps: 30
+
+quality:
+  threshold: 0.25
+
+timeouts:
+  request: 180
+  cold_start: 120
+  cold_start_interval: 10
+  retries: 3
+
+docker:
+  context_size: 32768
+  parallel_slots: 2
+  mem_limit: "20G"

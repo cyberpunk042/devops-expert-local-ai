@@ -1,0 +1,55 @@
+# fleet-light profile — minimal footprint for fleet heartbeat duty.
+#
+# Uses the lightweight fleet model (qwen3-4b) for everything, zero RAG,
+# minimal budgets. Designed for machines that primarily serve as fleet
+# nodes handling heartbeats, status checks, and simple agent tasks.
+
+name: fleet-light
+description: "Fleet heartbeat duty — lightweight model, zero RAG, minimal footprint"
+extends: default
+
+backends:
+  local:
+    model: qwen3-4b
+    fast_model: qwen3-4b
+    fleet_model: qwen3-4b
+    code_model: qwen3-4b
+    max_tokens: 1024
+    cache_prompt: true
+    auto_route: false
+
+router:
+  complexity_thresholds: [0.6, 0.9]
+  failover_chain: [local, fleet]
+
+mode_profiles:
+  think: { temperature: 0.3 }
+  edit:  { temperature: 0.2 }
+  act:   { temperature: 0.1 }
+
+rag:
+  enabled: false
+
+budget:
+  max_cost_usd: 0.0
+  max_duration_seconds: 60
+  max_steps: 5
+
+cache:
+  enabled: true
+  ttl_seconds: 900
+  max_entries: 64
+
+quality:
+  threshold: 0.10
+
+timeouts:
+  request: 30
+  cold_start: 30
+  cold_start_interval: 3
+  retries: 2
+
+docker:
+  context_size: 8192
+  parallel_slots: 2
+  mem_limit: "8G"

@@ -1,0 +1,54 @@
+# thorough profile — maximum quality, full reasoning.
+#
+# Uses the main model with thinking enabled, full RAG injection,
+# higher budgets, and lower quality thresholds (more escalation).
+# Ideal for architecture reviews, security audits, complex debugging.
+
+name: thorough
+description: "Max quality — full thinking, deep RAG, generous budgets"
+extends: default
+
+backends:
+  local:
+    model: qwen3-8b
+    max_tokens: 8192
+    cache_prompt: true
+
+router:
+  complexity_thresholds: [0.2, 0.5]
+  failover_chain: [local, fleet, openrouter, claude]
+
+mode_profiles:
+  think: { temperature: 0.7 }
+  edit:  { temperature: 0.5 }
+  act:   { temperature: 0.2 }
+
+rag:
+  enabled: true
+  top_k: 10
+  rerank: true
+  max_context_chars: 6000
+
+budget:
+  max_cost_usd: 25.0
+  max_duration_seconds: 1200
+  max_steps: 50
+  max_file_changes: 100
+
+cache:
+  enabled: true
+  ttl_seconds: 120
+  max_entries: 128
+
+quality:
+  threshold: 0.35
+
+timeouts:
+  request: 180
+  cold_start: 90
+  cold_start_interval: 5
+  retries: 4
+
+docker:
+  context_size: 16384
+  parallel_slots: 2
