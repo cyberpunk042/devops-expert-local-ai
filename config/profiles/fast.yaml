@@ -1,0 +1,52 @@
+# fast profile — low-latency mode for quick responses.
+#
+# Uses the fast model (no thinking), reduces RAG overhead, pushes more
+# tasks to local by raising the complexity threshold, and shortens
+# all timeouts and budgets.
+
+name: fast
+description: "Low-latency mode — smaller models, no thinking, minimal RAG"
+extends: default
+
+backends:
+  local:
+    model: qwen3-8b-fast
+    max_tokens: 2048
+    cache_prompt: true
+
+router:
+  complexity_thresholds: [0.5, 0.8]
+  failover_chain: [local, openrouter]
+
+mode_profiles:
+  think: { temperature: 0.3 }
+  edit:  { temperature: 0.2 }
+  act:   { temperature: 0.1 }
+
+rag:
+  top_k: 3
+  rerank: false
+  max_context_chars: 1500
+
+budget:
+  max_cost_usd: 1.0
+  max_duration_seconds: 120
+  max_steps: 10
+
+cache:
+  enabled: true
+  ttl_seconds: 600
+  max_entries: 512
+
+quality:
+  threshold: 0.15
+
+timeouts:
+  request: 60
+  cold_start: 30
+  cold_start_interval: 3
+  retries: 2
+
+docker:
+  context_size: 8192
+  parallel_slots: 4

@@ -1,0 +1,83 @@
+# default profile — codifies current AICP behavior as the baseline.
+#
+# All other profiles extend this one. Every setting here represents
+# the "normal" operating mode. Values match what's in config/default.yaml
+# and the hardcoded defaults across router.py, controller.py, localai.py.
+#
+# This file serves as documentation of all profile-configurable settings.
+
+name: default
+description: "Balanced operation — current AICP defaults"
+
+# --- Backend settings ---
+backends:
+  local:
+    model: qwen3-8b
+    fast_model: qwen3-8b-fast
+    fleet_model: qwen3-4b
+    code_model: qwen3-8b
+    max_tokens: 4096
+    cache_prompt: true
+    auto_route: true
+  claude:
+    model: opus
+    max_turns: 10
+    timeout: 300
+  openrouter:
+    max_tokens: 4096
+    timeout: 120
+
+# --- Router settings ---
+# complexity_thresholds: [low_cutoff, high_cutoff]
+#   score < low  → local
+#   score < high → openrouter
+#   score >= high → claude
+# failover_chain: ordered list of backends to try on failure
+router:
+  complexity_thresholds: [0.3, 0.6]
+  failover_chain: [local, fleet, openrouter, claude]
+
+# --- Sampling per mode ---
+mode_profiles:
+  think: { temperature: 0.7 }
+  edit:  { temperature: 0.4 }
+  act:   { temperature: 0.1 }
+
+# --- RAG / Knowledge ---
+rag:
+  enabled: true
+  top_k: 5
+  threshold: 0.3
+  rerank: true
+  max_context_chars: 3000
+
+# --- Budget ---
+budget:
+  max_cost_usd: 10.0
+  max_duration_seconds: 600
+  max_steps: 20
+  max_file_changes: 50
+
+# --- Cache ---
+cache:
+  enabled: true
+  ttl_seconds: 300
+  max_entries: 256
+
+# --- Quality ---
+quality:
+  threshold: 0.25
+
+# --- Timeouts ---
+timeouts:
+  request: 120
+  cold_start: 60
+  cold_start_interval: 5
+  retries: 3
+
+# --- Docker (requires restart when changed) ---
+docker:
+  context_size: 16384
+  threads: 4
+  parallel_slots: 2
+  mem_limit: "12G"

@@ -1,0 +1,40 @@
+# offline profile — no cloud backends, local-only operation.
+#
+# Disables OpenRouter and Claude entirely. All tasks route to LocalAI.
+# Failover chain is local-only with fleet peer as the only fallback.
+# Suitable for air-gapped environments or when preserving privacy.
+
+name: offline
+description: "No cloud backends — local and fleet peers only"
+extends: default
+
+backends:
+  local:
+    model: qwen3-8b
+    max_tokens: 4096
+    auto_route: true
+
+router:
+  complexity_thresholds: [0.5, 0.9]
+  failover_chain: [local, fleet]
+
+rag:
+  enabled: true
+  top_k: 5
+  rerank: true
+  max_context_chars: 3000
+
+budget:
+  max_cost_usd: 0.0
+  max_duration_seconds: 600
+  max_steps: 20
+
+quality:
+  # Higher threshold still triggers escalation, but failover chain
+  # only has fleet — so it retries on a peer, never cloud.
+  threshold: 0.25
+
+timeouts:
+  request: 120
+  cold_start: 90
+  retries: 5

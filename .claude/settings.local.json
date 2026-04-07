@@ -50,7 +50,21 @@
       "Bash(.venv/bin/pytest tests/test_navigator.py -v)",
       "Bash(.venv/bin/pytest tests/test_controller.py tests/test_navigator.py tests/test_router.py -v)",
       "Bash(.venv/bin/pytest tests/test_compaction.py tests/test_navigator.py -v)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s https://localai.io/docs/getting-started/customize-model/)",
+      "Bash(curl -s https://raw.githubusercontent.com/mudler/LocalAI/master/README.md)",
+      "Bash(curl -s https://docs.docker.com/compose/how-tos/profiles/)",
+      "WebFetch(domain:localai.io)",
+      "WebFetch(domain:docs.ollama.com)",
+      "WebFetch(domain:research.google)",
+      "WebFetch(domain:blog.google)",
+      "WebFetch(domain:www.dynaconf.com)",
+      "WebFetch(domain:docs.vllm.ai)",
+      "WebFetch(domain:hydra.cc)",
+      "WebFetch(domain:docs.docker.com)",
+      "Bash(.venv/bin/pytest tests/test_profiles.py -v)",
+      "Bash(.venv/bin/pytest tests/test_config.py tests/test_router.py tests/test_controller.py -v)",
+      "Bash(.venv/bin/pytest tests/ -v --ignore=tests/test_integration.py)"
     ]
   }
 }
