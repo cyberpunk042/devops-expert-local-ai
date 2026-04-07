@@ -237,7 +237,7 @@ class TestResolveProfile:
         overlay = resolve_profile("fast")
         # Fast extends default, so it should have default's settings
         # overridden by fast's settings
-        assert overlay["backends"]["local"]["model"] == "qwen3-8b-fast"
+        assert overlay["backends"]["local"]["model"] == "gemma4-e2b"
         # Cache from fast (overrides default's 300)
         assert overlay["cache"]["ttl_seconds"] == 600
 
@@ -311,7 +311,7 @@ class TestConfigLoaderIntegration:
     def test_load_config_with_fast_profile(self):
         """Profile overlay changes the primary model."""
         config = load_config(DEFAULT_CONFIG_PATH, profile="fast")
-        assert config["backends"]["local"]["model"] == "qwen3-8b-fast"
+        assert config["backends"]["local"]["model"] == "gemma4-e2b"
         assert config.get("_active_profile") == "fast"
 
     def test_load_config_with_offline_profile(self):

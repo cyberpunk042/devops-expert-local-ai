@@ -94,7 +94,7 @@ class Navigator:
             return "opus-1m"
         if any(p in model_lower for p in ["sonnet", "claude-sonnet", "qwen3-32b", "qwen3-30b"]):
             return "sonnet-200k"
-        if any(p in model_lower for p in ["qwen3-8b", "qwen3-4b", "hermes", "phi"]):
+        if any(p in model_lower for p in ["qwen3-8b", "qwen3-4b", "hermes", "phi", "gemma4"]):
             return "localai-8k"
 
         return "localai-8k"

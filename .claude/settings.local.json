@@ -89,7 +89,8 @@
       "Bash(curl -sf http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":64}')",
       "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":32}')",
       "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"model\"\":\"\"gemma4-e2b\"\",\"\"messages\"\":[{\"\"role\"\":\"\"user\"\",\"\"content\"\":\"\"What is 2+2? Answer in one word.\"\"}],\"\"max_tokens\"\":32}')",
-      "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":256}')"
+      "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":256}')",
+      "Bash(.venv/bin/pytest tests/test_profiles.py -q)"
     ]
   }
 }

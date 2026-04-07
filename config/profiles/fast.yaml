@@ -1,16 +1,17 @@
 # fast profile — low-latency mode for quick responses.
 #
-# Uses the fast model (no thinking), reduces RAG overhead, pushes more
-# tasks to local by raising the complexity threshold, and shortens
-# all timeouts and budgets.
+# Uses Gemma 4 E2B (2.3B, 53 tok/s peak) as primary — benchmarked 3-5x
+# faster than qwen3-8b-fast. Reduces RAG overhead, pushes more tasks to
+# local by raising complexity thresholds, and shortens all timeouts.
 
 name: fast
-description: "Low-latency mode — smaller models, no thinking, minimal RAG"
+description: "Low-latency mode — gemma4-e2b (53 tok/s), minimal RAG, short timeouts"
 extends: default
 
 backends:
   local:
-    model: qwen3-8b-fast
+    model: gemma4-e2b
+    fast_model: gemma4-e2b
     max_tokens: 2048
     cache_prompt: true
 
