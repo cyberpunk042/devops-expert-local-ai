@@ -1,19 +1,21 @@
 # fleet-light profile — minimal footprint for fleet heartbeat duty.
 #
-# Uses the lightweight fleet model (qwen3-4b) for everything, zero RAG,
-# minimal budgets. Designed for machines that primarily serve as fleet
-# nodes handling heartbeats, status checks, and simple agent tasks.
+# Uses Gemma 4 E2B (2.3B effective, 2.9GB) for everything. Benchmarked at
+# 51.7 tok/s vs qwen3-4b's 2.6 tok/s — 20x faster on simple Q&A, smaller
+# VRAM (~4GB), and multimodal (text+image+audio) as a bonus.
+# Zero RAG, minimal budgets. Designed for fleet nodes handling heartbeats,
+# status checks, and simple agent tasks.
 
 name: fleet-light
-description: "Fleet heartbeat duty — lightweight model, zero RAG, minimal footprint"
+description: "Fleet heartbeat duty — gemma4-e2b, zero RAG, minimal footprint"
 extends: default
 
 backends:
   local:
-    model: qwen3-4b
-    fast_model: qwen3-4b
-    fleet_model: qwen3-4b
-    code_model: qwen3-4b
+    model: gemma4-e2b
+    fast_model: gemma4-e2b
+    fleet_model: gemma4-e2b
+    code_model: gemma4-e2b
     max_tokens: 1024
     cache_prompt: true
     auto_route: false
