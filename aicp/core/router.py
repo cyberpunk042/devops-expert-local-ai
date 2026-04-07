@@ -72,7 +72,11 @@ class ComplexityScore:
         return f"{self.score:.2f} ({', '.join(parts)})" if parts else f"{self.score:.2f}"
 
 
-def analyze_complexity(prompt: str, mode: Mode) -> ComplexityScore:
+def analyze_complexity(
+    prompt: str,
+    mode: Mode,
+    config: Dict[str, Any] = None,
+) -> ComplexityScore:
     """Analyze prompt complexity and return a weighted score.
 
     Signals and their weights:
@@ -84,6 +88,9 @@ def analyze_complexity(prompt: str, mode: Mode) -> ComplexityScore:
       - multi_step:     0.15 if prompt implies multiple steps
       - question_mark:  -0.05 (questions tend to be simpler)
       - fleet_op:       -0.3 (fleet ops are always simple)
+
+    Tier thresholds are configurable via config["router"]["complexity_thresholds"]
+    (default: [0.3, 0.6]).
     """
     signals: Dict[str, float] = {}
 
@@ -144,10 +151,15 @@ def analyze_complexity(prompt: str, mode: Mode) -> ComplexityScore:
     raw = sum(signals.values())
     score = max(0.0, min(1.0, raw))
 
-    # Determine tier
-    if score < 0.3:
+    # Determine tier (thresholds configurable via profile/config)
+    router_cfg = (config or {}).get("router", {})
+    thresholds = router_cfg.get("complexity_thresholds", [0.3, 0.6])
+    low_cutoff = thresholds[0] if len(thresholds) > 0 else 0.3
+    high_cutoff = thresholds[1] if len(thresholds) > 1 else 0.6
+
+    if score < low_cutoff:
         tier = "local"
-    elif score < 0.6:
+    elif score < high_cutoff:
         tier = "openrouter"
     else:
         tier = "claude"

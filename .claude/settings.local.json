@@ -64,7 +64,9 @@
       "WebFetch(domain:docs.docker.com)",
       "Bash(.venv/bin/pytest tests/test_profiles.py -v)",
       "Bash(.venv/bin/pytest tests/test_config.py tests/test_router.py tests/test_controller.py -v)",
-      "Bash(.venv/bin/pytest tests/ -v --ignore=tests/test_integration.py)"
+      "Bash(.venv/bin/pytest tests/ -v --ignore=tests/test_integration.py)",
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_router.py tests/test_controller.py tests/test_localai_backend.py -v)",
+      "Bash(.venv/bin/pytest tests/test_config.py tests/test_mode_sampling_wiring.py tests/test_vad_detect_profiles.py -v)"
     ]
   }
 }

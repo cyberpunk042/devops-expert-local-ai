@@ -362,6 +362,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
     """Instantiate backends from config."""
     local_cfg = get_backend_config(config, "local")
     claude_cfg = get_backend_config(config, "claude")
+    timeouts_cfg = config.get("timeouts", {})
     return {
         "local": LocalAIBackend(
             base_url=local_cfg.get("base_url", "http://localhost:8090"),
@@ -391,6 +392,11 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             frequency_penalty=local_cfg.get("frequency_penalty"),
             presence_penalty=local_cfg.get("presence_penalty"),
             mode_profiles=local_cfg.get("mode_profiles"),
+            # Timeouts and retries (profile-configurable)
+            request_timeout=timeouts_cfg.get("request"),
+            cold_start_timeout=timeouts_cfg.get("cold_start"),
+            cold_start_interval=timeouts_cfg.get("cold_start_interval"),
+            max_retries=timeouts_cfg.get("retries"),
         ),
         "claude": ClaudeCodeBackend(
             model=claude_cfg.get("model", "opus"),

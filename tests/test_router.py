@@ -411,3 +411,41 @@ def test_cost_openrouter_free():
 def test_cost_claude_is_expensive():
     cost = estimate_cost("claude", 1000, 500)
     assert cost > 0
+
+
+# ---------------------------------------------------------------------------
+# Config-driven complexity thresholds (profile support)
+# ---------------------------------------------------------------------------
+
+
+def test_complexity_custom_thresholds_pushes_to_local():
+    """With higher thresholds, medium-complexity prompts stay local."""
+    config = {"router": {"complexity_thresholds": [0.7, 0.9]}}
+    result = analyze_complexity(
+        "refactor the login function",
+        Mode.THINK,
+        config=config,
+    )
+    # Score ~0.15-0.3 — with default thresholds this would be local/openrouter.
+    # With [0.7, 0.9] it should definitely be local.
+    assert result.recommended_tier == "local"
+
+
+def test_complexity_custom_thresholds_shifts_tiers():
+    """Lower thresholds push more tasks to cloud."""
+    config = {"router": {"complexity_thresholds": [0.05, 0.1]}}
+    result = analyze_complexity(
+        "refactor the auth module and implement new endpoints",
+        Mode.THINK,
+        config=config,
+    )
+    # Complex keywords should push score above 0.1 → claude with low thresholds
+    assert result.recommended_tier == "claude"
+
+
+def test_complexity_default_thresholds_without_config():
+    """Without config, default thresholds [0.3, 0.6] are used."""
+    result = analyze_complexity("heartbeat", Mode.THINK)
+    assert result.recommended_tier == "local"
+    result2 = analyze_complexity("refactor and implement the full system", Mode.ACT)
+    assert result2.recommended_tier == "claude"

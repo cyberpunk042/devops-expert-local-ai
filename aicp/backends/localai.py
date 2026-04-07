@@ -22,9 +22,11 @@ _CODE_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-# How long to wait for a model to finish loading on cold start
+# Default timeouts (overridable via config["timeouts"] / profile)
 _COLD_START_TIMEOUT = 60.0   # seconds
 _COLD_START_INTERVAL = 5.0   # seconds between polls
+_REQUEST_TIMEOUT = 120.0     # seconds per HTTP request
+_MAX_RETRIES = 3             # retry attempts on 5xx errors
 
 
 class LocalAIBackend(Backend):
@@ -60,6 +62,11 @@ class LocalAIBackend(Backend):
         presence_penalty: Optional[float] = None,
         # Mode-aware sampling profiles (overrides _MODE_SAMPLING defaults)
         mode_profiles: Optional[dict] = None,
+        # Timeouts and retries (overridable via profile)
+        request_timeout: Optional[float] = None,
+        cold_start_timeout: Optional[float] = None,
+        cold_start_interval: Optional[float] = None,
+        max_retries: Optional[int] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -90,6 +97,11 @@ class LocalAIBackend(Backend):
         self.presence_penalty = presence_penalty
         # Session-wide seed for reproducible inference (None = random)
         self.seed: Optional[int] = None
+        # Timeouts and retries (profile-configurable)
+        self.request_timeout = request_timeout if request_timeout is not None else _REQUEST_TIMEOUT
+        self.cold_start_timeout = cold_start_timeout if cold_start_timeout is not None else _COLD_START_TIMEOUT
+        self.cold_start_interval = cold_start_interval if cold_start_interval is not None else _COLD_START_INTERVAL
+        self.max_retries = max_retries if max_retries is not None else _MAX_RETRIES
         # Mode profiles: deep-merge user config over built-in defaults
         if mode_profiles:
             merged = {}
@@ -471,10 +483,12 @@ class LocalAIBackend(Backend):
 
     def _wait_for_model(
         self,
-        timeout: float = _COLD_START_TIMEOUT,
-        interval: float = _COLD_START_INTERVAL,
+        timeout: Optional[float] = None,
+        interval: Optional[float] = None,
     ) -> bool:
         """Poll until the model appears in /v1/models or timeout is reached."""
+        timeout = timeout if timeout is not None else self.cold_start_timeout
+        interval = interval if interval is not None else self.cold_start_interval
         elapsed = 0.0
         while elapsed < timeout:
             if self._is_model_loaded():
@@ -514,13 +528,13 @@ class LocalAIBackend(Backend):
         last_error: Optional[str] = None
         response = None
 
-        for attempt in range(3):
+        for attempt in range(self.max_retries):
             try:
                 response = httpx.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=payload,
                     headers=headers,
-                    timeout=120.0,
+                    timeout=self.request_timeout,
                 )
                 if response.status_code >= 500:
                     try:
@@ -530,7 +544,7 @@ class LocalAIBackend(Backend):
                         msg = response.text
                     last_error = msg
 
-                    if attempt < 2:
+                    if attempt < self.max_retries - 1:
                         # Model may still be cold-loading — wait for it to appear
                         # before retrying rather than sleeping a fixed amount.
                         self._wait_for_model()
@@ -560,7 +574,7 @@ class LocalAIBackend(Backend):
                     payload["model"] = self.fallback_model
                     response = httpx.post(
                         f"{self.base_url}/v1/chat/completions",
-                        json=payload, headers=headers, timeout=120.0,
+                        json=payload, headers=headers, timeout=self.request_timeout,
                     )
                     if response.status_code < 400:
                         pass  # success — fall through to parse

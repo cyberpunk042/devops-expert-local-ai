@@ -302,3 +302,108 @@ class TestIntercept:
         assert result == "normal response"
         assert ctrl.last_route == "local"
         backend.execute.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Profile-driven configuration
+# ---------------------------------------------------------------------------
+
+
+class TestProfileConfig:
+    """Test that profile settings are respected by the controller."""
+
+    def test_failover_chain_from_config(self, tmp_path):
+        """Failover chain should follow config order, not hardcoded order."""
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.execute.return_value = "claude result"
+        claude_backend.last_usage = {}
+
+        openrouter_backend = MagicMock()
+        openrouter_backend.execute.return_value = "openrouter result"
+        openrouter_backend.last_usage = {}
+
+        # Config says failover order is local → claude (skip openrouter and fleet)
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend, "openrouter": openrouter_backend},
+            config={
+                "cluster": {"auto_route": True, "config_file": "/nonexistent"},
+                "router": {"failover_chain": ["local", "claude"]},
+            },
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+        result = ctrl.run(task)
+
+        assert result == "claude result"
+        assert ctrl.last_route == "failover:claude"
+        # OpenRouter should NOT have been called (not in failover chain)
+        openrouter_backend.execute.assert_not_called()
+
+    def test_offline_profile_failover_chain(self, tmp_path):
+        """Offline profile (local-only failover) should never try cloud backends."""
+        local_backend = MagicMock()
+        local_backend.execute.side_effect = RuntimeError("LocalAI down")
+        local_backend.last_usage = {}
+
+        claude_backend = MagicMock()
+        claude_backend.last_usage = {}
+
+        # Offline profile: failover only to fleet, no cloud
+        ctrl = Controller(
+            backends={"local": local_backend, "claude": claude_backend},
+            config={
+                "cluster": {"auto_route": True, "config_file": "/nonexistent"},
+                "router": {"failover_chain": ["local", "fleet"]},
+            },
+        )
+        task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
+
+        # Should raise because no fleet peers and no cloud in chain
+        with pytest.raises(RuntimeError, match="LocalAI down"):
+            ctrl.run(task)
+        claude_backend.execute.assert_not_called()
+
+    def test_quality_threshold_from_profile(self):
+        """Quality threshold should be read from quality.threshold config."""
+        ctrl = Controller(
+            backends={},
+            config={"quality": {"threshold": 0.15}},
+        )
+        assert ctrl.quality_threshold == 0.15
+
+    def test_quality_threshold_legacy_fallback(self):
+        """Legacy flat quality_threshold key should still work."""
+        ctrl = Controller(
+            backends={},
+            config={"quality_threshold": 0.30},
+        )
+        assert ctrl.quality_threshold == 0.30
+
+    def test_quality_threshold_profile_overrides_legacy(self):
+        """Profile quality.threshold should take precedence over legacy key."""
+        ctrl = Controller(
+            backends={},
+            config={
+                "quality": {"threshold": 0.10},
+                "quality_threshold": 0.50,
+            },
+        )
+        assert ctrl.quality_threshold == 0.10
+
+    def test_default_failover_chain(self):
+        """Without config, default failover chain is used."""
+        ctrl = Controller(backends={}, config={})
+        assert ctrl.failover_chain == ["local", "fleet", "openrouter", "claude"]
+
+    def test_cache_from_config(self):
+        """Cache settings should be read from config."""
+        ctrl = Controller(
+            backends={},
+            config={"cache": {"enabled": False, "ttl_seconds": 600, "max_entries": 128}},
+        )
+        assert ctrl.cache_enabled is False
+        assert ctrl._cache.ttl == 600
+        assert ctrl._cache.max_entries == 128

@@ -152,7 +152,16 @@ class Controller:
         )
         self.cache_enabled = cache_cfg.get("enabled", True)
         # Quality threshold for auto-escalation (E-M49)
-        self.quality_threshold = self.config.get("quality_threshold", 0.25)
+        # Supports both flat key (legacy) and nested quality.threshold (profile)
+        quality_cfg = self.config.get("quality", {})
+        self.quality_threshold = quality_cfg.get(
+            "threshold", self.config.get("quality_threshold", 0.25)
+        )
+        # Failover chain (profile-configurable)
+        router_cfg = self.config.get("router", {})
+        self.failover_chain: list = router_cfg.get(
+            "failover_chain", ["local", "fleet", "openrouter", "claude"]
+        )
         # Token budget (E-M51)
         budget_cfg = self.config.get("budget", {})
         self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
@@ -392,44 +401,40 @@ class Controller:
                     if not failover_enabled:
                         raise
 
-                    # Failover chain: local → fleet peer → openrouter → claude
-                    logger.warning("Local backend failed: %s — trying failover", local_err)
+                    # Failover chain (configurable via profile, default: local → fleet → openrouter → claude)
+                    logger.warning("Local backend failed: %s — trying failover chain: %s",
+                                   local_err, self.failover_chain)
 
-                    # Step 1: try fleet peers
-                    peer_result = self._try_fleet_failover(task)
-                    if peer_result is not None:
-                        result = peer_result
-                    else:
-                        # Step 2: try OpenRouter (free middle tier)
-                        openrouter = self.backends.get("openrouter")
-                        if openrouter and task.backend_name != "openrouter":
+                    result = None
+                    for failover_name in self.failover_chain:
+                        # Skip the backend that just failed
+                        if failover_name == task.backend_name:
+                            continue
+
+                        # Fleet is handled specially (peer routing)
+                        if failover_name == "fleet":
+                            peer_result = self._try_fleet_failover(task)
+                            if peer_result is not None:
+                                result = peer_result
+                                break
+                            continue
+
+                        # Try the named backend
+                        fb = self.backends.get(failover_name)
+                        if fb and failover_name != task.backend_name:
                             try:
-                                logger.info("Failover: trying OpenRouter")
-                                self.last_route = "failover:openrouter"
-                                result = openrouter.execute(
+                                logger.info("Failover: trying %s", failover_name)
+                                self.last_route = f"failover:{failover_name}"
+                                result = fb.execute(
                                     task.prompt, task.mode, task.project_path
                                 )
-                            except Exception as or_err:
-                                logger.warning("Failover: OpenRouter failed: %s", or_err)
-                                result = None
-                        else:
-                            result = None
+                                break
+                            except Exception as fb_err:
+                                logger.warning("Failover: %s failed: %s", failover_name, fb_err)
+                                continue
 
-                        # Step 3: try Claude (if OpenRouter also failed)
-                        if result is None:
-                            claude = self.backends.get("claude")
-                            if claude and task.backend_name != "claude":
-                                try:
-                                    logger.info("Failover: escalating to Claude")
-                                    self.last_route = "failover:claude"
-                                    result = claude.execute(
-                                        task.prompt, task.mode, task.project_path
-                                    )
-                                except Exception as claude_err:
-                                    logger.error("Failover: Claude also failed: %s", claude_err)
-                                    raise local_err from None
-                            else:
-                                raise local_err from None
+                    if result is None:
+                        raise local_err from None
 
         except Exception as e:
             error = str(e)
