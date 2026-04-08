@@ -32,6 +32,9 @@ done
 # compiles from the pinned sd.cpp @ 8afbeb6 with CUDA and stages libgosd-avx2.so.
 for patch_backend in /aicp-backends/*-rebuild/; do
     [ -d "$patch_backend" ] || continue
+    # Skip empty rebuild dirs (CUDA not available during build)
+    file_count=$(find "$patch_backend" -maxdepth 1 -type f | wc -l)
+    [ "$file_count" -gt 0 ] || continue
     # cuda12-stablediffusion-ggml-rebuild → cuda12-stablediffusion-ggml
     target_name=$(basename "$patch_backend" | sed 's/-rebuild$//')
     target_dir="/backends/$target_name"

@@ -198,7 +198,8 @@ LocalAI is running and functional on Docker with GPU acceleration.
 | piper-tts | `piper-tts.yaml` | Text-to-speech |
 | bge-reranker | `bge-reranker-v2-m3.yaml` | Search reranking |
 | nomic-embed | `nomic-embed.yaml` | Embeddings |
-| stablediffusion | `stablediffusion.yaml` | Image generation |
+| **sd35-medium** | `sd35-medium.yaml` | **Image gen (SD 3.5 Medium, default)** |
+| stablediffusion | `stablediffusion.yaml` | Image gen (SD 1.5, legacy fallback) |
 
 ### Key Findings
 
@@ -516,6 +517,11 @@ make model-gemma4            # Download Gemma 4 E2B + E4B (8GB GPU)
 make model-gemma4-26b        # Download Gemma 4 26B MoE (dual GPU 8+11GB only)
 make model-list-remote       # Show full model catalog with VRAM info
 make benchmark-qwen3         # Benchmark Qwen3-8B
+
+# Stable Diffusion 3.5 (auto-handled by make setup if CUDA + HF token available)
+make build-libgosd           # Rebuild libgosd.so for SD 3.5 support (auto in setup)
+make sd35-test               # Generate SD 3.5 image via LocalAI API
+make model-sd35-safetensors  # Download SD 3.5 safetensors (needs HF token in .env)
 
 # Knowledge Base (syncs to LocalAI Collections — visible at :8090/app/collections)
 make kb-sync                 # Upload KB docs to LocalAI collection

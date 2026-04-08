@@ -494,13 +494,28 @@ Results:
 
 **Binaries built:** `/tmp/sd-cpp-build/build/bin/sd-cli` (211 MB), `sd-server` (213 MB)
 
-### Paths Forward
+### Resolution: Rebuilt libgosd.so (2026-04-08)
 
-1. **sd-server sidecar** — run sd.cpp's built-in HTTP server on a separate port,
-   route image requests from AICP. Bypasses LocalAI's broken wrapper entirely.
-2. **File LocalAI issue** — request updated sd.cpp in stablediffusion-ggml backend
-3. **Wait for LocalAI v4.2+** — will likely update the backend
-4. **ComfyUI sidecar** — Docker container with proven SD 3.5 support (alternative)
+**Root cause:** The gallery OCI image for `cuda12-stablediffusion-ggml` was built from
+an older sd.cpp — but LocalAI v4.1.3's *source code* already pins sd.cpp @ `8afbeb6`
+(which supports SD 3.5). The gallery image just wasn't rebuilt.
+
+**Fix:** Rebuilt `libgosd-avx2.so` from vendored LocalAI source with CUDA:
+- Script: `scripts/build-libgosd.sh` (self-contained, clones vendor/LocalAI on demand)
+- Output: `backends/cuda12-stablediffusion-ggml-rebuild/libgosd-avx2.so` (211 MB)
+- Entrypoint: patches the rebuilt `.so` over the gallery version at container startup
+- Zero Go recompilation needed — pure dlopen/purego dynamic loading
+
+**SD 3.5 now works through LocalAI's standard `/v1/images/generations` API.**
+Fully integrated into `make setup` flow (auto-builds if CUDA available, downloads
+models with interactive HF token prompt).
+
+### Paths Forward (historical, preserved for reference)
+
+1. ~~**sd-server sidecar**~~ — no longer needed, LocalAI works with rebuilt .so
+2. ~~**File LocalAI issue**~~ — source is already fixed, just gallery image is stale
+3. ~~**Wait for LocalAI v4.2+**~~ — we ship our own rebuilt .so, independent of gallery
+4. **ComfyUI sidecar** — still relevant for advanced workflows (ControlNet, LoRA, inpainting)
 
 ---
 

@@ -343,8 +343,21 @@ for src in config/models/*.yaml; do
     # Skip configs whose backend isn't pre-extracted (avoids runtime downloads)
     backend=$(grep "^backend:" "$src" 2>/dev/null | awk '{print $2}')
     if [[ -n "$backend" ]]; then
-        # Check if backend exists (exact match or cuda12- variant)
-        if [[ ! -d "backends/$backend" && ! -d "backends/cuda12-$backend" ]]; then
+        # Check if backend exists: exact, cuda12- variant, or cuda12-*-rebuild (patched)
+        # Note: gallery backends (e.g. stablediffusion-ggml) are installed inside
+        # the Docker container at runtime by entrypoint.sh — only check for
+        # pre-extracted or rebuilt backends on host.
+        BACKEND_FOUND=0
+        for bdir in "backends/$backend" "backends/cuda12-$backend" "backends/cuda12-$backend-rebuild"; do
+            [[ -d "$bdir" ]] && BACKEND_FOUND=1 && break
+        done
+        # Also check if it's a gallery backend (installed at runtime, not on host)
+        if [[ "$BACKEND_FOUND" -eq 0 ]]; then
+            if grep -q "$backend" "$REPO_ROOT/scripts/entrypoint.sh" 2>/dev/null; then
+                BACKEND_FOUND=1  # gallery backend, installed at container startup
+            fi
+        fi
+        if [[ "$BACKEND_FOUND" -eq 0 ]]; then
             log_info "Skipping $(basename "$src") — backend '$backend' not extracted"
             SKIPPED=$((SKIPPED + 1))
             continue
@@ -361,9 +374,19 @@ done
 for deployed in models/*.yaml; do
     [[ -f "$deployed" ]] || continue
     dbackend=$(grep "^backend:" "$deployed" 2>/dev/null | awk '{print $2}')
-    if [[ -n "$dbackend" && ! -d "backends/$dbackend" && ! -d "backends/cuda12-$dbackend" ]]; then
-        rm -f "$deployed"
-        log_info "Removed stale $(basename "$deployed") — backend '$dbackend' not available"
+    if [[ -n "$dbackend" ]]; then
+        DBACKEND_FOUND=0
+        for bdir in "backends/$dbackend" "backends/cuda12-$dbackend" "backends/cuda12-$dbackend-rebuild"; do
+            [[ -d "$bdir" ]] && DBACKEND_FOUND=1 && break
+        done
+        # Gallery backends are OK (installed at runtime)
+        if [[ "$DBACKEND_FOUND" -eq 0 ]] && grep -q "$dbackend" "$REPO_ROOT/scripts/entrypoint.sh" 2>/dev/null; then
+            DBACKEND_FOUND=1
+        fi
+        if [[ "$DBACKEND_FOUND" -eq 0 ]]; then
+            rm -f "$deployed"
+            log_info "Removed stale $(basename "$deployed") — backend '$dbackend' not available"
+        fi
     fi
 done
 
@@ -488,6 +511,73 @@ else
     log_skip "Stable Diffusion: $SD_MODEL"
 fi
 
+# ── Stable Diffusion 3.5 Medium (optional, requires HuggingFace token) ─────
+# SD 3.5 needs: 3 public GGUF encoders (~3.4 GB) + 1 gated safetensors (~5.1 GB)
+# The safetensors requires a HuggingFace account + license acceptance:
+#   https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
+SD35_CLIP_L="clip_l-Q8_0.gguf"
+SD35_CLIP_G="clip_g-Q8_0.gguf"
+SD35_T5XXL="t5xxl-Q4_0.gguf"
+SD35_SAFETENSORS="sd3.5_medium.safetensors"
+SD35_CLIP_L_URL="https://huggingface.co/city96/stable-diffusion-3.5-medium-gguf/resolve/main/clip_l-Q8_0.gguf"
+SD35_CLIP_G_URL="https://huggingface.co/city96/stable-diffusion-3.5-medium-gguf/resolve/main/clip_g-Q8_0.gguf"
+SD35_T5XXL_URL="https://huggingface.co/city96/stable-diffusion-3.5-medium-gguf/resolve/main/t5xxl-Q4_0.gguf"
+SD35_SAFETENSORS_URL="https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"
+
+# Download public GGUF text encoders (no token needed)
+SD35_ENCODERS_NEEDED=0
+for f in "$SD35_CLIP_L" "$SD35_CLIP_G" "$SD35_T5XXL"; do
+    [[ ! -f "models/$f" ]] && SD35_ENCODERS_NEEDED=1
+done
+if [[ "$SD35_ENCODERS_NEEDED" -eq 1 ]]; then
+    log_step "Downloading SD 3.5 text encoders (CLIP-L + CLIP-G + T5-XXL, ~3.4 GB)"
+    [[ ! -f "models/$SD35_CLIP_L" ]] && curl -L --progress-bar -C - -o "models/$SD35_CLIP_L" "$SD35_CLIP_L_URL"
+    [[ ! -f "models/$SD35_CLIP_G" ]] && curl -L --progress-bar -C - -o "models/$SD35_CLIP_G" "$SD35_CLIP_G_URL"
+    [[ ! -f "models/$SD35_T5XXL" ]] && curl -L --progress-bar -C - -o "models/$SD35_T5XXL" "$SD35_T5XXL_URL"
+    log_ok "Downloaded SD 3.5 text encoders"
+else
+    log_skip "SD 3.5 encoders: clip_l, clip_g, t5xxl"
+fi
+
+# Download gated safetensors (needs HF token)
+if [[ ! -f "models/$SD35_SAFETENSORS" ]]; then
+    # Check .env for existing token
+    HF_TOKEN="${HUGGINGFACE_API_KEY:-}"
+    if [[ -z "$HF_TOKEN" && -f "$REPO_ROOT/.env" ]]; then
+        HF_TOKEN=$(grep -E '^HUGGINGFACE_API_KEY=' "$REPO_ROOT/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || true)
+    fi
+    if [[ -z "$HF_TOKEN" ]]; then
+        echo ""
+        log_info "SD 3.5 Medium safetensors is gated — requires a HuggingFace token."
+        log_info "1. Create a free account at https://huggingface.co"
+        log_info "2. Accept the license at https://huggingface.co/stabilityai/stable-diffusion-3.5-medium"
+        log_info "3. Create a read token at https://huggingface.co/settings/tokens"
+        echo ""
+        read -rp "  Paste your HuggingFace token (or press Enter to skip SD 3.5): " HF_TOKEN
+        echo ""
+        if [[ -n "$HF_TOKEN" ]]; then
+            # Persist to .env for future runs
+            if grep -q '^HUGGINGFACE_API_KEY=' "$REPO_ROOT/.env" 2>/dev/null; then
+                sed -i "s|^HUGGINGFACE_API_KEY=.*|HUGGINGFACE_API_KEY=$HF_TOKEN|" "$REPO_ROOT/.env"
+            else
+                echo "HUGGINGFACE_API_KEY=$HF_TOKEN" >> "$REPO_ROOT/.env"
+            fi
+            log_ok "HuggingFace token saved to .env"
+        fi
+    fi
+    if [[ -n "$HF_TOKEN" ]]; then
+        log_step "Downloading SD 3.5 Medium safetensors (~5.1 GB, gated)"
+        curl -L --progress-bar -C - \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            -o "models/$SD35_SAFETENSORS" "$SD35_SAFETENSORS_URL"
+        log_ok "Downloaded $SD35_SAFETENSORS"
+    else
+        log_info "Skipping SD 3.5 safetensors (no HF token). Run 'make model-sd35-safetensors' later."
+    fi
+else
+    log_skip "SD 3.5 Medium: $SD35_SAFETENSORS"
+fi
+
 # BGE Reranker
 RERANKER_MODEL="bge-reranker-v2-m3-Q4_K_M.gguf"
 RERANKER_URL="https://huggingface.co/nicoboss/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q4_K_M.gguf"
@@ -582,6 +672,28 @@ if [[ "$BACKENDS_NEEDED" -eq 1 || "$FORCE" -eq 1 ]]; then
     STEPS_DONE+=("backend-extract")
 else
     log_skip "All backends already extracted (cuda12-llama-cpp, whisper, piper)"
+fi
+
+# ── Build patched libgosd.so for SD 3.5 support ────────────────────────────
+# The gallery OCI backend ships a stale sd.cpp without SD 3.5 VAE support.
+# build-libgosd.sh rebuilds from vendored source with CUDA. Idempotent.
+# Creates: backends/cuda12-stablediffusion-ggml-rebuild/libgosd-avx2.so
+if command -v nvcc &>/dev/null; then
+    if [[ ! -f "$REPO_ROOT/backends/cuda12-stablediffusion-ggml-rebuild/libgosd-avx2.so" || "$FORCE" -eq 1 ]]; then
+        log_step "Building patched libgosd.so (SD 3.5 support, CUDA)..."
+        if [[ "$FORCE" -eq 1 ]]; then
+            bash "$REPO_ROOT/scripts/build-libgosd.sh" --force
+        else
+            bash "$REPO_ROOT/scripts/build-libgosd.sh"
+        fi
+        STEPS_DONE+=("build-libgosd")
+    else
+        log_skip "Patched libgosd.so already built"
+    fi
+else
+    log_info "nvcc not found — skipping libgosd rebuild (SD 3.5 will use gallery backend)"
+    # Ensure empty dir exists so Dockerfile COPY doesn't fail
+    mkdir -p "$REPO_ROOT/backends/cuda12-stablediffusion-ggml-rebuild"
 fi
 
 # Check if image already exists

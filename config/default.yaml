@@ -11,7 +11,7 @@ backends:
     vision_model: llava        # or gemma4-e4b (multimodal: text+image+audio in one model)
     whisper_model: whisper-1
     tts_model: piper-tts
-    image_model: stablediffusion
+    image_model: sd35-medium     # SD 3.5 Medium (falls back to stablediffusion v1.5 if unavailable)
     reranker_model: bge-reranker-v2-m3
     sound_model: transformers-musicgen
     fleet_model: qwen3-4b

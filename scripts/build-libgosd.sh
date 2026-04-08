@@ -25,6 +25,13 @@ BUILD_DIR="$VENDOR_SD/build-libgosd"
 # ── GPU architecture (default: RTX 3060 Ti = sm_86) ──
 CUDA_ARCH="${CUDA_ARCH:-86}"
 
+# ── Idempotency: skip if already built (use --force to rebuild) ──
+if [ -f "$OUTPUT_DIR/libgosd-avx2.so" ] && [ "${1:-}" != "--force" ]; then
+    echo "✓ libgosd-avx2.so already built ($(du -h "$OUTPUT_DIR/libgosd-avx2.so" | cut -f1))"
+    echo "  Use --force to rebuild."
+    exit 0
+fi
+
 echo "╔═══════════════════════════════════════════════╗"
 echo "║   Rebuild libgosd (sd.cpp CUDA)               ║"
 echo "╚═══════════════════════════════════════════════╝"
@@ -38,11 +45,21 @@ for cmd in gcc g++ cmake nvcc git; do
 done
 echo "✓ Prerequisites: gcc, g++, cmake, nvcc, git"
 
-# ── Check vendor source exists ──
+# ── Pinned LocalAI version (must match Dockerfile.localai) ──
+LOCALAI_VERSION="v4.1.3"
+LOCALAI_REPO="https://github.com/mudler/LocalAI.git"
+VENDOR_LOCALAI="$ROOT_DIR/vendor/LocalAI"
+
+# ── Clone vendor/LocalAI if not present ──
 if [ ! -f "$VENDOR_SD/gosd.cpp" ]; then
-    echo "ERROR: Vendored LocalAI source not found at $VENDOR_SD"
-    echo "       Run: git clone https://github.com/mudler/LocalAI vendor/LocalAI"
-    exit 1
+    echo "Cloning LocalAI $LOCALAI_VERSION (sparse, SD backend only)..."
+    mkdir -p "$ROOT_DIR/vendor"
+    git clone --depth 1 --branch "$LOCALAI_VERSION" --no-checkout "$LOCALAI_REPO" "$VENDOR_LOCALAI"
+    cd "$VENDOR_LOCALAI"
+    # Sparse checkout: only the SD backend directory (saves ~95% of clone)
+    git sparse-checkout set backend/go/stablediffusion-ggml
+    git checkout
+    cd "$ROOT_DIR"
 fi
 echo "✓ Vendor source: $VENDOR_SD"
 

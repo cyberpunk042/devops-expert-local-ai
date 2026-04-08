@@ -3,7 +3,7 @@
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
         model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b model-sd35-medium model-sd35-medium-allinone \
-        build-sd-cpp build-libgosd sd35-test sd35-server \
+        build-sd-cpp build-libgosd sd35-test sd35-test-standalone sd35-server \
         monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -63,10 +63,11 @@ help:
 	@echo "  make model-gemma4-26b        Download Gemma 4 26B MoE (dual GPU only)"
 	@echo "  make model-sd35-medium       Download SD 3.5 Medium GGUF encoders (~6.8 GB)"
 	@echo "  make model-sd35-safetensors  Download SD 3.5 Medium safetensors (5.1 GB, needs HF token)"
-	@echo "  make build-libgosd           Rebuild libgosd.so for SD 3.5 support (patches LocalAI)"
+	@echo "  make build-libgosd           Rebuild libgosd.so for SD 3.5 support (auto in setup)"
+	@echo "  make sd35-test               Generate SD 3.5 image via LocalAI API"
+	@echo "  make sd35-test-standalone    Generate SD 3.5 image via standalone sd-cli"
+	@echo "  make sd35-server             Start standalone SD 3.5 API server on port 8091"
 	@echo "  make build-sd-cpp            Build standalone sd.cpp from source (CUDA)"
-	@echo "  make sd35-test               Generate a test image with SD 3.5"
-	@echo "  make sd35-server             Start SD 3.5 API server on port 8091"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
 	@echo "  make monitoring-up           Start Prometheus + Grafana"
 	@echo "  make monitoring-down         Stop monitoring stack"
@@ -381,8 +382,17 @@ build-libgosd:
 build-sd-cpp:
 	bash scripts/build-sd-cpp.sh
 
-# Test SD 3.5 generation (requires: make model-sd35-medium + make model-sd35-safetensors + make build-sd-cpp)
+# Test SD 3.5 via LocalAI API (requires: make setup with SD 3.5 models + build-libgosd)
 sd35-test:
+	@echo "Generating SD 3.5 image via LocalAI..."
+	@curl -sf http://localhost:$(PORT)/v1/images/generations \
+		-H "Content-Type: application/json" \
+		-d '{"model":"sd35-medium","prompt":"a red sports car on a mountain road at sunset, photorealistic","size":"512x512","step":25}' \
+		| python3 -c "import sys,json; d=json.load(sys.stdin); url=d['data'][0]['url']; print(f'Image URL: {url}')" \
+		|| (echo "ERROR: LocalAI not running or SD 3.5 not loaded. Run 'make setup' first."; exit 1)
+
+# Test SD 3.5 via standalone sd-cli (alternative, no LocalAI needed)
+sd35-test-standalone:
 	@test -f builds/sd-cpp/sd-cli || (echo "ERROR: run 'make build-sd-cpp' first"; exit 1)
 	@test -f models/sd3.5_medium.safetensors || (echo "ERROR: run 'make model-sd35-safetensors' first"; exit 1)
 	builds/sd-cpp/sd-cli \
