@@ -14,7 +14,7 @@ Strategy:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("aicp.compaction")
 
@@ -154,3 +154,159 @@ def get_context_budget(model: str, profile: str = "") -> int:
             return budget
 
     return 8192  # safe default
+
+
+# ── Microcompaction (inspired by Claude Code) ────────────────────────────────
+# Surgical pruning of old tool results while keeping conversation structure.
+# Much more efficient than full compaction for ongoing sessions.
+
+# Tool names whose results can be cleared after they age out
+_COMPACTABLE_TOOLS = frozenset({
+    "file_read", "file_list", "grep", "shell",
+    "kb_search", "store_recall", "system_info",
+})
+
+# Tool results newer than this many turns are kept
+_MICROCOMPACT_KEEP_RECENT = 5
+
+# Placeholder for cleared tool results
+_CLEARED_MARKER = "[Tool result cleared — re-run if needed]"
+
+# Time gap (seconds) after which old tool results are aggressively cleared
+_TIME_GAP_THRESHOLD = 3600  # 60 minutes
+
+
+def microcompact(
+    messages: List[Dict[str, Any]],
+    keep_recent: int = _MICROCOMPACT_KEEP_RECENT,
+    compactable_tools: Optional[frozenset] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Clear old tool results while keeping conversation structure.
+
+    Unlike full compaction which summarizes, microcompaction replaces
+    old tool result content with a short marker. This preserves:
+    - The fact that a tool was called (for reasoning continuity)
+    - Recent tool results (for active work context)
+    - All non-tool messages (user, assistant, system)
+
+    Args:
+        messages: Full message history.
+        keep_recent: Number of recent tool results to preserve.
+        compactable_tools: Set of tool names that can be cleared.
+                          Defaults to _COMPACTABLE_TOOLS.
+
+    Returns:
+        Tuple of (compacted messages, number of results cleared).
+    """
+    if compactable_tools is None:
+        compactable_tools = _COMPACTABLE_TOOLS
+
+    # Find all tool result messages with their indices
+    tool_indices = []
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "tool" and msg.get("name") in compactable_tools:
+            tool_indices.append(i)
+
+    if len(tool_indices) <= keep_recent:
+        return messages, 0  # nothing to compact
+
+    # Indices to clear (all except the most recent keep_recent)
+    clear_indices = set(tool_indices[:-keep_recent] if keep_recent > 0 else tool_indices)
+
+    # Build new message list
+    cleared_count = 0
+    result = []
+    for i, msg in enumerate(messages):
+        if i in clear_indices:
+            # Replace content but keep the message structure
+            result.append({
+                **msg,
+                "content": _CLEARED_MARKER,
+            })
+            cleared_count += 1
+        else:
+            result.append(msg)
+
+    if cleared_count > 0:
+        logger.info("Microcompacted %d old tool results (kept %d recent)", cleared_count, keep_recent)
+
+    return result, cleared_count
+
+
+def time_based_clear(
+    messages: List[Dict[str, Any]],
+    gap_threshold: float = _TIME_GAP_THRESHOLD,
+    keep_recent: int = _MICROCOMPACT_KEEP_RECENT,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Clear old tool results when a time gap is detected.
+
+    If the gap between the last two assistant messages exceeds the threshold,
+    the server-side prompt cache has likely expired. Clear old tool results
+    to reduce context size for the inevitable cache miss.
+
+    Args:
+        messages: Full message history. Messages may have a '_timestamp' field.
+        gap_threshold: Seconds of inactivity before clearing (default: 60 min).
+        keep_recent: Number of recent tool results to keep.
+
+    Returns:
+        Tuple of (messages, number cleared).
+    """
+    # Find timestamps of assistant messages
+    assistant_timestamps = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and "_timestamp" in msg:
+            assistant_timestamps.append(msg["_timestamp"])
+
+    if len(assistant_timestamps) < 2:
+        return messages, 0
+
+    # Check gap between last two assistant messages
+    gap = assistant_timestamps[-1] - assistant_timestamps[-2]
+    if gap < gap_threshold:
+        return messages, 0
+
+    logger.info("Time gap detected (%.0fs > %.0fs threshold) — clearing old tool results", gap, gap_threshold)
+    return microcompact(messages, keep_recent=keep_recent)
+
+
+def strip_images(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Replace image/document content with markers to reduce token usage.
+
+    Handles both string content and list-of-blocks content format.
+    """
+    result = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            # Multi-block content (OpenAI vision format)
+            new_blocks = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "image_url":
+                        new_blocks.append({"type": "text", "text": "[image]"})
+                    elif block.get("type") == "image":
+                        new_blocks.append({"type": "text", "text": "[image]"})
+                    else:
+                        new_blocks.append(block)
+                else:
+                    new_blocks.append(block)
+            result.append({**msg, "content": new_blocks})
+        else:
+            result.append(msg)
+    return result
+
+
+def should_microcompact(
+    messages: List[Dict[str, Any]],
+    tool_result_threshold: int = 10,
+) -> bool:
+    """Check if microcompaction would be beneficial.
+
+    Returns True if there are more tool results than the threshold.
+    """
+    tool_count = sum(
+        1 for m in messages
+        if m.get("role") == "tool" and m.get("name") in _COMPACTABLE_TOOLS
+    )
+    return tool_count > tool_result_threshold

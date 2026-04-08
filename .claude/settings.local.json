@@ -96,7 +96,17 @@
       "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_controller.py tests/test_router.py tests/test_vad_detect_profiles.py -q)",
       "Bash(.venv/bin/pytest tests/test_vad_detect_profiles.py::TestConfigurableModeProfiles::test_config_wiring tests/test_profiles.py -q)",
       "Bash(gh api:*)",
-      "Bash(gh search:*)"
+      "Bash(gh search:*)",
+      "Bash(python -m pytest tests/test_tool_safety.py -v)",
+      "Bash(python3 -m pytest tests/test_tool_safety.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_multimodal_tools.py tests/test_native_tools.py tests/test_streaming_tools.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_tool_safety.py tests/test_multimodal_tools.py tests/test_native_tools.py tests/test_streaming_tools.py -v)",
+      "Bash(python -m pytest tests/test_memory_relevance.py -v)",
+      "Bash(python3 -m pytest /home/jfortin/devops-expert-local-ai/tests/test_memory_relevance.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_memory_relevance.py -v)",
+      "Bash(python -m pytest tests/test_microcompaction.py -v)",
+      "Bash(python -m pytest tests/test_tasks.py -v)",
+      "Bash(python3 -m pytest tests/test_tasks.py -v)"
     ]
   }
 }

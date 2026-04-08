@@ -1468,6 +1468,206 @@ def aicp_fleet_run(prompt: str, mode: str = "think") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Extended AICP Tools — controller routing, profiles, DLQ, task tracking
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def aicp_route(prompt: str, mode: str = "think", profile: str = "") -> str:
+    """Route a prompt through the full AICP controller with score-based routing.
+
+    Uses the active profile's routing configuration to select the best backend.
+    Includes failover chain, quality escalation, and circuit breaker protection.
+
+    Args:
+        prompt: The text prompt to process.
+        mode: Permission mode (think, edit, act).
+        profile: Optional profile name to use (default: active profile).
+    """
+    try:
+        from aicp.core.controller import Controller, Task
+        from aicp.core.modes import Mode
+        from aicp.config.loader import load_config, get_backend_config
+
+        config = load_config()
+        if profile:
+            from aicp.core.profiles import load_profile, profile_to_config_overlay
+            prof = load_profile(profile)
+            if prof:
+                overlay = profile_to_config_overlay(prof)
+                config = {**config, **overlay}
+
+        backend = _get_backend()
+        backends = {"local": backend}
+
+        try:
+            m = Mode(mode)
+        except ValueError:
+            return f"Error: invalid mode '{mode}'. Use think, edit, or act."
+
+        controller = Controller(backends, config=config)
+        task = Task(prompt=prompt, mode=m, project_path=Path("."))
+        result = controller.run(task)
+        return result
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def aicp_deep_health() -> str:
+    """Get deep health status of all AICP backends.
+
+    Returns backend availability, circuit breaker states, warming status,
+    and active profile information.
+    """
+    try:
+        backend = _get_backend()
+        health = {
+            "status": "ok",
+            "backends": {},
+            "warming": False,
+        }
+
+        # Check local backend
+        try:
+            available = backend.is_available()
+            health["backends"]["local"] = available
+        except Exception:
+            health["backends"]["local"] = False
+
+        # Overall status
+        if not all(health["backends"].values()):
+            health["status"] = "degraded"
+
+        # Active profile
+        try:
+            from aicp.core.profiles import get_active_profile
+            health["active_profile"] = get_active_profile() or "default"
+        except Exception:
+            health["active_profile"] = "unknown"
+
+        return json.dumps(health, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
+
+
+@mcp.tool()
+def aicp_profile(action: str = "show", profile_name: str = "") -> str:
+    """Manage AICP configuration profiles.
+
+    Args:
+        action: One of: show, list, active.
+            - show: Display resolved config for a profile
+            - list: List all available profiles
+            - active: Show the currently active profile name
+        profile_name: Profile name (required for 'show' action).
+    """
+    try:
+        from aicp.core.profiles import (
+            get_active_profile,
+            list_profiles,
+            load_profile,
+            resolve_profile,
+        )
+
+        if action == "list":
+            profiles = list_profiles()
+            return json.dumps([{"name": p.get("name"), "description": p.get("description", "")} for p in profiles], indent=2)
+
+        if action == "active":
+            active = get_active_profile() or "default"
+            return json.dumps({"active_profile": active})
+
+        if action == "show":
+            name = profile_name or get_active_profile() or "default"
+            profile = load_profile(name)
+            if profile is None:
+                return f"Error: profile '{name}' not found"
+            resolved = resolve_profile(profile)
+            return json.dumps(resolved, indent=2, default=str)
+
+        return f"Error: unknown action '{action}'. Use: show, list, active"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def aicp_kb_search_collection(query: str, top_k: int = 5, collection: str = "aicp-kb") -> str:
+    """Search the AICP knowledge base using semantic search.
+
+    Uses nomic-embed embeddings and BGE reranker for high-quality results.
+
+    Args:
+        query: The search query.
+        top_k: Number of results to return (default: 5).
+        collection: Collection name (default: aicp-kb).
+    """
+    try:
+        backend = _get_backend()
+        from aicp.core.kb import KnowledgeBase
+        kb = KnowledgeBase(backend, _config)
+        results = kb.search(query, top_k=top_k)
+        return json.dumps(results, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def aicp_task_status(task_id: str = "") -> str:
+    """Check task status or list recent tasks.
+
+    Args:
+        task_id: Specific task ID to check. If empty, lists recent tasks.
+    """
+    try:
+        from aicp.core.tasks import get_task_manager, TaskStatus
+
+        mgr = get_task_manager()
+
+        if task_id:
+            task = mgr.get(task_id)
+            if task is None:
+                return f"Error: task '{task_id}' not found"
+            return json.dumps(task.to_dict(), indent=2)
+
+        tasks = mgr.list_tasks(limit=20)
+        return json.dumps([t.to_dict() for t in tasks], indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def aicp_dlq_status(action: str = "list") -> str:
+    """Check the dead-letter queue status or retry failed tasks.
+
+    Args:
+        action: One of: list, count, retry.
+            - list: Show pending DLQ entries
+            - count: Show DLQ entry count
+            - retry: Retry all pending entries
+    """
+    try:
+        from aicp.core.dlq import list_pending, retry_pending, count_pending
+
+        if action == "count":
+            return json.dumps({"pending": count_pending()})
+
+        if action == "list":
+            entries = list_pending()
+            return json.dumps(entries[:20], indent=2, default=str)
+
+        if action == "retry":
+            retried = retry_pending()
+            return json.dumps({"retried": retried})
+
+        return f"Error: unknown action '{action}'. Use: list, count, retry"
+    except ImportError:
+        return json.dumps({"error": "DLQ module not available"})
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

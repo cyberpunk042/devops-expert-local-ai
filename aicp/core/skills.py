@@ -36,6 +36,12 @@ class Skill:
     path: Path
     parameters: List[SkillParam] = field(default_factory=list)
     steps: List[Dict[str, Any]] = field(default_factory=list)
+    # New fields (inspired by Claude Code)
+    model: str = ""              # Model override (e.g., "gemma4-e2b" for fleet skills)
+    allowed_tools: List[str] = field(default_factory=list)  # Tool restriction
+    effort: str = ""             # low, medium, high
+    context: str = "inline"      # "inline" (expand in conversation) or "fork" (sub-agent)
+    paths: List[str] = field(default_factory=list)  # Scope restriction
 
 
 def _global_skills_dir() -> Path:
@@ -198,9 +204,19 @@ name: {skill.name}
 description: {skill.description}"""
     if arg_hint:
         frontmatter += f"\nargument-hint: {arg_hint}"
+    if skill.allowed_tools:
+        frontmatter += f"\nallowed-tools: {', '.join(skill.allowed_tools)}"
+    if skill.model:
+        frontmatter += f"\nmodel: {skill.model}"
+    if skill.effort:
+        frontmatter += f"\neffort: {skill.effort}"
+    else:
+        frontmatter += "\neffort: medium"
+    if skill.context != "inline":
+        frontmatter += f"\ncontext: {skill.context}"
+    if skill.paths:
+        frontmatter += f"\npaths: {skill.paths}"
     frontmatter += """
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-effort: medium
 ---"""
 
     # Build body
@@ -229,6 +245,15 @@ effort: medium
 generate_claude_command = generate_claude_skill
 
 
+def _parse_allowed_tools(raw: Any) -> List[str]:
+    """Parse allowed-tools from frontmatter (comma-separated string or list)."""
+    if isinstance(raw, list):
+        return [str(t).strip() for t in raw if t]
+    if isinstance(raw, str) and raw.strip():
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return []
+
+
 def _load_skill_yaml(path: Path, source: str) -> Optional[Skill]:
     """Load a skill from a YAML file (AICP format)."""
     try:
@@ -254,6 +279,11 @@ def _load_skill_yaml(path: Path, source: str) -> Optional[Skill]:
             path=path,
             parameters=params,
             steps=data.get("steps", []),
+            model=data.get("model", ""),
+            allowed_tools=_parse_allowed_tools(data.get("allowed-tools", "")),
+            effort=data.get("effort", ""),
+            context=data.get("context", "inline"),
+            paths=data.get("paths", []),
         )
     except (yaml.YAMLError, OSError):
         return None
@@ -288,6 +318,13 @@ def _load_skill_md(path: Path, source: str) -> Optional[Skill]:
         if not isinstance(argument_hint, str):
             argument_hint = str(argument_hint) if argument_hint else ""
 
+        model = frontmatter.get("model", "")
+        allowed_tools = _parse_allowed_tools(frontmatter.get("allowed-tools", ""))
+        effort = frontmatter.get("effort", "")
+        context = frontmatter.get("context", "inline")
+        paths_raw = frontmatter.get("paths", [])
+        paths = paths_raw if isinstance(paths_raw, list) else []
+
         # Parse argument hints as parameters (best effort)
         params = []
         if argument_hint:
@@ -313,6 +350,11 @@ def _load_skill_md(path: Path, source: str) -> Optional[Skill]:
             parameters=params,
             # SKILL.md skills don't have pipeline steps — they're instructions for Claude
             steps=[],
+            model=model if isinstance(model, str) else "",
+            allowed_tools=allowed_tools,
+            effort=effort if isinstance(effort, str) else "",
+            context=context if isinstance(context, str) else "inline",
+            paths=paths,
         )
     except (yaml.YAMLError, OSError):
         return None

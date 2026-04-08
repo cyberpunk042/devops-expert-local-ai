@@ -6,10 +6,48 @@ import base64
 import json
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 if TYPE_CHECKING:
     from aicp.backends.localai import LocalAIBackend
+
+# ── Tool safety metadata (inspired by Claude Code's buildTool pattern) ──────
+# Fail-closed: assume tools are NOT safe unless explicitly marked.
+
+ToolMeta = Dict[str, Any]  # typing alias
+
+def _meta(
+    is_read_only: bool = False,
+    is_destructive: bool = False,
+    is_concurrent_safe: bool = False,
+    requires_backend: bool = False,
+    requires_path: bool = False,
+) -> Dict[str, Any]:
+    """Build tool safety metadata with fail-closed defaults."""
+    return {
+        "is_read_only": is_read_only,
+        "is_destructive": is_destructive,
+        "is_concurrent_safe": is_concurrent_safe,
+        "requires_backend": requires_backend,
+        "requires_path": requires_path,
+    }
+
+
+# Safety metadata per tool name
+TOOL_SAFETY: Dict[str, Dict[str, Any]] = {
+    "file_read":        _meta(is_read_only=True, is_concurrent_safe=True, requires_path=True),
+    "file_list":        _meta(is_read_only=True, is_concurrent_safe=True),
+    "grep":             _meta(is_read_only=True, is_concurrent_safe=True),
+    "shell":            _meta(is_destructive=True),
+    "image_analyze":    _meta(is_read_only=True, requires_backend=True, requires_path=True),
+    "audio_transcribe": _meta(is_read_only=True, requires_backend=True, requires_path=True),
+    "text_to_speech":   _meta(requires_backend=True),
+    "image_generate":   _meta(requires_backend=True),
+    "kb_search":        _meta(is_read_only=True, is_concurrent_safe=True, requires_backend=True),
+    "system_info":      _meta(is_read_only=True, is_concurrent_safe=True, requires_backend=True),
+    "store_remember":   _meta(requires_backend=True),
+    "store_recall":     _meta(is_read_only=True, is_concurrent_safe=True, requires_backend=True),
+}
 
 
 # ── Tool definitions (OpenAI tools format) ───────────────────────────────────
@@ -546,16 +584,103 @@ _MULTIMODAL_REGISTRY: dict[str, Callable] = {
 }
 
 
+def get_tool_meta(name: str) -> Dict[str, Any]:
+    """Get safety metadata for a tool. Returns fail-closed defaults if unknown."""
+    return TOOL_SAFETY.get(name, _meta())
+
+
+def validate_tool_input(name: str, arguments: str | dict) -> Optional[str]:
+    """Validate tool input before execution.
+
+    Returns None if valid, or an error message string if invalid.
+    This is the first stage of the 3-stage tool pipeline:
+    validate → permissions → execute.
+    """
+    try:
+        args = json.loads(arguments) if isinstance(arguments, str) else arguments
+    except json.JSONDecodeError as e:
+        return f"invalid arguments JSON: {e}"
+
+    if not isinstance(args, dict):
+        return f"Arguments must be a JSON object, got {type(args).__name__}"
+
+    # Get tool definition to check required params
+    tool_def = None
+    for tool in ALL_TOOLS:
+        if tool["function"]["name"] == name:
+            tool_def = tool
+            break
+
+    if tool_def is None:
+        return f"unknown tool '{name}'"
+
+    # Check required parameters
+    required = tool_def["function"]["parameters"].get("required", [])
+    for param in required:
+        if param not in args:
+            return f"Missing required parameter: {param}"
+
+    # Path validation for tools that require paths
+    meta = get_tool_meta(name)
+    if meta.get("requires_path"):
+        path_val = args.get("path", "")
+        if not path_val:
+            return f"Tool '{name}' requires a 'path' parameter"
+        # Block path traversal attempts
+        if "\x00" in path_val:
+            return "Path contains null bytes"
+        # Normalize and check for suspicious patterns
+        from pathlib import PurePosixPath
+        normalized = str(PurePosixPath(path_val))
+        if ".." in normalized.split("/"):
+            # Allow relative paths but warn about traversal
+            pass  # traversal is legitimate in many cases
+
+    return None
+
+
+def check_tool_permissions(name: str, mode_name: str) -> Optional[str]:
+    """Check if a tool is allowed in the given permission mode.
+
+    Returns None if allowed, or a denial reason string.
+    This is the second stage of the 3-stage tool pipeline.
+    """
+    allowed_tools = get_tools_for_mode(mode_name)
+    allowed_names = {t["function"]["name"] for t in allowed_tools}
+
+    if name not in allowed_names:
+        meta = get_tool_meta(name)
+        if meta.get("is_destructive"):
+            return f"Tool '{name}' is destructive and not allowed in '{mode_name}' mode"
+        return f"Tool '{name}' is not available in '{mode_name}' mode"
+
+    return None
+
+
 def execute_tool(
     name: str,
     arguments: str,
     project_path: Path,
     backend: Optional[LocalAIBackend] = None,
+    mode: Optional[str] = None,
 ) -> str:
     """Execute a tool by name with JSON-encoded arguments.
 
+    Uses a 3-stage pipeline: validate → permissions → execute.
     Returns the tool output as a string.
     """
+    # Stage 1: Validate input
+    validation_error = validate_tool_input(name, arguments)
+    if validation_error:
+        return f"Error: {validation_error}"
+
+    # Stage 2: Check permissions (if mode provided)
+    if mode:
+        permission_error = check_tool_permissions(name, mode)
+        if permission_error:
+            return f"Error: {permission_error}"
+
+    # Stage 3: Execute
     try:
         args = json.loads(arguments) if isinstance(arguments, str) else arguments
     except json.JSONDecodeError as e:

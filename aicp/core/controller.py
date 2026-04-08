@@ -23,6 +23,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 
 from aicp.core.modes import Mode
 from aicp.backends.base import Backend
+from aicp.core.events import get_emitter
 from aicp.core.cluster import (
     check_cluster,
     execute_remote,
@@ -170,6 +171,8 @@ class Controller:
             for breaker in self._breakers.values():
                 breaker._on_state_change = metrics_collector.record_breaker_state
                 breaker._on_trip = metrics_collector.record_breaker_trip
+        # Event emitter (emit lifecycle events for fleet integration)
+        self._emitter = get_emitter()
         # Token budget (E-M51)
         budget_cfg = self.config.get("budget", {})
         self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
@@ -519,6 +522,16 @@ class Controller:
                 estimated_cost_usd=usage.get("estimated_cost_usd"),
                 route=self.last_route,
             )
+
+            # Emit lifecycle event
+            self._emitter.emit("task_complete" if not error else "task_failed", {
+                "mode": task.mode.value,
+                "backend": task.backend_name,
+                "route": self.last_route or "",
+                "duration_seconds": elapsed,
+                "tokens": total_tokens,
+                "error": error[:200] if error else None,
+            })
 
         # Cache successful responses (E-M50)
         if self.cache_enabled and result and not error:

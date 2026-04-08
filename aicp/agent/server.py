@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import os
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -17,9 +18,78 @@ from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
 from aicp.config.loader import load_config, get_backend_config
 from aicp.core.controller import Controller, Task
+from aicp.core.events import get_emitter
 from aicp.core.gpu import detect_gpus
 from aicp.core.models import list_models
 from aicp.core.modes import Mode
+from aicp.core.tasks import get_task_manager, TaskType, TaskStatus
+
+
+def _generate_away_summary(config: dict) -> str:
+    """Generate a brief summary of recent work for agent restart context.
+
+    Returns 1-3 sentences: what was being done + next step.
+    Falls back to heuristic if no LLM is available.
+    """
+    try:
+        from aicp.core.history import list_tasks
+        tasks = list_tasks(count=10)
+        if not tasks:
+            return ""
+
+        # Heuristic summary from recent tasks
+        recent = tasks[:5]
+        modes = [t.get("mode", "") for t in recent]
+        backends = [t.get("backend", "") for t in recent]
+        errors = [t for t in recent if t.get("error")]
+
+        summary_parts = []
+
+        # What was being done
+        if recent:
+            last = recent[0]
+            prompt_preview = (last.get("prompt") or "")[:100]
+            summary_parts.append(f"Last task: {prompt_preview}")
+
+        # Error context
+        if errors:
+            last_error = errors[0].get("error", "")[:100]
+            summary_parts.append(f"Recent error: {last_error}")
+
+        # Patterns
+        mode_counts = {}
+        for m in modes:
+            mode_counts[m] = mode_counts.get(m, 0) + 1
+        dominant_mode = max(mode_counts, key=mode_counts.get) if mode_counts else "think"
+        summary_parts.append(f"Primary mode: {dominant_mode}")
+
+        return " | ".join(summary_parts)
+    except Exception as e:
+        return f"(summary unavailable: {e})"
+
+
+_AWAY_SUMMARY_PATH = Path(os.environ.get(
+    "AICP_AWAY_SUMMARY", Path.home() / ".aicp" / "away_summary.txt"
+))
+
+
+def save_away_summary(summary: str) -> None:
+    """Persist away summary to disk."""
+    try:
+        _AWAY_SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _AWAY_SUMMARY_PATH.write_text(summary)
+    except OSError:
+        pass
+
+
+def load_away_summary() -> str:
+    """Load the last away summary from disk."""
+    try:
+        if _AWAY_SUMMARY_PATH.exists():
+            return _AWAY_SUMMARY_PATH.read_text().strip()
+    except OSError:
+        pass
+    return ""
 
 
 class AgentHandler(BaseHTTPRequestHandler):
@@ -30,6 +100,10 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._handle_health()
         elif self.path == "/status":
             self._handle_status()
+        elif self.path == "/away-summary":
+            self._handle_away_summary()
+        elif self.path == "/tasks" or self.path.startswith("/tasks?"):
+            self._handle_tasks()
         else:
             self._respond_json(404, {"error": "not found"})
 
@@ -128,15 +202,41 @@ class AgentHandler(BaseHTTPRequestHandler):
                 backend_name=backend_name,
             )
 
+            # Register task in lifecycle manager
+            mgr = get_task_manager()
+            task_state = mgr.register(
+                prompt=prompt,
+                task_type=TaskType.INFERENCE,
+                mode=mode_str,
+                backend=backend_name,
+                project=project,
+            )
+            mgr.start(task_state.id)
+
             start = time.time()
-            result = controller.run(task)
-            elapsed = time.time() - start
+            try:
+                result = controller.run(task)
+                elapsed = time.time() - start
+                mgr.complete(task_state.id, result[:200])
+            except Exception as run_err:
+                elapsed = time.time() - start
+                mgr.fail(task_state.id, str(run_err))
+                raise
 
             backend = controller.backends.get(backend_name)
             usage = getattr(backend, "last_usage", {}) if backend else {}
 
+            # Emit progress event
+            get_emitter().emit("task_complete", {
+                "task_id": task_state.id,
+                "duration": round(elapsed, 2),
+                "backend": backend_name,
+                "tokens": usage.get("total_tokens", 0),
+            })
+
             self._respond_json(200, {
                 "result": result,
+                "task_id": task_state.id,
                 "duration_seconds": round(elapsed, 2),
                 "usage": usage,
             })
@@ -145,6 +245,21 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._respond_json(400, {"error": str(e)})
         except Exception as e:
             self._respond_json(500, {"error": str(e)})
+
+    def _handle_away_summary(self) -> None:
+        """Return the away summary for agent restart context."""
+        summary = load_away_summary()
+        self._respond_json(200, {"summary": summary})
+
+    def _handle_tasks(self) -> None:
+        """Return task list from the task manager."""
+        mgr = get_task_manager()
+        tasks = mgr.list_tasks(limit=20)
+        self._respond_json(200, {
+            "tasks": [t.to_dict() for t in tasks],
+            "active": mgr.active_count,
+            "total": mgr.total_count,
+        })
 
     def _check_auth(self) -> bool:
         """Validate shared-secret auth token."""
@@ -250,10 +365,20 @@ def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = N
             warmup_thread = threading.Thread(target=_do_warmup, daemon=True)
             warmup_thread.start()
 
+    # Load away summary from previous session
+    away = load_away_summary()
+    if away:
+        print(f"Previous session: {away[:120]}")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down.")
+        # Generate away summary before exit
+        summary = _generate_away_summary(config)
+        if summary:
+            save_away_summary(summary)
+            print(f"Away summary saved: {summary[:100]}")
         server.server_close()
 
 
