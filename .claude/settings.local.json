@@ -106,7 +106,8 @@
       "Bash(.venv/bin/python -m pytest tests/test_memory_relevance.py -v)",
       "Bash(python -m pytest tests/test_microcompaction.py -v)",
       "Bash(python -m pytest tests/test_tasks.py -v)",
-      "Bash(python3 -m pytest tests/test_tasks.py -v)"
+      "Bash(python3 -m pytest tests/test_tasks.py -v)",
+      "Bash(gh pr:*)"
     ]
   }
 }

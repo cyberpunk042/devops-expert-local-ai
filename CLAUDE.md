@@ -67,9 +67,9 @@ User → AICP Controller → Router → (LocalAI | Claude Code) → Project/Repo
 ## Project Structure
 
 ```
-aicp/                      # Main package (46 modules)
+aicp/                      # Main package (52 modules)
   core/                    # Controller, modes, router, session, pipeline, budget, metrics
-    controller.py          # Central orchestrator — mode enforcement + backend dispatch
+    controller.py          # Central orchestrator — mode enforcement + backend dispatch + events
     router.py              # Backend routing — LocalAI vs Claude by task complexity
     modes.py               # Think/Edit/Act mode definitions and enforcement
     pipeline.py            # Request processing pipeline
@@ -78,8 +78,8 @@ aicp/                      # Main package (46 modules)
     metrics.py             # Performance metrics
     observability.py       # Tracing and monitoring
     context.py             # Context management
-    tools.py               # Tool definitions
-    skills.py              # Skill loading and execution
+    tools.py               # Tool definitions + safety metadata + 3-stage pipeline
+    skills.py              # Skill loading — model override, allowed-tools, scope
     worktree.py            # Git worktree management
     projects.py            # Project registry
     rag.py                 # Retrieval-augmented generation
@@ -89,10 +89,15 @@ aicp/                      # Main package (46 modules)
     gpu.py                 # GPU management
     cluster.py             # Multi-machine cluster support
     chunking.py            # Text chunking for embeddings
-    history.py             # Conversation history
+    history.py             # Conversation history (post-hoc task records)
     models.py              # Model info and configuration
     result.py              # Result types
     approval.py            # Approval workflows
+    events.py              # Event emitter — lifecycle events for fleet integration
+    tasks.py               # Task lifecycle state machine (pending→running→completed/failed)
+    memory_relevance.py    # Embedding-based memory relevance scoring + aging
+    memory_extract.py      # Auto-extraction of learnable facts from task history
+    compaction.py          # Context compaction + microcompaction + image stripping
   backends/                # Backend integrations
     localai.py             # LocalAI client (OpenAI-compatible)
     claude_code.py         # Claude Code subprocess integration
@@ -112,10 +117,10 @@ aicp/                      # Main package (46 modules)
     project_ops.py         # Project operations
   agent/                   # Agent mode (fleet integration)
     client.py              # Agent client for fleet operations
-    server.py              # Agent server (MCP)
+    server.py              # Agent server — task lifecycle, away summary, progress events
   mcp/                     # MCP server
-    server.py              # MCP tool server for AICP
-tests/                     # Test suite (67 test files)
+    server.py              # MCP tool server — 11 tools (chat, vision, route, health, profile, tasks, DLQ)
+tests/                     # Test suite (77 test files, 1631 total tests)
 config/                    # Default config files
   default.yaml             # Default AICP configuration
   fleet.yaml               # Fleet network topology
@@ -309,6 +314,58 @@ Generate manually: `aicp --health-report`. Profile: `reports.enabled: true`.
 ### Reliability Profile
 `make profile-use PROFILE=reliable` — aggressive breaker (threshold=2), auto-warmup
 (qwen3-8b + nomic-embed), DLQ with 5 retries, health reports every 4 hours.
+
+## Intelligent Infrastructure (Stage 5)
+
+Patterns adopted from Claude Code's production architecture, adapted for AICP's
+local-first, fleet-oriented design. Research: `docs/kb/research/claude-code-architecture-analysis.md`.
+
+### Event Emitter (`aicp/core/events.py`)
+Thread-safe fire-and-forget event bus. Controller emits `task_start`, `task_complete`,
+`task_failed` on every task. Fleet agents can register callbacks (e.g., notify MC
+dashboard, update metrics). Errors in callbacks never break the caller.
+
+### Tool Safety Metadata (`aicp/core/tools.py`)
+Every tool has fail-closed safety flags: `is_read_only`, `is_destructive`,
+`is_concurrent_safe`, `requires_backend`, `requires_path`. 3-stage execution
+pipeline: `validate_tool_input()` -> `check_tool_permissions()` -> `execute_tool()`.
+
+### Task Lifecycle (`aicp/core/tasks.py`)
+Real-time task tracking: `pending -> running -> completed/failed/killed`. Progress
+tracking (tool use count, token count, recent activities). Agent server wraps all
+`/task` requests with lifecycle management. `GET /tasks` returns active task list.
+
+### Memory Relevance (`aicp/core/memory_relevance.py`)
+Embedding-based memory selection using nomic-embed (local, free, deterministic).
+Replaces loading all memories into prompt -- selects top-K most relevant per query.
+Memory aging with staleness warnings for files >1 day old.
+
+### Microcompaction (`aicp/core/compaction.py`)
+Surgical pruning of old tool results while keeping conversation structure. Replaces
+verbose file_read/grep/shell output with `[Tool result cleared]` markers. Time-based
+clearing when >60min gap detected. Image stripping replaces vision content with
+`[image]` markers.
+
+### Skill Model Override (`aicp/core/skills.py`)
+Skills can specify `model:` in frontmatter to override routing. Fleet heartbeat
+skills use `gemma4-e2b` (53 tok/s), code review skills use `qwen3-8b` (thinking).
+Also: `allowed-tools` (security boundary), `context: fork` (sub-agent isolation),
+`paths` (scope restriction).
+
+### Auto-Memory Extraction (`aicp/core/memory_extract.py`)
+Heuristic extraction of learnable facts from task history. Scans for error fixes,
+decisions, and discoveries. Saves as memory files with YAML frontmatter. Runs on
+demand or as periodic background job.
+
+### Away Summary (`aicp/agent/server.py`)
+On agent shutdown, generates 1-3 sentence summary of recent work. On restart,
+loads previous session context. `GET /away-summary` returns the summary.
+
+### Extended MCP Tools (`aicp/mcp/server.py`)
+11 MCP tools total: `aicp_chat`, `aicp_vision`, `aicp_transcribe`, `aicp_speak`,
+`aicp_voice_pipeline`, `aicp_route` (full controller routing), `aicp_deep_health`,
+`aicp_profile` (list/show/active), `aicp_kb_search_collection`, `aicp_task_status`,
+`aicp_dlq_status` (list/count/retry).
 
 ## Collaboration Rules — AI Behavior Contract
 
