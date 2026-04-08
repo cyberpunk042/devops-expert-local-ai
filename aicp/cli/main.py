@@ -2345,23 +2345,24 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --retry-dlq: retry pending DLQ entries
     if getattr(args, "retry_dlq", False):
-        from aicp.core.dlq import list_pending, retry_pending, count_pending
-        pending = count_pending()
+        from aicp.core.dlq import list_entries, retry_pending, count
+        pending = count()
         if pending == 0:
             print("DLQ is empty — no entries to retry.")
             return 0
         print(f"Retrying {pending} pending DLQ entries...")
-        retried = retry_pending()
+        ctrl = Controller(config_path=getattr(args, "config", None))
+        retried = retry_pending(ctrl, ctrl.config)
         print(f"Retried: {retried}")
         return 0
 
     # --dlq-status: show DLQ status
     if getattr(args, "dlq_status", False):
-        from aicp.core.dlq import list_pending, count_pending
-        pending = count_pending()
+        from aicp.core.dlq import list_entries, count
+        pending = count()
         print(f"Dead-Letter Queue: {pending} pending entries")
         if pending > 0:
-            entries = list_pending()
+            entries = list_entries()
             for i, entry in enumerate(entries[:10]):
                 ts = entry.get("timestamp", "?")
                 mode = entry.get("mode", "?")
