@@ -119,7 +119,11 @@
       "WebFetch(domain:stable-diffusion-art.com)",
       "WebFetch(domain:sandner.art)",
       "WebFetch(domain:www.synpixcloud.com)",
-      "WebFetch(domain:education.civitai.com)"
+      "WebFetch(domain:education.civitai.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(curl -s https://huggingface.co/api/models/gpustack/stable-diffusion-v3-5-medium-GGUF)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(s[''''rfilename'''']\\) for s in d.get\\(''''siblings'''',[]\\)]\")",
+      "Bash(curl -s https://huggingface.co/gpustack/stable-diffusion-v3-5-medium-GGUF/raw/main/README.md)"
     ]
   }
 }

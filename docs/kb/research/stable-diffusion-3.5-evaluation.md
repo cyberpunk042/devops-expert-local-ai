@@ -386,6 +386,178 @@ Machine 2 (Fleet Bravo, ?GB VRAM):
 
 ---
 
+## LocalAI Configuration (stable-diffusion.cpp backend)
+
+SD 3.5 Medium requires 4 separate GGUF files — the diffusion transformer + 3 text encoders.
+Config at `config/models/sd35-medium.yaml`. Download via `make model-sd35-medium`.
+
+### Required Files
+
+| Component | File | Size | Purpose |
+|-----------|------|------|---------|
+| Diffusion model | `sd3.5_medium-Q8_0.gguf` | 3.19 GB | MMDiT-X transformer |
+| CLIP-L | `clip_l-Q8_0.gguf` | 131 MB | Text encoder (small) |
+| CLIP-G | `clip_g-Q8_0.gguf` | 739 MB | Text encoder (large) |
+| T5-XXL | `t5xxl-Q4_0.gguf` | 2.75 GB | Text encoder (largest) |
+| **Total** | | **~6.8 GB** | |
+
+Source: [second-state/stable-diffusion-3.5-medium-GGUF](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF)
+
+### LocalAI YAML Config
+
+```yaml
+name: sd35-medium
+backend: stablediffusion-ggml
+parameters:
+  model: sd3.5_medium-Q8_0.gguf
+step: 25
+cfg_scale: 4.5
+options:
+  - "diffusion_model"
+  - "clip_l_path:clip_l-Q8_0.gguf"
+  - "clip_g_path:clip_g-Q8_0.gguf"
+  - "t5xxl_path:t5xxl-Q4_0.gguf"
+  - "sampler:euler"
+  - "keep_clip_on_cpu:true"
+  - "keep_vae_on_cpu:true"
+  - "diffusion_flash_attn:true"
+```
+
+Key options:
+- `diffusion_model` (bare flag) — tells LocalAI to use `--diffusion-model` mode (separate files)
+- `keep_clip_on_cpu:true` — offloads 3 text encoders to RAM (~3.8 GB freed from VRAM)
+- `keep_vae_on_cpu:true` — offloads VAE decode to CPU
+- `diffusion_flash_attn:true` — flash attention saves ~600 MB VRAM on CUDA
+
+### VRAM Usage with Offloading
+
+| Configuration | GPU VRAM | RAM Usage |
+|---------------|----------|-----------|
+| Q8_0 + clip-on-cpu + vae-on-cpu + flash-attn | **~3.2 GB** | ~3.8 GB |
+| Q4_0 + clip-on-cpu + vae-on-cpu + flash-attn | ~1.5 GB | ~3.8 GB |
+| Q8_0 all on GPU | ~6.8 GB | minimal |
+
+### Known Issues
+
+- VAE attention burn bug (fixed in commit 4570715) — use current sd.cpp master
+- `--clip-on-cpu` may crash on some setups ([#1210](https://github.com/leejet/stable-diffusion.cpp/issues/1210)) — fallback: remove the flag, use more VRAM
+- Vulkan backend produces black images for SD3.x — use CUDA
+
+### LocalAI v4.1.3 Compatibility Issue (Confirmed 2026-04-08)
+
+**LocalAI v4.1.3's `stablediffusion-ggml` backend CANNOT load SD 3.5.**
+
+The `libgosd-*.so` shared libraries ship an older stable-diffusion.cpp that fails
+with `tensor 'first_stage_model.decoder.up.3.*' not in model file` — it expects
+a VAE architecture that doesn't match SD 3.5's actual tensor layout.
+
+Tested with:
+- second-state GGUF (4 separate files) → missing VAE tensors
+- gpustack all-in-one GGUF → segfault (incompatible tensor format)
+- Official safetensors (5.1 GB with VAE) → same decoder.up.3 error
+
+**Root cause:** The Go/CGo wrapper libraries (`libgosd-avx2.so` etc.) were compiled
+from an older stable-diffusion.cpp that has an incomplete model definition for SD 3.5.
+The tensors exist in the file (confirmed via safetensors header parsing — 26
+`decoder.up.3` tensors present) but the loader can't map them.
+
+### Workaround: Build sd.cpp from Source (Confirmed Working)
+
+Built latest stable-diffusion.cpp (commit `8afbeb6`) from source with CUDA on the
+host machine. The standalone `sd-cli` binary successfully generates SD 3.5 images.
+
+**Build commands:**
+```bash
+cd /tmp && git clone --depth 1 https://github.com/leejet/stable-diffusion.cpp.git sd-cpp-build
+cd sd-cpp-build && git submodule update --init --recursive
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DSD_CUDA=ON -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_ARCHITECTURES="86"
+make -j$(nproc)
+```
+
+**Test result (RTX 3060 Ti, 8GB VRAM):**
+```
+sd-cli -m sd3.5_medium.safetensors \
+  --clip_l clip_l-Q8_0.gguf --clip_g clip_g-Q8_0.gguf --t5xxl t5xxl-Q4_0.gguf \
+  --clip-on-cpu --vae-on-cpu --sampling-method euler --cfg-scale 4.5 --steps 25 \
+  -H 512 -W 512 -p "a red sports car on a mountain road at sunset" \
+  -o /tmp/sd35_test.png
+
+Results:
+  Text encoding (CPU):     16.8s
+  Sampling (25 steps, GPU): 13.3s @ 1.88 it/s
+  VAE decode (CPU):         36.4s
+  Total:                    67s
+  GPU VRAM:                 ~182 MB (with full CPU offloading)
+  Output:                   512x512 PNG, 469 KB ✓
+```
+
+**Binaries built:** `/tmp/sd-cpp-build/build/bin/sd-cli` (211 MB), `sd-server` (213 MB)
+
+### Paths Forward
+
+1. **sd-server sidecar** — run sd.cpp's built-in HTTP server on a separate port,
+   route image requests from AICP. Bypasses LocalAI's broken wrapper entirely.
+2. **File LocalAI issue** — request updated sd.cpp in stablediffusion-ggml backend
+3. **Wait for LocalAI v4.2+** — will likely update the backend
+4. **ComfyUI sidecar** — Docker container with proven SD 3.5 support (alternative)
+
+---
+
+## P2P / Distributed Architecture Research
+
+### LocalAI P2P Modes (NOT recommended)
+
+| Mode | Purpose | Model Routing? | Status |
+|------|---------|---------------|--------|
+| P2P Worker (`p2p-llama-cpp-rpc`) | Shard one model across nodes | No | **Broken in v3.7+** |
+| P2P Federation (`--p2p --federated`) | Load-balance across nodes | **No — random routing** | Experimental |
+| Distributed Mode (PostgreSQL + NATS) | Production multi-node | **Yes — SmartRouter** | Production-grade |
+
+### Why LocalAI P2P Doesn't Work For Us
+
+**P2P Federation** picks a random node for each request. If Node A has Qwen3-8B and
+Node B has SD 3.5, a chat request could land on Node B (no LLM) and fail. There is no
+model-aware routing. [Discussion #3711](https://github.com/mudler/LocalAI/discussions/3711)
+confirms this is broken for heterogeneous model setups, with zero maintainer response.
+
+**P2P Worker** is broken since v3.7+ due to upstream llama.cpp RPC changes
+([#7355](https://github.com/mudler/LocalAI/issues/7355)).
+
+### Why AICP's Own Routing Is Better
+
+AICP already has model-aware routing at the application layer:
+- `aicp/core/cluster.py` — `find_best_node()` selects nodes by model + VRAM
+- `aicp/core/router.py` — score-based routing with configurable thresholds
+- `aicp/agent/server.py` — agent daemon on each node (HTTP API)
+- `config/fleet.yaml` — fleet topology configuration
+- Circuit breaker per backend prevents thundering herd
+- DLQ captures failed requests for retry
+
+This is lighter than LocalAI's Distributed Mode (no PostgreSQL, no NATS) and
+already works with our existing infrastructure.
+
+### Recommended Architecture
+
+```
+Machine 1 (192.168.40.10, 8GB VRAM):
+├── LocalAI (port 8090) — Qwen3-8B, Gemma4-E2B, nomic-embed
+├── AICP agent daemon (port 9100)
+├── Routes image requests → Machine 2
+└── No model swaps for image gen
+
+Machine 2 (192.168.40.250, 8GB VRAM):
+├── LocalAI (port 8090) — SD 3.5 Medium (dedicated)
+├── AICP agent daemon (port 9100)
+├── Accepts image requests from Machine 1
+└── Can also run lightweight LLM when idle
+```
+
+Communication: AICP agent-to-agent over HTTP (existing `cluster.py` + `fleet.yaml`).
+No P2P networking layer needed — simple HTTP routing at the application level.
+
+---
+
 ## Download URLs
 
 ```bash

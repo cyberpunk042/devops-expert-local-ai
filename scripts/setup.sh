@@ -52,6 +52,7 @@ cd "$REPO_ROOT"
 CATALOG_ALIASES=(
     "qwen3-8b" "qwen3-4b" "qwen3-30b-a3b"
     "gemma4-e2b" "gemma4-e4b" "gemma4-26b-a4b"
+    # Note: SD 3.5 Medium has 4 GGUF files — use 'make model-sd35-medium' instead
     "phi3-mini" "gemma-2b" "hermes" "mistral-7b" "codellama-7b" "hermes-13b" "codellama-13b"
 )
 declare -A MODEL_GGUF=(

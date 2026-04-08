@@ -1,0 +1,18 @@
+# ── SD 3.5 Medium All-in-One (gpustack Q4_0, includes VAE + all encoders) ──
+# Single GGUF file with everything embedded: MMDiT + CLIP-L + CLIP-G + T5-XXL + VAE.
+# No separate component files needed.
+#
+# Download with: make model-sd35-medium-allinone
+# Source: https://huggingface.co/gpustack/stable-diffusion-v3-5-medium-GGUF
+#
+# Size: ~5.3 GB (pure-Q4_0: all components quantized to Q4_0 except VAE at FP16)
+# VRAM: needs testing — may need --clip-on-cpu for 8GB GPU
+
+name: sd35-medium-allinone
+backend: stablediffusion-ggml
+parameters:
+  model: sd3.5_medium_allinone_Q4_0.gguf
+step: 25
+cfg_scale: 4.5
+options:
+  - "sampler:euler"

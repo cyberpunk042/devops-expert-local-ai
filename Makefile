@@ -2,7 +2,7 @@
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
-        model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b \
+        model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b model-sd35-medium \
         monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -60,6 +60,7 @@ help:
 	@echo "  make model-qwen3-30b         Download Qwen3-30B MoE (dual GPU only)"
 	@echo "  make model-gemma4            Download Gemma 4 E2B + E4B (8GB GPU)"
 	@echo "  make model-gemma4-26b        Download Gemma 4 26B MoE (dual GPU only)"
+	@echo "  make model-sd35-medium       Download SD 3.5 Medium (4 files, ~6.8 GB)"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
 	@echo "  make monitoring-up           Start Prometheus + Grafana"
 	@echo "  make monitoring-down         Stop monitoring stack"
@@ -327,6 +328,31 @@ model-gemma4-26b:
 # Download both Gemma 4 models for 8GB single GPU setup
 model-gemma4: model-gemma4-e2b model-gemma4-e4b
 	@echo "Gemma 4 models ready. Restart LocalAI: make local-down && make local-up"
+
+# ── Stable Diffusion 3.5 Medium (4 files, ~6.8 GB total) ──
+# Quality leap over SD 1.5: 1024x1024, text rendering, strong prompt adherence.
+# Uses --clip-on-cpu + --vae-on-cpu: only ~3.2 GB GPU VRAM.
+model-sd35-medium:
+	mkdir -p models
+	@echo "Downloading SD 3.5 Medium (4 files, ~6.8 GB total)..."
+	curl -L --progress-bar -C - -o models/sd3.5_medium-Q8_0.gguf \
+		"https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF/resolve/main/sd3.5_medium-Q8_0.gguf"
+	curl -L --progress-bar -C - -o models/clip_l-Q8_0.gguf \
+		"https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF/resolve/main/clip_l-Q8_0.gguf"
+	curl -L --progress-bar -C - -o models/clip_g-Q8_0.gguf \
+		"https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF/resolve/main/clip_g-Q8_0.gguf"
+	curl -L --progress-bar -C - -o models/t5xxl-Q4_0.gguf \
+		"https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF/resolve/main/t5xxl-Q4_0.gguf"
+	@echo "Done. 4 files downloaded. Restart LocalAI: make local-down && make local-up"
+
+# SD 3.5 Medium All-in-One (single GGUF with VAE + all encoders, ~5.3 GB)
+# Simpler setup — no separate component files needed.
+model-sd35-medium-allinone:
+	mkdir -p models
+	@echo "Downloading SD 3.5 Medium all-in-one (pure-Q4_0, ~5.3 GB)..."
+	curl -L --progress-bar -C - -o models/sd3.5_medium_allinone_Q4_0.gguf \
+		"https://huggingface.co/gpustack/stable-diffusion-v3-5-medium-GGUF/resolve/main/stable-diffusion-v3-5-medium-pure-Q4_0.gguf"
+	@echo "Done. Restart LocalAI: make local-down && make local-up"
 
 # Benchmark Qwen3-8B vs current default model
 benchmark-qwen3:

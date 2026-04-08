@@ -1,0 +1,29 @@
+# ── Stable Diffusion 3.5 Medium (2.5B params, MMDiT-X) ──
+# Quality leap over SD 1.5: 1024x1024, text rendering, strong prompt adherence.
+#
+# Uses the official safetensors (includes MMDiT + VAE) with GGUF text encoders.
+# Download with: make model-sd35-medium
+#
+# VRAM with offloading: ~5 GB GPU (diffusion + VAE), text encoders on CPU
+# Text encoders on CPU/RAM: ~3.6 GB RAM
+# Total disk: ~8.7 GB (safetensors + 3 encoder GGUFs)
+#
+# License: Stability AI Community License (free < $1M revenue)
+# Requires: HuggingFace account + license acceptance
+
+name: sd35-medium
+backend: stablediffusion-ggml
+parameters:
+  model: sd3.5_medium.safetensors
+step: 25
+cfg_scale: 4.5
+options:
+  # Text encoders as GGUF (quantized, saves disk + RAM)
+  - "clip_l_path:clip_l-Q8_0.gguf"
+  - "clip_g_path:clip_g-Q8_0.gguf"
+  - "t5xxl_path:t5xxl-Q4_0.gguf"
+  # Sampling
+  - "sampler:euler"
+  # Offload text encoders + VAE to CPU (critical for 8GB VRAM)
+  - "keep_clip_on_cpu:true"
+  - "keep_vae_on_cpu:true"
