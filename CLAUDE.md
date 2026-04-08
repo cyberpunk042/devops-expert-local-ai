@@ -271,6 +271,45 @@ LocalAI Peering: Cluster 1 ↔ Cluster 2 (load balance, failover)
 - Protect secrets and forbidden paths always.
 - Control when cloud backends are allowed.
 
+## Reliability (Stage 4)
+
+Production reliability infrastructure for fleet operation:
+
+### Circuit Breaker (`aicp/core/circuit_breaker.py`)
+Per-backend state machine (CLOSED → OPEN → HALF_OPEN). When a backend fails
+`failure_threshold` times consecutively, the breaker OPENS and subsequent calls
+fail fast — failover happens in milliseconds instead of waiting for timeouts.
+After `recovery_timeout` seconds, one probe request is allowed through (HALF_OPEN).
+Profile-configurable via `circuit_breaker:` section.
+
+### Startup Warmup (`aicp/agent/server.py`)
+Agent daemon pre-loads models from `warmup.models` list before accepting traffic.
+Health endpoint returns `{"status": "warming"}` during load. Prevents cold-start
+timeouts when fleet agents connect. Enabled per-profile (`warmup.enabled: true`).
+
+### Deep Health Endpoint
+`GET /health` checks actual backend availability (not just "agent is running").
+Returns `{"status": "ok|degraded|warming", "backends": {"local": true/false}}`.
+Fleet routing uses this to avoid nodes with dead LocalAI.
+
+### Dead-Letter Queue (`aicp/core/dlq.py`)
+Failed tasks (after full failover chain exhausted) are persisted to `~/.aicp/dlq/`
+as JSONL. Retryable via `aicp --retry-dlq`. Profile-configurable: `dlq.max_retries`,
+`dlq.retry_delay_seconds`.
+
+### Persistent Metrics (`aicp/core/prometheus.py`)
+MetricsCollector saves JSON snapshots to disk periodically. Counters survive
+restarts. Configured via `metrics.persist: true`.
+
+### Health Reports (`aicp/core/health_report.py`)
+Periodic reports comparing current vs previous period stats. Detects trends
+(latency increase, error rate growth, low offload). Optional ntfy notification.
+Generate manually: `aicp --health-report`. Profile: `reports.enabled: true`.
+
+### Reliability Profile
+`make profile-use PROFILE=reliable` — aggressive breaker (threshold=2), auto-warmup
+(qwen3-8b + nomic-embed), DLQ with 5 retries, health reports every 4 hours.
+
 ## Collaboration Rules — AI Behavior Contract
 
 These rules govern how this AI must behave in every session. Violations are tracked.
@@ -349,19 +388,22 @@ between `config/default.yaml` (base) and user/project overrides in the merge cha
 | Profile | Primary Model | Failover | Use Case |
 |---------|--------------|----------|----------|
 | **default** | qwen3-8b | local→fleet→openrouter→claude | Balanced everyday use |
-| **fast** | qwen3-8b-fast | local→openrouter | Quick responses, low latency |
+| **fast** | gemma4-e2b | local→openrouter | Quick responses, 53 tok/s |
 | **offline** | qwen3-8b | local→fleet | No cloud, air-gapped environments |
 | **thorough** | qwen3-8b | full chain | Architecture reviews, security audits |
 | **code-review** | qwen3-8b | local→openrouter→claude | Code analysis, structured output |
-| **fleet-light** | qwen3-4b | local→fleet | Heartbeat node duty, minimal footprint |
+| **fleet-light** | gemma4-e2b | local→fleet | Heartbeat node duty, 53 tok/s, 2.9GB |
+| **reliable** | qwen3-8b | full chain | Production fleet — breaker, warmup, DLQ, reports |
 | **dual-gpu** | qwen3-30b-a3b | full chain | Two GPUs, MoE model, expanded context |
 | **benchmark** | qwen3-8b | local only | Deterministic evaluation (temp=0, seed=42) |
 
 ### What Profiles Control
 
-Each profile can override: `backends`, `router` (complexity thresholds, failover chain),
-`mode_profiles` (sampling per mode), `rag`, `budget`, `cache`, `quality` (escalation threshold),
-`timeouts` (request, cold start, retries), `docker` (context size, threads, memory limit).
+Each profile can override: `backends`, `router` (complexity thresholds, failover chain,
+force_cloud_modes), `mode_profiles` (sampling per mode), `rag`, `budget`, `cache`,
+`quality` (escalation threshold), `timeouts` (request, cold start, retries),
+`circuit_breaker`, `warmup`, `dlq`, `metrics`, `reports`,
+`docker` (context size, threads, memory limit).
 
 Profiles do NOT control: model internals (GGUF, gpu_layers), mode definitions (Think/Edit/Act),
 guardrail rules, fleet topology, GPU detection, model binary downloads.
@@ -426,6 +468,10 @@ make kb-sync-force           # Reset collection + re-upload everything
 make monitoring-up           # Start Prometheus (:9090) + Grafana (:3000)
 make monitoring-down         # Stop monitoring stack
 
+# Reliability (Stage 4)
+aicp --health-report                   # Generate health report with trends
+aicp --profile-cmd use --profile reliable  # Switch to production reliability profile
+
 # Docker
 docker compose up -d                    # Start LocalAI
 docker compose restart localai          # Restart (picks up new model configs)
@@ -435,12 +481,14 @@ docker stats                            # Monitor resource usage
 
 ## AICP ↔ Fleet Connection
 
-AICP modules that fleet will connect to (NOT yet wired):
+AICP provides LocalAI inference to the fleet ecosystem:
 - `aicp/core/rag.py` — SQLite vector store, cosine similarity (fleet RAG)
 - `aicp/core/kb.py` — Knowledge base, file ingestion, BGE reranker
 - `aicp/core/stores.py` — LocalAI /stores/ API client
-- `aicp/core/router.py` — Backend routing (AICP version → fleet bridge)
+- `aicp/core/router.py` — Score-based routing with configurable thresholds
 - `aicp/core/skills.py` — 3-layer skill system (78 skills in .claude/skills/)
+- `aicp/core/circuit_breaker.py` — Prevents thundering herd from fleet agents
+- `aicp/core/dlq.py` — Persists failed tasks for retry
 
 Skills in AICP needed by fleet agents (18 skills referenced in fleet's
 config/agent-tooling.yaml): architecture-propose, feature-implement,
@@ -448,8 +496,7 @@ quality-coverage, foundation-docker, pm-plan, ops-deploy, etc.
 
 ## Related Projects
 
-- **Fleet navigation**: `../openclaw-fleet/docs/README.md` (start here for fleet docs)
-- **Fleet architecture**: `../openclaw-fleet/docs/ARCHITECTURE.md`
-- **Fleet work backlog**: `../openclaw-fleet/docs/WORK-BACKLOG.md`
-- **DSPD mission**: `../devops-solution-product-development/config/mission.yaml`
-- **LocalAI strategic vision**: `../openclaw-fleet/docs/milestones/active/strategic-vision-localai-independence.md`
+- **OpenFleet**: `../openfleet/` (10-agent orchestration framework)
+- **OpenArms**: `../openarms/` (AI assistant vendor/runtime)
+- **DSPD**: `../devops-solution-product-development/` (project management via Plane)
+- **NNRT**: `../Narrative-to-Neutral-Report-Transformer/` (report transformation)
