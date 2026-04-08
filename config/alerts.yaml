@@ -63,6 +63,16 @@ groups:
           summary: "Cost spike: ${{ $value }} in last hour on {{ $labels.backend }}"
           description: "Unusual spending detected. Check routing and escalation patterns."
 
+      # Circuit breaker open — backend has been failing for > 5 minutes
+      - alert: CircuitBreakerOpen
+        expr: aicp_circuit_breaker_state == 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker OPEN for {{ $labels.backend }}"
+          description: "Backend {{ $labels.backend }} has been failing repeatedly. Failover is active but investigate root cause."
+
       # LocalAI high memory — Go heap > 4GB
       - alert: LocalAIHighMemory
         expr: go_memstats_alloc_bytes{job="localai"} > 4e9

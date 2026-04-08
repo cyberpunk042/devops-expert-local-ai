@@ -26,8 +26,8 @@ class AgentHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the AICP agent daemon."""
 
     def do_GET(self) -> None:
-        if self.path == "/health":
-            self._respond_json(200, {"status": "ok"})
+        if self.path == "/health" or self.path.startswith("/health?"):
+            self._handle_health()
         elif self.path == "/status":
             self._handle_status()
         else:
@@ -38,6 +38,36 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._handle_task()
         else:
             self._respond_json(404, {"error": "not found"})
+
+    def _handle_health(self) -> None:
+        """Return health status including backend availability and warmup state."""
+        warming = getattr(self.server, "_warming", False)
+        warming_model = getattr(self.server, "_warming_model", "")
+
+        if warming:
+            self._respond_json(200, {
+                "status": "warming",
+                "model": warming_model,
+                "backends": {},
+            })
+            return
+
+        # Check backend availability (cached by controller's circuit breakers)
+        backend_status = {}
+        controller = getattr(self.server, "controller", None)
+        if controller:
+            for name, backend in controller.backends.items():
+                try:
+                    backend_status[name] = backend.is_available()
+                except Exception:
+                    backend_status[name] = False
+
+        all_ok = all(backend_status.values()) if backend_status else True
+        self._respond_json(200, {
+            "status": "ok" if all_ok else "degraded",
+            "backends": backend_status,
+            "warming": False,
+        })
 
     def _handle_status(self) -> None:
         """Return node status: GPUs, models, availability."""
@@ -175,12 +205,50 @@ def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = N
     server = HTTPServer(("0.0.0.0", port), AgentHandler)
     server.controller = controller  # type: ignore
     server.auth_token = token  # type: ignore
+    server._warming = False  # type: ignore
+    server._warming_model = ""  # type: ignore
 
     print(f"AICP agent listening on port {port}")
     if token:
         print("Auth: token required")
     else:
         print("Auth: NONE (use --token for production)")
+
+    # Startup model pre-warming (Stage 4 Phase 2)
+    warmup_cfg = config.get("warmup", {})
+    if warmup_cfg.get("enabled", False):
+        warmup_models = warmup_cfg.get("models", [])
+        warmup_timeout = warmup_cfg.get("timeout", 120)
+        local_backend = backends.get("local")
+
+        if warmup_models and local_backend and hasattr(local_backend, "model_warmup"):
+            import threading
+
+            def _do_warmup():
+                server._warming = True  # type: ignore
+                per_model_timeout = warmup_timeout / max(len(warmup_models), 1)
+                for model_name in warmup_models:
+                    server._warming_model = model_name  # type: ignore
+                    print(f"Warming up model: {model_name}...")
+                    try:
+                        result = local_backend.model_warmup(
+                            model_name=model_name,
+                            timeout=per_model_timeout,
+                        )
+                        if result.get("loaded"):
+                            dur = result.get("duration_ms", 0)
+                            already = " (already loaded)" if result.get("already_loaded") else ""
+                            print(f"  {model_name}: warm in {dur}ms{already}")
+                        else:
+                            print(f"  {model_name}: WARNING — {result.get('error', 'unknown')}")
+                    except Exception as e:
+                        print(f"  {model_name}: WARNING — warmup failed: {e}")
+                server._warming = False  # type: ignore
+                server._warming_model = ""  # type: ignore
+                print("Warmup complete. Ready for requests.")
+
+            warmup_thread = threading.Thread(target=_do_warmup, daemon=True)
+            warmup_thread.start()
 
     try:
         server.serve_forever()

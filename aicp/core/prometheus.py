@@ -39,9 +39,13 @@ class _BackendStats:
 
 
 class MetricsCollector:
-    """Thread-safe metrics collector for AICP operations."""
+    """Thread-safe metrics collector for AICP operations.
 
-    def __init__(self) -> None:
+    Supports optional snapshot persistence: saves counters to a JSON file
+    periodically and restores on startup (Stage 4 Phase 5).
+    """
+
+    def __init__(self, snapshot_path: Optional[str] = None) -> None:
         self._lock = threading.Lock()
         self._backends: Dict[str, _BackendStats] = defaultdict(_BackendStats)
         self._models: Dict[str, int] = defaultdict(int)  # model → request count
@@ -50,6 +54,13 @@ class MetricsCollector:
         # Warm pool tracking (E-M52)
         self._loaded_models: Dict[str, float] = {}  # model → last_used timestamp
         self._model_swaps: int = 0
+        # Circuit breaker tracking (Stage 4)
+        self._breaker_states: Dict[str, str] = {}   # backend → state
+        self._breaker_trips: Dict[str, int] = defaultdict(int)  # backend → trip count
+        # Snapshot persistence (Stage 4 Phase 5)
+        self._snapshot_path = snapshot_path
+        if snapshot_path:
+            self._restore_snapshot()
 
     def record_request(
         self,
@@ -98,6 +109,16 @@ class MetricsCollector:
         with self._lock:
             self._loaded_models.pop(model, None)
 
+    def record_breaker_state(self, backend: str, state: str) -> None:
+        """Track circuit breaker state change."""
+        with self._lock:
+            self._breaker_states[backend] = state
+
+    def record_breaker_trip(self, backend: str) -> None:
+        """Track circuit breaker trip (CLOSED → OPEN)."""
+        with self._lock:
+            self._breaker_trips[backend] += 1
+
     @property
     def loaded_models(self) -> Dict[str, float]:
         with self._lock:
@@ -107,6 +128,75 @@ class MetricsCollector:
     def model_swaps(self) -> int:
         with self._lock:
             return self._model_swaps
+
+    def save_snapshot(self) -> bool:
+        """Save current counters to disk. Returns True on success."""
+        if not self._snapshot_path:
+            return False
+        try:
+            import json
+            from pathlib import Path
+            data = {}
+            with self._lock:
+                for name, s in self._backends.items():
+                    data[f"backend:{name}"] = {
+                        "requests": s.requests, "errors": s.errors,
+                        "tokens_in": s.tokens_in, "tokens_out": s.tokens_out,
+                        "cost_usd": s.cost_usd, "latency_sum": s.latency_sum,
+                        "cache_hits": s.cache_hits, "escalations": s.escalations,
+                        "quality_sum": s.quality_sum,
+                    }
+                data["models"] = dict(self._models)
+                data["routes"] = dict(self._routes)
+                data["model_swaps"] = self._model_swaps
+                data["breaker_trips"] = dict(self._breaker_trips)
+            # Atomic write: tmp + rename
+            path = Path(self._snapshot_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            with open(tmp, "w") as f:
+                json.dump(data, f)
+            tmp.rename(path)
+            return True
+        except Exception:
+            return False
+
+    def _restore_snapshot(self) -> bool:
+        """Restore counters from disk. Returns True if restored."""
+        if not self._snapshot_path:
+            return False
+        try:
+            import json
+            from pathlib import Path
+            path = Path(self._snapshot_path)
+            if not path.exists():
+                return False
+            with open(path) as f:
+                data = json.load(f)
+            with self._lock:
+                for key, vals in data.items():
+                    if key.startswith("backend:"):
+                        name = key[len("backend:"):]
+                        s = self._backends[name]
+                        s.requests = vals.get("requests", 0)
+                        s.errors = vals.get("errors", 0)
+                        s.tokens_in = vals.get("tokens_in", 0)
+                        s.tokens_out = vals.get("tokens_out", 0)
+                        s.cost_usd = vals.get("cost_usd", 0.0)
+                        s.latency_sum = vals.get("latency_sum", 0.0)
+                        s.cache_hits = vals.get("cache_hits", 0)
+                        s.escalations = vals.get("escalations", 0)
+                        s.quality_sum = vals.get("quality_sum", 0.0)
+                if "models" in data:
+                    self._models.update(data["models"])
+                if "routes" in data:
+                    self._routes.update(data["routes"])
+                self._model_swaps = data.get("model_swaps", 0)
+                if "breaker_trips" in data:
+                    self._breaker_trips.update(data["breaker_trips"])
+            return True
+        except Exception:
+            return False
 
     def format_prometheus(self) -> str:
         """Render all metrics in Prometheus text exposition format."""
@@ -200,6 +290,22 @@ class MetricsCollector:
             lines.append("# HELP aicp_model_swaps_total Total model swap events.")
             lines.append("# TYPE aicp_model_swaps_total counter")
             lines.append(f"aicp_model_swaps_total {self._model_swaps}")
+
+            # Circuit breaker (Stage 4)
+            state_map = {"closed": 0, "half_open": 1, "open": 2}
+            if self._breaker_states:
+                lines.append("")
+                lines.append("# HELP aicp_circuit_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open).")
+                lines.append("# TYPE aicp_circuit_breaker_state gauge")
+                for b, s in self._breaker_states.items():
+                    lines.append(f'aicp_circuit_breaker_state{{backend="{b}"}} {state_map.get(s, 0)}')
+
+            if self._breaker_trips:
+                lines.append("")
+                lines.append("# HELP aicp_circuit_breaker_trips_total Circuit breaker trip count per backend.")
+                lines.append("# TYPE aicp_circuit_breaker_trips_total counter")
+                for b, c in self._breaker_trips.items():
+                    lines.append(f'aicp_circuit_breaker_trips_total{{backend="{b}"}} {c}')
 
         lines.append("")
         return "\n".join(lines) + "\n"

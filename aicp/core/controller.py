@@ -162,6 +162,14 @@ class Controller:
         self.failover_chain: list = router_cfg.get(
             "failover_chain", ["local", "fleet", "openrouter", "claude"]
         )
+        # Circuit breakers (Stage 4 — prevent thundering herd)
+        from aicp.core.circuit_breaker import build_breakers
+        self._breakers = build_breakers(list(backends.keys()), self.config)
+        # Wire breaker callbacks to metrics collector
+        if metrics_collector:
+            for breaker in self._breakers.values():
+                breaker._on_state_change = metrics_collector.record_breaker_state
+                breaker._on_trip = metrics_collector.record_breaker_trip
         # Token budget (E-M51)
         budget_cfg = self.config.get("budget", {})
         self.budget_limit = budget_cfg.get("max_tokens_per_session", 0)  # 0 = unlimited
@@ -382,14 +390,21 @@ class Controller:
                     except Exception:
                         pass
 
-                # Execute
+                # Execute (through circuit breaker)
                 self.last_route = "local"
                 backend = self.backends.get(task.backend_name)
                 if backend is None:
                     raise ValueError(f"Unknown backend: {task.backend_name}")
 
                 try:
-                    result = backend.execute(effective_prompt, task.mode, task.project_path)
+                    from aicp.core.circuit_breaker import CircuitBreakerOpen
+                    breaker = self._breakers.get(task.backend_name)
+                    if breaker:
+                        result = breaker.call(
+                            lambda: backend.execute(effective_prompt, task.mode, task.project_path)
+                        )
+                    else:
+                        result = backend.execute(effective_prompt, task.mode, task.project_path)
 
                     # Auto-escalation on low quality (E-M49)
                     if task.backend_name in ("local", "openrouter"):
@@ -397,7 +412,7 @@ class Controller:
                         if better is not None:
                             result = better
 
-                except Exception as local_err:
+                except (Exception, CircuitBreakerOpen) as local_err:
                     if not failover_enabled:
                         raise
 
@@ -438,6 +453,20 @@ class Controller:
 
         except Exception as e:
             error = str(e)
+            # Dead-letter queue: persist failed tasks for retry (Stage 4 Phase 4)
+            try:
+                from aicp.core.dlq import enqueue
+                enqueue(
+                    prompt=task.prompt,
+                    mode=task.mode.value,
+                    backend=task.backend_name,
+                    project=str(task.project_path),
+                    error=error,
+                    failover_chain=self.failover_chain,
+                    config=self.config,
+                )
+            except Exception:
+                pass  # DLQ failure should never mask the original error
             raise
         finally:
             elapsed = (datetime.utcnow() - start).total_seconds()

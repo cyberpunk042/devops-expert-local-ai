@@ -44,6 +44,11 @@ _SECTION_TYPES: Dict[str, type] = {
     "defaults": dict,
     "guardrails": dict,
     "stores": dict,
+    "circuit_breaker": dict,
+    "warmup": dict,
+    "dlq": dict,
+    "metrics": dict,
+    "reports": dict,
 }
 
 

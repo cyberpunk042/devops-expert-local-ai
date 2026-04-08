@@ -77,6 +77,37 @@ timeouts:
   cold_start_interval: 5
   retries: 3
 
+# --- Warmup (Stage 4 — pre-load models at agent startup) ---
+warmup:
+  enabled: false              # set true for fleet nodes
+  models: [qwen3-8b]          # models to pre-load
+  timeout: 120                # total warmup budget in seconds
+
+# --- Circuit Breaker (Stage 4 — prevent thundering herd) ---
+circuit_breaker:
+  failure_threshold: 3       # consecutive failures before opening
+  recovery_timeout: 30       # seconds before half-open probe
+  half_open_max: 1           # concurrent probes allowed in half-open
+
+# --- Dead-Letter Queue (Stage 4 — persist failed tasks for retry) ---
+dlq:
+  enabled: true
+  max_retries: 3              # max retry attempts per entry
+  retry_delay_seconds: 300    # minimum delay between retries
+  max_entries: 1000           # max DLQ entries before pruning
+
+# --- Metrics persistence (Stage 4 — survive restarts) ---
+metrics:
+  persist: true
+  snapshot_interval: 60       # seconds between snapshot writes
+
+# --- Health Reports (Stage 4 — proactive trend detection) ---
+reports:
+  enabled: false              # set true for production fleet nodes
+  interval_hours: 6           # report generation interval
+  retain_days: 30             # keep reports for N days
+  notify_url: ""              # ntfy topic URL (optional)
+
 # --- Docker (requires restart when changed) ---
 docker:
   context_size: 16384

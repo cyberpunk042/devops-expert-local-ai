@@ -1,0 +1,43 @@
+# reliable profile — maximum reliability for production fleet nodes.
+#
+# Aggressive circuit breaker, auto-warmup, DLQ enabled, health reports on.
+# Use this for machines running 24/7 with fleet agents.
+
+name: reliable
+description: "Maximum reliability — aggressive breaker, auto-warmup, DLQ, reports"
+extends: default
+
+warmup:
+  enabled: true
+  models: [qwen3-8b, nomic-embed]
+  timeout: 180
+
+circuit_breaker:
+  failure_threshold: 2
+  recovery_timeout: 20
+  half_open_max: 1
+
+dlq:
+  enabled: true
+  max_retries: 5
+  retry_delay_seconds: 120
+  max_entries: 2000
+
+quality:
+  threshold: 0.30
+
+cache:
+  enabled: true
+  ttl_seconds: 300
+  max_entries: 256
+
+reports:
+  enabled: true
+  interval_hours: 4
+  retain_days: 60
+
+timeouts:
+  request: 120
+  cold_start: 90
+  retries: 4
+  health_probe_interval: 15

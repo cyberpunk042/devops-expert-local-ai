@@ -20,6 +20,11 @@ backends:
     cache_prompt: true
     auto_route: false
 
+warmup:
+  enabled: true
+  models: [gemma4-e2b]
+  timeout: 60
+
 router:
   complexity_thresholds: [0.6, 0.9]
   failover_chain: [local, fleet]
