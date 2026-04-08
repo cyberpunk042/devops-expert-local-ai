@@ -116,9 +116,24 @@ On 8GB VRAM with SINGLE_ACTIVE_BACKEND, this saves a model swap every time visio
 - Keep llava config for backward compatibility
 - E2B vision needs its own smaller mmproj (not yet downloaded)
 
-## TurboQuant Note
+## TurboQuant & KV Cache Status (2026-04-07)
 
-Google's TurboQuant (ICLR 2026) achieves 3-bit KV cache quantization with zero accuracy loss.
-Multiple llama.cpp forks are implementing it but it's NOT yet merged into main llama.cpp.
-When it lands, it would significantly reduce VRAM for large context windows — directly
-benefiting our 8GB VRAM constraint. Track: https://github.com/ggml-org/llama.cpp/discussions/20969
+### What's merged into llama.cpp
+- **PR #21038 (April 1)**: Hadamard rotation for KV cache — the core TurboQuant idea.
+  Improves q4_0 KV quality (Qwen3-8B PPL: 7.64 → 7.50 vs F16 7.32). Automatic, no config needed.
+- **PR #21273 (April 6)**: Q1_0 1-bit quant type (for experimental ultra-low KV).
+
+### What's NOT merged
+- **PR #21089**: CPU-only TBQ3_0/TBQ4_0 types. Open but merge conflicts + maintainer skepticism.
+  Maintainers say rotated q4_0 already captures most benefit.
+
+### What we did instead
+Switched all GPU models to **asymmetric KV**: `q4_0` keys + `q2_K` values.
+- Keys need more precision (quantization noise propagates through softmax)
+- Values tolerate aggressive quantization
+- Result: **doubled context 8K → 16K** on Qwen3-8B with zero quality/speed regression
+- ~6x KV cache compression vs f16
+
+### Tracking
+- llama.cpp TurboQuant discussion: https://github.com/ggml-org/llama.cpp/discussions/20969
+- If TBQ types merge: change `cache_type_v: q2_K` → `cache_type_v: turbo3` for ~7x compression
