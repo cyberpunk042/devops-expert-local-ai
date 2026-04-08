@@ -370,6 +370,37 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show system status (GPU, model, routing, offload progress)",
     )
+    # Stage 4+5: Reliability & intelligent infrastructure
+    parser.add_argument(
+        "--health-report",
+        action="store_true",
+        help="Generate health report with trend detection and recommendations",
+    )
+    parser.add_argument(
+        "--retry-dlq",
+        action="store_true",
+        help="Retry all pending entries in the dead-letter queue",
+    )
+    parser.add_argument(
+        "--dlq-status",
+        action="store_true",
+        help="Show dead-letter queue status (pending entries, retry counts)",
+    )
+    parser.add_argument(
+        "--tasks",
+        action="store_true",
+        help="Show active and recent tasks from the task lifecycle manager",
+    )
+    parser.add_argument(
+        "--extract-memories",
+        action="store_true",
+        help="Extract learnable facts from recent task history into memory files",
+    )
+    parser.add_argument(
+        "--extract-memories-dry-run",
+        action="store_true",
+        help="Show what --extract-memories would save without writing files",
+    )
     parser.add_argument("--version", "-v", action="version", version=f"aicp {__version__}")
     return parser
 
@@ -2298,6 +2329,95 @@ def main(argv: Optional[List[str]] = None) -> int:
             console.print("  [cyan]Offload[/]   [dim]unavailable[/]")
 
         console.print()
+        return 0
+
+    # ── Stage 4+5: Reliability & intelligent infrastructure ──────────────
+
+    # --health-report: generate health report
+    if getattr(args, "health_report", False):
+        from aicp.core.health_report import generate_report, format_report, save_report
+        from aicp.core.history import list_tasks as _list_history
+        tasks = _list_history(count=100)
+        report = generate_report(tasks)
+        save_report(report)
+        print(format_report(report))
+        return 0
+
+    # --retry-dlq: retry pending DLQ entries
+    if getattr(args, "retry_dlq", False):
+        from aicp.core.dlq import list_pending, retry_pending, count_pending
+        pending = count_pending()
+        if pending == 0:
+            print("DLQ is empty — no entries to retry.")
+            return 0
+        print(f"Retrying {pending} pending DLQ entries...")
+        retried = retry_pending()
+        print(f"Retried: {retried}")
+        return 0
+
+    # --dlq-status: show DLQ status
+    if getattr(args, "dlq_status", False):
+        from aicp.core.dlq import list_pending, count_pending
+        pending = count_pending()
+        print(f"Dead-Letter Queue: {pending} pending entries")
+        if pending > 0:
+            entries = list_pending()
+            for i, entry in enumerate(entries[:10]):
+                ts = entry.get("timestamp", "?")
+                mode = entry.get("mode", "?")
+                err = (entry.get("error") or "")[:80]
+                print(f"  [{i+1}] {ts} | mode={mode} | {err}")
+            if pending > 10:
+                print(f"  ... and {pending - 10} more")
+        return 0
+
+    # --tasks: show active and recent tasks
+    if getattr(args, "tasks", False):
+        from aicp.core.tasks import get_task_manager
+        mgr = get_task_manager()
+        tasks = mgr.list_tasks(limit=20)
+        if not tasks:
+            print("No active or recent tasks.")
+            return 0
+        print(f"Tasks ({mgr.active_count} active / {mgr.total_count} total):\n")
+        for t in tasks:
+            status_icon = {"pending": "⏳", "running": "🔄", "completed": "✅", "failed": "❌", "killed": "🛑"}.get(t.status.value, "?")
+            dur = f" ({t.duration_seconds:.1f}s)" if t.duration_seconds else ""
+            print(f"  {status_icon} {t.id} [{t.status.value}] {t.prompt[:60]}{dur}")
+        return 0
+
+    # --extract-memories / --extract-memories-dry-run
+    if getattr(args, "extract_memories", False) or getattr(args, "extract_memories_dry_run", False):
+        from aicp.core.memory_extract import run_extraction
+        dry = getattr(args, "extract_memories_dry_run", False)
+        memory_dir = Path.home() / ".claude" / "projects" / "memory"
+        # Try to find project-specific memory dir
+        try:
+            import subprocess
+            git_root = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+            if git_root:
+                slug = git_root.replace("/", "-").lstrip("-")
+                memory_dir = Path.home() / ".claude" / "projects" / f"-{slug}" / "memory"
+        except Exception:
+            pass
+
+        if dry:
+            print("Dry run — showing what would be extracted:\n")
+        else:
+            print(f"Extracting memories to {memory_dir}...\n")
+
+        results = run_extraction(memory_dir, dry_run=dry)
+        if not results:
+            print("Nothing to extract (not enough task history or no notable patterns).")
+        else:
+            for r in results:
+                saved = r.get("saved_to", r.get("dry_run", r.get("skipped", "")))
+                print(f"  [{r['type']}] {r['content'][:80]}")
+                print(f"    confidence={r['confidence']:.1f} category={r['category']} → {saved}")
+            print(f"\n{len(results)} facts {'would be' if dry else ''} extracted.")
         return 0
 
     # --bench: quick performance benchmark (no config needed)

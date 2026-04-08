@@ -7,7 +7,9 @@
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
         install-nvidia-toolkit extract-backend extract-backend-force extract-backend-only \
-        install-statusline optimize-models help
+        install-statusline optimize-models \
+        health-report retry-dlq dlq-status tasks extract-memories extract-memories-dry \
+        help
 
 SETUP_SCRIPT := scripts/setup.sh
 PORT         ?= 8090
@@ -63,6 +65,14 @@ help:
 	@echo "  make monitoring-down         Stop monitoring stack"
 	@echo "  make models-list             Models currently loaded in LocalAI"
 	@echo "  make model-download MODEL=<f> URL=<url>  Download a GGUF model"
+	@echo ""
+	@echo "RELIABILITY (Stage 4+5)"
+	@echo "  make health-report           Generate health report with trends"
+	@echo "  make retry-dlq               Retry pending dead-letter queue entries"
+	@echo "  make dlq-status              Show DLQ status and pending entries"
+	@echo "  make tasks                   Show active and recent tasks"
+	@echo "  make extract-memories        Extract facts from task history into memory"
+	@echo "  make extract-memories-dry    Preview extraction without writing files"
 	@echo ""
 	@echo "AGENT"
 	@echo "  make agent-up                Start aicp-agent daemon (port 9100)"
@@ -354,6 +364,28 @@ monitoring-down:
 
 monitoring-logs:
 	docker compose --profile monitoring logs --tail 30
+
+# =============================================================================
+# Reliability & intelligent infrastructure (Stage 4+5)
+# =============================================================================
+
+health-report:
+	.venv/bin/aicp --health-report
+
+retry-dlq:
+	.venv/bin/aicp --retry-dlq
+
+dlq-status:
+	.venv/bin/aicp --dlq-status
+
+tasks:
+	.venv/bin/aicp --tasks
+
+extract-memories:
+	.venv/bin/aicp --extract-memories
+
+extract-memories-dry:
+	.venv/bin/aicp --extract-memories-dry-run
 
 # =============================================================================
 # Agent daemon
