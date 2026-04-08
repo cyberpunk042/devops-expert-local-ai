@@ -10,5 +10,11 @@ COPY backends/cuda12-llama-cpp /aicp-backends/cuda12-llama-cpp
 COPY backends/whisper /aicp-backends/whisper
 COPY backends/piper /aicp-backends/piper
 
+# Rebuilt stablediffusion-ggml backend (sd.cpp @ 8afbeb6 with CUDA).
+# Gallery OCI image ships stale libgosd*.so without SD 3.5 support.
+# Built by: make build-libgosd
+# Entrypoint patches this over the gallery version at startup.
+COPY backends/cuda12-stablediffusion-ggml-rebuild /aicp-backends/cuda12-stablediffusion-ggml-rebuild
+
 COPY scripts/entrypoint.sh /aicp-entrypoint.sh
 ENTRYPOINT ["/aicp-entrypoint.sh"]

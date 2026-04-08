@@ -18,6 +18,8 @@ parameters:
 step: 25
 cfg_scale: 4.5
 options:
+  # SD 3.5 is a diffusion model (not a standard SD 1.5/SDXL)
+  - "diffusion_model"
   # Text encoders as GGUF (quantized, saves disk + RAM)
   - "clip_l_path:clip_l-Q8_0.gguf"
   - "clip_g_path:clip_g-Q8_0.gguf"

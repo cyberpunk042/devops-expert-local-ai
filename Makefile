@@ -3,7 +3,7 @@
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
         model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b model-sd35-medium model-sd35-medium-allinone \
-        build-sd-cpp sd35-test sd35-server \
+        build-sd-cpp build-libgosd sd35-test sd35-server \
         monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -63,7 +63,8 @@ help:
 	@echo "  make model-gemma4-26b        Download Gemma 4 26B MoE (dual GPU only)"
 	@echo "  make model-sd35-medium       Download SD 3.5 Medium GGUF encoders (~6.8 GB)"
 	@echo "  make model-sd35-safetensors  Download SD 3.5 Medium safetensors (5.1 GB, needs HF token)"
-	@echo "  make build-sd-cpp            Build stable-diffusion.cpp from source (CUDA)"
+	@echo "  make build-libgosd           Rebuild libgosd.so for SD 3.5 support (patches LocalAI)"
+	@echo "  make build-sd-cpp            Build standalone sd.cpp from source (CUDA)"
 	@echo "  make sd35-test               Generate a test image with SD 3.5"
 	@echo "  make sd35-server             Start SD 3.5 API server on port 8091"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
@@ -370,7 +371,13 @@ model-sd35-safetensors:
 		"https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"'
 	@echo "Done. Use with: make sd35-test"
 
-# Build stable-diffusion.cpp from source (LocalAI v4.1.3 backend is too old for SD 3.5)
+# Rebuild libgosd.so from vendored LocalAI source with CUDA (fixes SD 3.5 support)
+# The gallery OCI image ships a stale .so; this builds from pinned sd.cpp @ 8afbeb6.
+# After building: make setup-force (rebuilds Docker image with patched backend)
+build-libgosd:
+	bash scripts/build-libgosd.sh
+
+# Build standalone stable-diffusion.cpp from source (sidecar option, not needed if using build-libgosd)
 build-sd-cpp:
 	bash scripts/build-sd-cpp.sh
 
