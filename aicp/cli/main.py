@@ -379,7 +379,7 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
     local_cfg = get_backend_config(config, "local")
     claude_cfg = get_backend_config(config, "claude")
     timeouts_cfg = config.get("timeouts", {})
-    return {
+    backends = {
         "local": LocalAIBackend(
             base_url=local_cfg.get("base_url", "http://localhost:8090"),
             model=local_cfg.get("model", "default"),
@@ -424,7 +424,10 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
 
     # OpenRouter: optional middle-tier backend (needs OPENROUTER_API_KEY)
     import os
-    or_cfg = get_backend_config(config, "openrouter")
+    try:
+        or_cfg = get_backend_config(config, "openrouter")
+    except ValueError:
+        or_cfg = {}
     or_key = os.environ.get("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
     if or_key:
         backends["openrouter"] = OpenRouterBackend(

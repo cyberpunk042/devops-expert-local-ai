@@ -92,7 +92,9 @@
       "Bash(curl -s http://localhost:8090/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"gemma4-e2b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"What is 2+2? Answer in one word.\"\"\"\"}],\"\"\"\"max_tokens\"\"\"\":256}')",
       "Bash(.venv/bin/pytest tests/test_profiles.py -q)",
       "Bash(grep -r \"openfleet\\\\|OpenFleet\" /home/jfortin/openarms --include=*.json --include=*.ts --include=*.js --include=*.md)",
-      "Bash(.venv/bin/pytest tests/test_circuit_breaker.py tests/test_warmup_startup.py tests/test_dlq.py tests/test_health_report.py tests/test_profiles.py tests/test_controller.py tests/test_router.py tests/test_navigator.py -q)"
+      "Bash(.venv/bin/pytest tests/test_circuit_breaker.py tests/test_warmup_startup.py tests/test_dlq.py tests/test_health_report.py tests/test_profiles.py tests/test_controller.py tests/test_router.py tests/test_navigator.py -q)",
+      "Bash(.venv/bin/pytest tests/test_profiles.py tests/test_controller.py tests/test_router.py tests/test_vad_detect_profiles.py -q)",
+      "Bash(.venv/bin/pytest tests/test_vad_detect_profiles.py::TestConfigurableModeProfiles::test_config_wiring tests/test_profiles.py -q)"
     ]
   }
 }
