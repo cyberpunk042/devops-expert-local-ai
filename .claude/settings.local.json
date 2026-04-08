@@ -107,7 +107,19 @@
       "Bash(python -m pytest tests/test_microcompaction.py -v)",
       "Bash(python -m pytest tests/test_tasks.py -v)",
       "Bash(python3 -m pytest tests/test_tasks.py -v)",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=Stable+Diffusion+3.5+Large+Medium+Turbo+variants+specs+parameters&count=10\" -H 'Accept: application/json' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY:-')",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=Stable+Diffusion+3.5+vs+SDXL+quality+comparison+benchmark&count=10\" -H 'Accept: application/json' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY:-')",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=Stable+Diffusion+3.5+inference+time+consumer+GPU+RTX+3060+4060+generation+speed&count=10\" -H 'Accept: application/json' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY:-')",
+      "Bash(curl -s \"https://api.search.brave.com/res/v1/web/search?q=Stable+Diffusion+3.5+Medium+8GB+VRAM+viable&count=10\" -H 'Accept: application/json' -H 'X-Subscription-Token: $BRAVE_SEARCH_API_KEY:-')",
+      "WebFetch(domain:stability.ai)",
+      "WebFetch(domain:www.tomshardware.com)",
+      "WebFetch(domain:blog.comfy.org)",
+      "WebFetch(domain:www.tweaktown.com)",
+      "WebFetch(domain:stable-diffusion-art.com)",
+      "WebFetch(domain:sandner.art)",
+      "WebFetch(domain:www.synpixcloud.com)",
+      "WebFetch(domain:education.civitai.com)"
     ]
   }
 }
