@@ -24,6 +24,7 @@ from aicp.core.modes import Mode
 
 _config: dict[str, Any] = {}
 _backend: LocalAIBackend | None = None
+_coordinator = None  # ModelCoordinator (lazy-init)
 
 
 def _get_backend() -> LocalAIBackend:
@@ -199,6 +200,30 @@ def aicp_voice_pipeline(
     return json.dumps(result, indent=2)
 
 
+def _get_coordinator():
+    """Lazy-init the model coordinator for swap-aware image generation."""
+    global _coordinator
+    if _coordinator is None:
+        from aicp.core.model_coordinator import ModelCoordinator, SwapConfig
+        from aicp.core.events import get_emitter
+        backend = _get_backend()
+        cfg = get_backend_config(_config, "local")
+        swap_cfg_raw = _config.get("swap", {})
+        swap_cfg = SwapConfig(
+            llm_model=cfg.get("model", "qwen3-8b"),
+            image_model=cfg.get("image_model", "sd35-medium"),
+            batch_window_seconds=swap_cfg_raw.get("batch_window_seconds", 30.0),
+            swap_timeout_seconds=swap_cfg_raw.get("swap_timeout_seconds", 60.0),
+            warmup_timeout_seconds=swap_cfg_raw.get("warmup_timeout_seconds", 45.0),
+        )
+        _coordinator = ModelCoordinator(
+            backend=backend,
+            config=swap_cfg,
+            emitter=get_emitter(),
+        )
+    return _coordinator
+
+
 @mcp.tool()
 def aicp_imagine(
     prompt: str,
@@ -206,6 +231,9 @@ def aicp_imagine(
     size: str = "512x512",
 ) -> str:
     """Generate an image from a text prompt using local Stable Diffusion.
+
+    Swap-aware: automatically manages GPU VRAM (unloads LLM, loads SD,
+    generates, then reloads LLM after a batch window).
 
     Args:
         prompt: Text description of the image to generate. Use '|' to separate positive and negative prompts.
@@ -215,11 +243,11 @@ def aicp_imagine(
     Returns:
         Path to the generated image file.
     """
-    backend = _get_backend()
+    coordinator = _get_coordinator()
     cfg = get_backend_config(_config, "local")
-    model = cfg.get("image_model", "stablediffusion")
+    model = cfg.get("image_model", "sd35-medium")
     out = Path(output_path)
-    backend.generate_image(prompt, out, model=model, size=size)
+    coordinator.generate_image(prompt, out, model=model, size=size)
     return str(out)
 
 

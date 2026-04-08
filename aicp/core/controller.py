@@ -139,9 +139,12 @@ class Controller:
         backends: Dict[str, Backend],
         config: Dict[str, Any] = None,
         metrics_collector=None,
+        model_coordinator=None,
     ) -> None:
         self.backends = backends
         self.config = config or {}
+        # Model swap coordinator (GPU VRAM management for LLM ↔ image model)
+        self._coordinator = model_coordinator
         self._fleet_checked = False
         self._fleet_nodes: list = []
         self.last_route: Optional[str] = None
@@ -276,6 +279,27 @@ class Controller:
 
         return None
 
+    def generate_image(
+        self,
+        prompt: str,
+        output_path: Path,
+        model: str = "",
+        size: str = "512x512",
+        step: Optional[int] = None,
+    ) -> Path:
+        """Generate an image through the model coordinator (swap-aware).
+
+        Falls back to direct backend call if no coordinator is configured.
+        """
+        if self._coordinator is not None:
+            return self._coordinator.generate_image(
+                prompt, output_path, model=model, size=size, step=step,
+            )
+        backend = self.backends.get("local")
+        if backend is None:
+            raise ValueError("No local backend configured")
+        return backend.generate_image(prompt, output_path, model=model, size=size, step=step)
+
     def _try_quality_escalation(self, task: Task, result: str) -> Optional[str]:
         """Check response quality; escalate to a better backend if too low.
 
@@ -400,6 +424,10 @@ class Controller:
                     raise ValueError(f"Unknown backend: {task.backend_name}")
 
                 try:
+                    # Ensure LLM is loaded (may block during image→LLM swap)
+                    if self._coordinator and task.backend_name == "local":
+                        self._coordinator.ensure_llm()
+
                     from aicp.core.circuit_breaker import CircuitBreakerOpen
                     breaker = self._breakers.get(task.backend_name)
                     if breaker:

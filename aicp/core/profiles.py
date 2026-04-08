@@ -49,6 +49,7 @@ _SECTION_TYPES: Dict[str, type] = {
     "dlq": dict,
     "metrics": dict,
     "reports": dict,
+    "swap": dict,
 }
 
 

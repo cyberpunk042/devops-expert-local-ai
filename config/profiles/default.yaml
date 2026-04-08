@@ -108,6 +108,12 @@ reports:
   retain_days: 30             # keep reports for N days
   notify_url: ""              # ntfy topic URL (optional)
 
+# --- Model Swap Coordination (GPU VRAM management: LLM ↔ image model) ---
+swap:
+  batch_window_seconds: 30    # keep SD loaded for batch requests before swapping back
+  swap_timeout_seconds: 60    # max time for a full swap cycle
+  warmup_timeout_seconds: 45  # max time to wait for LLM reload after swap
+
 # --- Docker (requires restart when changed) ---
 docker:
   context_size: 32768           # 2x model context (16384) × parallel_slots (2)
