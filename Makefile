@@ -2,7 +2,8 @@
         local-up local-up-multi local-up-p2p local-down local-status local-logs \
         test test-all check lint format type-check auto-config benchmark self-test capabilities offload update \
         model-download models-list model-list-remote model-qwen3 model-qwen3-8b model-qwen3-4b model-qwen3-30b benchmark-qwen3 \
-        model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b model-sd35-medium \
+        model-gemma4 model-gemma4-e2b model-gemma4-e4b model-gemma4-26b model-sd35-medium model-sd35-medium-allinone \
+        build-sd-cpp sd35-test sd35-server \
         monitoring-up monitoring-down monitoring-logs agent-up agent-down \
         fleet-init fleet-join fleet-status fleet-test fleet-copy fleet-firewall \
         install-aliases install-service uninstall-service db-rebuild \
@@ -60,7 +61,11 @@ help:
 	@echo "  make model-qwen3-30b         Download Qwen3-30B MoE (dual GPU only)"
 	@echo "  make model-gemma4            Download Gemma 4 E2B + E4B (8GB GPU)"
 	@echo "  make model-gemma4-26b        Download Gemma 4 26B MoE (dual GPU only)"
-	@echo "  make model-sd35-medium       Download SD 3.5 Medium (4 files, ~6.8 GB)"
+	@echo "  make model-sd35-medium       Download SD 3.5 Medium GGUF encoders (~6.8 GB)"
+	@echo "  make model-sd35-safetensors  Download SD 3.5 Medium safetensors (5.1 GB, needs HF token)"
+	@echo "  make build-sd-cpp            Build stable-diffusion.cpp from source (CUDA)"
+	@echo "  make sd35-test               Generate a test image with SD 3.5"
+	@echo "  make sd35-server             Start SD 3.5 API server on port 8091"
 	@echo "  make benchmark-qwen3         Benchmark Qwen3-8B"
 	@echo "  make monitoring-up           Start Prometheus + Grafana"
 	@echo "  make monitoring-down         Stop monitoring stack"
@@ -353,6 +358,50 @@ model-sd35-medium-allinone:
 	curl -L --progress-bar -C - -o models/sd3.5_medium_allinone_Q4_0.gguf \
 		"https://huggingface.co/gpustack/stable-diffusion-v3-5-medium-GGUF/resolve/main/stable-diffusion-v3-5-medium-pure-Q4_0.gguf"
 	@echo "Done. Restart LocalAI: make local-down && make local-up"
+
+# Download SD 3.5 Medium safetensors (gated — needs HF token in .env)
+model-sd35-safetensors:
+	@test -f .env && grep -q HUGGINGFACE_API_KEY .env || (echo "ERROR: set HUGGINGFACE_API_KEY in .env"; exit 1)
+	mkdir -p models
+	@echo "Downloading SD 3.5 Medium safetensors (5.1 GB, gated)..."
+	@bash -c 'source .env && curl -L --progress-bar -C - \
+		-H "Authorization: Bearer $$HUGGINGFACE_API_KEY" \
+		-o models/sd3.5_medium.safetensors \
+		"https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"'
+	@echo "Done. Use with: make sd35-test"
+
+# Build stable-diffusion.cpp from source (LocalAI v4.1.3 backend is too old for SD 3.5)
+build-sd-cpp:
+	bash scripts/build-sd-cpp.sh
+
+# Test SD 3.5 generation (requires: make model-sd35-medium + make model-sd35-safetensors + make build-sd-cpp)
+sd35-test:
+	@test -f builds/sd-cpp/sd-cli || (echo "ERROR: run 'make build-sd-cpp' first"; exit 1)
+	@test -f models/sd3.5_medium.safetensors || (echo "ERROR: run 'make model-sd35-safetensors' first"; exit 1)
+	builds/sd-cpp/sd-cli \
+		-m models/sd3.5_medium.safetensors \
+		--clip_l models/clip_l-Q8_0.gguf \
+		--clip_g models/clip_g-Q8_0.gguf \
+		--t5xxl models/t5xxl-Q4_0.gguf \
+		--clip-on-cpu --vae-on-cpu \
+		--sampling-method euler --cfg-scale 4.5 --steps 25 \
+		-H 512 -W 512 \
+		-p "a red sports car on a mountain road at sunset, photorealistic" \
+		-o /tmp/sd35_test.png -v
+	@echo "Image saved: /tmp/sd35_test.png"
+
+# Start SD 3.5 API server (sd-server on port 8091)
+sd35-server:
+	@test -f builds/sd-cpp/sd-server || (echo "ERROR: run 'make build-sd-cpp' first"; exit 1)
+	@test -f models/sd3.5_medium.safetensors || (echo "ERROR: run 'make model-sd35-safetensors' first"; exit 1)
+	@echo "Starting SD 3.5 server on port 8091..."
+	builds/sd-cpp/sd-server \
+		-m models/sd3.5_medium.safetensors \
+		--clip_l models/clip_l-Q8_0.gguf \
+		--clip_g models/clip_g-Q8_0.gguf \
+		--t5xxl models/t5xxl-Q4_0.gguf \
+		--clip-on-cpu --vae-on-cpu \
+		--port 8091
 
 # Benchmark Qwen3-8B vs current default model
 benchmark-qwen3:
