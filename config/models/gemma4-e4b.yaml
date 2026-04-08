@@ -11,6 +11,9 @@ parameters:
   temperature: 0.2
   top_p: 0.85
   repeat_penalty: 1.1
+# Vision: Gemma 4 multimodal projector (shared across E2B/E4B/26B)
+mmproj: mmproj-gemma4-BF16.gguf
+
 threads: 2
 
 # ── Gemma 4 E4B: 4.5B effective params, 5.0 GB file, ~6 GB VRAM ──

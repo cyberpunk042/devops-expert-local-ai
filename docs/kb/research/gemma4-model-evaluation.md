@@ -89,6 +89,33 @@ https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q
 https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf
 ```
 
+## Vision Test Results (2026-04-07)
+
+Tested Gemma 4 E4B as a replacement for LLaVA 7B for vision tasks.
+
+**Test:** 2x2 red PNG → "What color is this image?"
+
+| Model | Result | Time | Tokens |
+|-------|--------|------|--------|
+| **gemma4-e4b** | "Red" (correct) | 17.1s | 109 |
+| llava | Garbage (empty lines) | 18.8s | 128 |
+| gemma4-e2b | Failed (needs separate mmproj) | — | — |
+
+**Requires:** `mmproj-gemma4-BF16.gguf` (946MB) vision projector file.
+
+**Size comparison:**
+- LLaVA: 3.9GB model + 596MB mmproj = **4.5GB** (vision-only, no text reasoning)
+- Gemma 4 E4B: 4.7GB model + 946MB mmproj = **5.5GB** (vision + text + audio + tool calling)
+
+**Verdict:** Gemma 4 E4B can replace LLaVA. It's 1GB larger but provides multimodal
+(text+image+audio) in a single model, eliminating the need for separate model swaps.
+On 8GB VRAM with SINGLE_ACTIVE_BACKEND, this saves a model swap every time vision is needed.
+
+**Recommendation:**
+- Set `vision_model: gemma4-e4b` in profiles that need vision
+- Keep llava config for backward compatibility
+- E2B vision needs its own smaller mmproj (not yet downloaded)
+
 ## TurboQuant Note
 
 Google's TurboQuant (ICLR 2026) achieves 3-bit KV cache quantization with zero accuracy loss.

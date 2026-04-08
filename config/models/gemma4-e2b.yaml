@@ -11,6 +11,12 @@ parameters:
   temperature: 0.2
   top_p: 0.85
   repeat_penalty: 1.1
+# Vision: E2B has a separate, smaller mmproj (not yet downloaded).
+# Download with: curl -L -o models/mmproj-gemma4-e2b-BF16.gguf \
+#   "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-BF16.gguf"
+# Then uncomment:
+# mmproj: mmproj-gemma4-e2b-BF16.gguf
+
 threads: 2
 
 # ── Gemma 4 E2B: 2.3B effective params, 3.1 GB file, ~4 GB VRAM ──

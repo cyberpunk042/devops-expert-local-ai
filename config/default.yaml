@@ -8,7 +8,7 @@ backends:
     max_tokens: 4096
     embedding_model: nomic-embed
     code_model: qwen3-8b
-    vision_model: llava
+    vision_model: llava        # or gemma4-e4b (multimodal: text+image+audio in one model)
     whisper_model: whisper-1
     tts_model: piper-tts
     image_model: stablediffusion

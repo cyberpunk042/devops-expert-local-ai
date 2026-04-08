@@ -15,6 +15,10 @@ threads: 2
 gpu_layers: 33
 
 # ── KV cache quantization (4x VRAM savings — critical for 8GB) ──
+# Current: q4_0 (4-bit, proven stable)
+# Future: turbo3 (3.25-bit, ~6x compression, zero accuracy loss)
+#   When llama.cpp merges TurboQuant (track: github.com/ggml-org/llama.cpp/discussions/20969)
+#   change to: cache_type_k: turbo3 / cache_type_v: turbo3
 cache_type_k: q4_0
 cache_type_v: q4_0
 flash_attention: true
