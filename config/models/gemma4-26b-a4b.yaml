@@ -25,7 +25,7 @@ gpu_layers: 48
 
 # ── KV cache quantization (critical for MoE — saves significant VRAM) ──
 cache_type_k: q4_0
-cache_type_v: q4_0
+cache_type_v: q2_K
 flash_attention: true
 
 # ── Function calling ──

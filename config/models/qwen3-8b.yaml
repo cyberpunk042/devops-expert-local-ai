@@ -14,13 +14,13 @@ parameters:
 threads: 2
 gpu_layers: 33
 
-# ── KV cache quantization (4x VRAM savings — critical for 8GB) ──
-# Current: q4_0 (4-bit, proven stable)
-# Future: turbo3 (3.25-bit, ~6x compression, zero accuracy loss)
-#   When llama.cpp merges TurboQuant (track: github.com/ggml-org/llama.cpp/discussions/20969)
-#   change to: cache_type_k: turbo3 / cache_type_v: turbo3
+# ── KV cache quantization (asymmetric — keys need more precision than values) ──
+# q4_0 keys + q2_K values = ~6x compression, no quality loss on Qwen3
+# Enables 16K context on 8GB VRAM (was 8K with symmetric q4_0)
+# Future: turbo3 types when llama.cpp merges TurboQuant
+#   (track: github.com/ggml-org/llama.cpp/discussions/20969)
 cache_type_k: q4_0
-cache_type_v: q4_0
+cache_type_v: q2_K
 flash_attention: true
 
 # ── Function calling (Qwen3 has native tool calling) ──
@@ -32,7 +32,7 @@ function:
 prompt_cache_path: qwen3-8b-cache
 prompt_cache_all: true
 
-# ── Context: 8192 safe on 8GB with KV quant; increase on higher VRAM ──
-context_size: 8192
+# ── Context: 16384 enabled by asymmetric KV quant (q4_0 K + q2_K V) ──
+context_size: 16384
 mmap: true
 mmlock: true

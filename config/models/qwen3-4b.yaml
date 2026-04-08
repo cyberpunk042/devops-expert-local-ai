@@ -16,7 +16,7 @@ gpu_layers: 33
 
 # ── KV cache quantization ──
 cache_type_k: q4_0
-cache_type_v: q4_0
+cache_type_v: q2_K
 flash_attention: true
 
 # ── Function calling ──

@@ -110,7 +110,7 @@ reports:
 
 # --- Docker (requires restart when changed) ---
 docker:
-  context_size: 16384
+  context_size: 32768           # 2x model context (16384) × parallel_slots (2)
   threads: 4
   parallel_slots: 2
   mem_limit: "12G"

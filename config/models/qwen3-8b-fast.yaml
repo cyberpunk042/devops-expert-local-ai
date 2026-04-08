@@ -16,9 +16,9 @@ parameters:
 threads: 2
 gpu_layers: 33
 
-# ── KV cache quantization ──
+# ── KV cache quantization (asymmetric — more compression for values) ──
 cache_type_k: q4_0
-cache_type_v: q4_0
+cache_type_v: q2_K
 flash_attention: true
 
 # ── Function calling ──
@@ -31,6 +31,6 @@ prompt_cache_path: qwen3-8b-fast-cache
 prompt_cache_all: true
 
 # ── Same GGUF as qwen3-8b, different sampling ──
-context_size: 8192
+context_size: 16384
 mmap: true
 mmlock: true

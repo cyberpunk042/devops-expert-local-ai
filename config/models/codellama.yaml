@@ -31,7 +31,7 @@ prompt_cache_all: true
 
 # ── KV cache quantization (4x VRAM savings) ──
 cache_type_k: q4_0
-cache_type_v: q4_0
+cache_type_v: q2_K
 flash_attention: true
 
 # ── Function calling (grammar-constrained) ──
