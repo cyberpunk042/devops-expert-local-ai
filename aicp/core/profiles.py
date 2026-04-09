@@ -107,8 +107,17 @@ def load_profile(
     return data
 
 
-def validate_profile(data: Dict[str, Any]) -> List[str]:
-    """Validate a profile dict. Returns list of error strings (empty = valid)."""
+def validate_profile(
+    data: Dict[str, Any],
+    available_models: Optional[List[str]] = None,
+) -> List[str]:
+    """Validate a profile dict. Returns list of error strings (empty = valid).
+
+    Args:
+        data: Profile dict loaded from YAML.
+        available_models: If provided, validate that backend model references
+            exist in this list. Pass None to skip model validation.
+    """
     errors: List[str] = []
 
     # Required keys
@@ -139,6 +148,24 @@ def validate_profile(data: Dict[str, Any]) -> List[str]:
                 f"Section '{section}' must be {expected_type.__name__}, "
                 f"got {type(val).__name__}"
             )
+
+    # Model reference validation (when available_models provided)
+    if available_models is not None:
+        _MODEL_KEYS = (
+            "model", "code_model", "vision_model", "embedding_model",
+            "reranker_model", "image_model", "whisper_model", "tts_model",
+        )
+        backends_cfg = data.get("backends", {})
+        if isinstance(backends_cfg, dict):
+            local_cfg = backends_cfg.get("local", {})
+            if isinstance(local_cfg, dict):
+                for key in _MODEL_KEYS:
+                    model_ref = local_cfg.get(key)
+                    if model_ref and isinstance(model_ref, str) and model_ref not in available_models:
+                        errors.append(
+                            f"backends.local.{key} references unknown model '{model_ref}' "
+                            f"(available: {', '.join(sorted(available_models))})"
+                        )
 
     # Router-specific validation
     router = data.get("router", {})
@@ -220,6 +247,23 @@ def validate_profile(data: Dict[str, Any]) -> List[str]:
                 errors.append(f"mode_profiles.{mode_name} must be a dict")
 
     return errors
+
+
+def list_available_models(models_dir: Optional[Path] = None) -> List[str]:
+    """List model names from config/models/*.yaml files.
+
+    Args:
+        models_dir: Directory containing model YAML configs.
+            Defaults to config/models/ relative to the repo root.
+
+    Returns:
+        List of model names (YAML file stems).
+    """
+    if models_dir is None:
+        models_dir = Path(__file__).parent.parent.parent / "config" / "models"
+    if not models_dir.is_dir():
+        return []
+    return [p.stem for p in models_dir.glob("*.yaml")]
 
 
 def profile_to_config_overlay(profile: Dict[str, Any]) -> Dict[str, Any]:

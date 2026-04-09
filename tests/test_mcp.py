@@ -47,34 +47,60 @@ def _patch_backend(backend):
 # ---------------------------------------------------------------------------
 
 class TestAicpChat:
-    def test_chat_returns_response(self):
+    def test_chat_routes_through_controller(self):
+        """Without seed, chat routes through the controller."""
         from aicp.mcp.server import aicp_chat
-        backend = _mock_backend()
-        backend.execute.return_value = "The answer is 42."
-        with _patch_backend(backend):
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "controller result"
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
             result = aicp_chat("What is the answer?")
-        assert result == "The answer is 42."
-        backend.execute.assert_called_once()
+        assert result == "controller result"
+        mock_ctrl.run.assert_called_once()
 
-    def test_chat_respects_mode(self):
+    def test_chat_with_seed_bypasses_controller(self):
+        """With explicit seed >= 0, chat calls backend directly."""
         from aicp.mcp.server import aicp_chat
-        from aicp.core.modes import Mode
         backend = _mock_backend()
-        backend.execute.return_value = "ok"
+        backend.execute.return_value = "deterministic"
         with _patch_backend(backend):
-            aicp_chat("do something", mode="edit")
+            result = aicp_chat("test", seed=42)
+        assert result == "deterministic"
+        backend.execute.assert_called_once()
+        # Verify seed was passed
         call_args = backend.execute.call_args
-        assert call_args[0][1] == Mode.EDIT
+        assert call_args[1]["seed"] == 42
 
     def test_chat_invalid_mode_defaults_to_think(self):
         from aicp.mcp.server import aicp_chat
         from aicp.core.modes import Mode
-        backend = _mock_backend()
-        backend.execute.return_value = "ok"
-        with _patch_backend(backend):
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "ok"
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
             aicp_chat("hello", mode="invalid")
-        call_args = backend.execute.call_args
-        assert call_args[0][1] == Mode.THINK
+        task = mock_ctrl.run.call_args[0][0]
+        assert task.mode == Mode.THINK
+
+    def test_route_uses_shared_controller(self):
+        """aicp_route (without profile) uses the shared controller singleton."""
+        from aicp.mcp.server import aicp_route
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "routed result"
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
+            result = aicp_route("test prompt")
+        assert result == "routed result"
+        mock_ctrl.run.assert_called_once()
+
+    def test_fleet_run_delegates_to_controller(self):
+        """aicp_fleet_run uses the controller for fleet-aware routing."""
+        from aicp.mcp.server import aicp_fleet_run
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "fleet result"
+        mock_ctrl.last_route = "fleet:workstation"
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
+            result = aicp_fleet_run("test prompt")
+        parsed = json.loads(result)
+        assert parsed["result"] == "fleet result"
+        assert parsed["route"] == "fleet:workstation"
 
 
 # ---------------------------------------------------------------------------

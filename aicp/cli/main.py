@@ -1849,13 +1849,28 @@ def _run_skill(
         console.print("Enter description: ", end="")
         desc = input().strip()
 
-        # Create a simple template
+        # Create a two-step template (analyze → implement)
         steps = [
-            {"prompt": f"TODO: implement {skill_name}", "mode": "think", "backend": "auto"},
+            {
+                "prompt": (
+                    f"Analyze the current state of the project and plan how to "
+                    f"{skill_name}. Identify affected files and dependencies."
+                ),
+                "mode": "think",
+                "backend": "auto",
+            },
+            {
+                "prompt": (
+                    f"Implement the changes planned in the previous step for "
+                    f"{skill_name}."
+                ),
+                "mode": "edit",
+                "backend": "auto",
+            },
         ]
         path = create_skill(skill_name, desc, [], steps, target)
         console.print(f"[green]Created:[/] {path}")
-        console.print("Edit the YAML to add parameters and steps.")
+        console.print("Edit the YAML to customize prompts, add parameters, or change modes.")
         return 0
 
     elif cmd == "export" and skill_name:

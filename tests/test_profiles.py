@@ -7,6 +7,7 @@ from pathlib import Path
 from aicp.core.profiles import (
     PROFILES_DIR,
     diff_profiles,
+    list_available_models,
     list_profiles,
     load_profile,
     profile_to_config_overlay,
@@ -409,3 +410,50 @@ class TestProfileMerge:
         result = _deep_merge(base, overlay)
         assert result["router"]["complexity_thresholds"] == [0.5, 0.8]
         assert result["backends"]["local"]["model"] == "x"
+
+
+# ---------------------------------------------------------------------------
+# Model reference validation (WS3)
+# ---------------------------------------------------------------------------
+
+
+class TestModelValidation:
+    """Validate that profile model references exist in the model catalog."""
+
+    def test_unknown_model_rejected(self):
+        profile = _make_profile(backends={"local": {"model": "nonexistent-model"}})
+        errors = validate_profile(profile, available_models=["hermes", "qwen3-8b"])
+        assert any("nonexistent-model" in e for e in errors)
+
+    def test_valid_model_accepted(self):
+        profile = _make_profile(backends={"local": {"model": "qwen3-8b"}})
+        errors = validate_profile(profile, available_models=["hermes", "qwen3-8b"])
+        model_errors = [e for e in errors if "unknown model" in e]
+        assert model_errors == []
+
+    def test_none_skips_model_check(self):
+        """When available_models is None, model validation is skipped entirely."""
+        profile = _make_profile(backends={"local": {"model": "any-model-name"}})
+        errors = validate_profile(profile, available_models=None)
+        model_errors = [e for e in errors if "unknown model" in e]
+        assert model_errors == []
+
+    def test_multiple_bad_models(self):
+        profile = _make_profile(backends={"local": {
+            "model": "bad1",
+            "code_model": "bad2",
+            "vision_model": "llava",
+        }})
+        errors = validate_profile(profile, available_models=["hermes", "llava"])
+        bad_errors = [e for e in errors if "unknown model" in e]
+        assert len(bad_errors) == 2  # bad1 and bad2
+        assert any("bad1" in e for e in bad_errors)
+        assert any("bad2" in e for e in bad_errors)
+
+    def test_list_available_models(self, model_configs_dir):
+        """list_available_models reads YAML file stems from a directory."""
+        models = list_available_models(model_configs_dir)
+        assert "hermes" in models
+        assert "qwen3-8b" in models
+        assert "phi-2" in models
+        assert len(models) == 5

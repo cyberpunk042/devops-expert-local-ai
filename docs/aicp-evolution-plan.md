@@ -1,7 +1,7 @@
 # AICP Evolution Plan
 
-**Date:** 2026-04-03
-**Status:** DRAFT — awaiting PO review
+**Date:** 2026-04-03 (updated 2026-04-08)
+**Status:** Partially implemented — see DONE markers below
 **Scope:** Everything AICP needs to evolve — models, router, backends, knowledge map, infrastructure, quality
 
 ---
@@ -22,11 +22,11 @@ Current models are 2024-era. Better models exist that fit our 8GB VRAM.
 
 **Milestones:**
 
-- **E-M01**: Qwen3-8B model YAML config + GGUF download + benchmark vs hermes
-- **E-M02**: Qwen3.5-9B evaluation (if it fits 8GB VRAM as fleet lightweight)
+- **E-M01**: ~~Qwen3-8B model YAML config + GGUF download + benchmark vs hermes~~ **DONE** — qwen3-8b is the current main model
+- **E-M02**: Qwen3.5-9B evaluation (if it fits 8GB VRAM as fleet lightweight) — superseded by Qwen3-4B + Gemma 4 E2B
 - **E-M03**: Phi-4 evaluation for code tasks (14B — may need quantization)
-- **E-M04**: Model benchmark pipeline (`make benchmark-compare OLD=hermes NEW=qwen3-8b`)
-- **E-M05**: Update `config/default.yaml` and router to use new best models
+- **E-M04**: ~~Model benchmark pipeline~~ **DONE** — `make benchmark-qwen3` implemented
+- **E-M05**: ~~Update `config/default.yaml` and router to use new best models~~ **DONE** — default profile uses qwen3-8b, 9 profiles available
 - **E-M06**: Embedding model evaluation (nomic-embed vs newer alternatives)
 
 ---
@@ -45,11 +45,11 @@ Current models are 2024-era. Better models exist that fit our 8GB VRAM.
 
 **Milestones:**
 
-- **E-M07**: Confidence-scored routing (replace binary regex with weighted scoring)
-- **E-M08**: Cost-aware routing (track $/token per backend, optimize)
-- **E-M09**: Quality feedback loop (score responses, feed back into routing decisions)
-- **E-M10**: Dynamic model selection (match task complexity to model capability)
-- **E-M11**: Prompt complexity analyzer (token count, structure, reasoning depth)
+- **E-M07**: ~~Confidence-scored routing~~ **DONE** — router.py has 10+ dimension scoring
+- **E-M08**: ~~Cost-aware routing~~ **DONE** — $/token tracking per backend in router
+- **E-M09**: ~~Quality feedback loop~~ **DONE** — quality scoring + auto-escalation in controller
+- **E-M10**: ~~Dynamic model selection~~ **DONE** — recommend_model() picks by task type
+- **E-M11**: ~~Prompt complexity analyzer~~ **DONE** — multi-dimension complexity scoring
 
 ---
 

@@ -298,36 +298,29 @@ class TestMcpFleetStatus:
 
 class TestMcpFleetRun:
     def test_routes_task(self):
+        """aicp_fleet_run routes through the controller."""
         from aicp.mcp.server import aicp_fleet_run
 
-        mock_nodes = [
-            NodeInfo(name="big-gpu", host="10.0.0.1", port=9100, online=True,
-                     gpus=[{"vram_free_mb": 8000}]),
-        ]
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "42"
+        mock_ctrl.last_route = "fleet:big-gpu"
 
-        with patch("aicp.core.cluster.load_fleet_config", return_value=mock_nodes):
-            with patch("aicp.core.cluster.check_cluster", return_value=mock_nodes):
-                with patch("aicp.core.cluster.find_best_node", return_value=mock_nodes[0]):
-                    with patch("aicp.core.cluster.execute_remote", return_value={
-                        "result": "42", "duration_seconds": 0.5,
-                    }):
-                        result = aicp_fleet_run("What is 6*7?")
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
+            result = aicp_fleet_run("What is 6*7?")
 
         parsed = json.loads(result)
         assert parsed["result"] == "42"
-        assert parsed["node"] == "big-gpu"
+        assert parsed["route"] == "fleet:big-gpu"
 
     def test_no_nodes_online(self):
+        """When controller fails, fleet_run returns error JSON."""
         from aicp.mcp.server import aicp_fleet_run
 
-        with patch("aicp.core.cluster.load_fleet_config", return_value=[
-            NodeInfo(name="a", host="10.0.0.1", port=9100, online=False),
-        ]):
-            with patch("aicp.core.cluster.check_cluster", return_value=[
-                NodeInfo(name="a", host="10.0.0.1", port=9100, online=False),
-            ]):
-                with patch("aicp.core.cluster.find_best_node", return_value=None):
-                    result = aicp_fleet_run("test")
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.side_effect = RuntimeError("No fleet nodes available")
+
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
+            result = aicp_fleet_run("test")
 
         parsed = json.loads(result)
         assert "error" in parsed

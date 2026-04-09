@@ -206,3 +206,39 @@ def test_load_config_no_project_override_when_file_missing(tmp_path):
     assert "backends" in config
 
     importlib.reload(loader_module)
+
+
+# ── Extended tests (WS1d) ────────────────────────────────────────────────────
+
+def test_load_config_nonexistent_path_raises():
+    with pytest.raises(FileNotFoundError):
+        load_config(Path("/nonexistent/config.yaml"))
+
+
+def test_load_config_invalid_yaml(tmp_path):
+    bad_yaml = tmp_path / "bad.yaml"
+    bad_yaml.write_text("{{invalid yaml: [")
+    with pytest.raises(Exception):
+        load_config(bad_yaml)
+
+
+def test_deep_merge_override_wins_at_all_levels():
+    """Layer 4 override should beat layer 1-3 values."""
+    base = {"a": {"b": {"c": 1, "d": 2}}, "x": 10}
+    override = {"a": {"b": {"c": 99}}, "x": 20}
+    result = _deep_merge(base, override)
+    assert result["a"]["b"]["c"] == 99
+    assert result["a"]["b"]["d"] == 2  # preserved from base
+    assert result["x"] == 20
+
+
+def test_validate_config_multiple_errors():
+    """Empty config should report multiple missing required keys."""
+    errors = validate_config({})
+    assert len(errors) >= 3  # at least 3 required keys missing
+
+
+def test_get_backend_config_missing_backend():
+    config = {"backends": {"local": {"model": "x"}}}
+    with pytest.raises(ValueError, match="No config for backend"):
+        get_backend_config(config, "nonexistent")

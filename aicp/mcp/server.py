@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 
 from aicp.backends.localai import LocalAIBackend
 from aicp.config.loader import load_config, get_backend_config
+from aicp.core.controller import Controller, Task
 from aicp.core.modes import Mode
 
 # ---------------------------------------------------------------------------
@@ -24,6 +25,7 @@ from aicp.core.modes import Mode
 
 _config: dict[str, Any] = {}
 _backend: LocalAIBackend | None = None
+_controller: Controller | None = None
 _coordinator = None  # ModelCoordinator (lazy-init)
 
 
@@ -63,6 +65,53 @@ def _get_backend() -> LocalAIBackend:
     return _backend
 
 
+def _get_controller() -> Controller:
+    """Lazy-init the Controller with all available backends.
+
+    Builds on top of _get_backend() (always local) and optionally adds
+    Claude Code and OpenRouter backends if configured.
+    """
+    global _controller
+    if _controller is not None:
+        return _controller
+
+    backend = _get_backend()
+    backends: dict[str, Any] = {"local": backend}
+
+    # Add Claude Code backend if configured
+    try:
+        claude_cfg = get_backend_config(_config, "claude")
+        from aicp.backends.claude_code import ClaudeCodeBackend
+        backends["claude"] = ClaudeCodeBackend(
+            model=claude_cfg.get("model", "opus"),
+            max_turns=claude_cfg.get("max_turns", 10),
+            timeout=claude_cfg.get("timeout", 300),
+        )
+    except (ValueError, ImportError):
+        pass
+
+    # Add OpenRouter backend if API key available
+    import os
+    try:
+        or_cfg = get_backend_config(_config, "openrouter")
+    except ValueError:
+        or_cfg = {}
+    or_key = os.environ.get("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
+    if or_key:
+        try:
+            from aicp.backends.openrouter import OpenRouterBackend
+            backends["openrouter"] = OpenRouterBackend(
+                api_key=or_key,
+                model=or_cfg.get("model", ""),
+                free_model=or_cfg.get("free_model", ""),
+            )
+        except ImportError:
+            pass
+
+    _controller = Controller(backends, config=_config)
+    return _controller
+
+
 # ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
@@ -75,20 +124,34 @@ mcp = FastMCP(
 
 @mcp.tool()
 def aicp_chat(prompt: str, mode: str = "think", seed: int = -1) -> str:
-    """Send a prompt to the local LLM (Hermes / CodeLlama with auto-routing).
+    """Send a prompt to the local LLM with full controller routing and failover.
+
+    Routes through the AICP controller, which provides backend selection,
+    failover chain, quality escalation, circuit breakers, caching, and metrics.
+
+    When seed >= 0, bypasses the controller for reproducibility and calls
+    the local backend directly.
 
     Args:
         prompt: The text prompt to send.
         mode: Permission mode — think (read-only), edit, or act. Defaults to think.
-        seed: Seed for reproducible output (-1 = use session seed or random).
+        seed: Seed for reproducible output (-1 = use controller routing).
 
     Returns:
         The model's response text.
     """
-    backend = _get_backend()
     m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
     s = seed if seed >= 0 else None
-    return backend.execute(prompt, m, Path.cwd(), seed=s)
+
+    # Explicit seed requires deterministic single-backend call
+    if s is not None:
+        backend = _get_backend()
+        return backend.execute(prompt, m, Path.cwd(), seed=s)
+
+    # Route through controller for full routing + failover + metrics
+    controller = _get_controller()
+    task = Task(prompt=prompt, mode=m, project_path=Path.cwd())
+    return controller.run(task)
 
 
 @mcp.tool()
@@ -1464,35 +1527,30 @@ def aicp_fleet_status() -> str:
 
 @mcp.tool()
 def aicp_fleet_run(prompt: str, mode: str = "think") -> str:
-    """Route a task to the best available fleet node.
+    """Route a task through the controller with fleet-aware routing.
 
-    Picks the online node with the most free VRAM and executes the prompt.
+    The controller's fleet routing picks the best online node by VRAM and
+    executes the prompt, with automatic failover through the full chain.
 
     Args:
         prompt: The task/question to execute.
         mode: Permission mode (think/edit/act).
 
     Returns:
-        JSON with the result, node name, and duration.
+        The result text, or JSON error if fleet is unavailable.
     """
-    from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node, execute_remote
-
-    nodes = load_fleet_config()
-    if not nodes:
-        return json.dumps({"error": "No fleet configured. Run: make fleet-init"})
-
-    nodes = check_cluster(nodes)
-    best = find_best_node(nodes)
-    if not best:
-        return json.dumps({"error": "No fleet nodes online"})
-
-    result = execute_remote(best, prompt, mode=mode, backend="local")
-    return json.dumps({
-        "node": best.name,
-        "host": best.host,
-        "result": result.get("result", ""),
-        "duration_seconds": result.get("duration_seconds", 0),
-    }, indent=2)
+    try:
+        m = Mode(mode) if mode in ("think", "edit", "act") else Mode.THINK
+        controller = _get_controller()
+        task = Task(prompt=prompt, mode=m, project_path=Path.cwd())
+        result = controller.run(task)
+        route = getattr(controller, "last_route", "unknown")
+        return json.dumps({
+            "result": result,
+            "route": route,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -1513,27 +1571,25 @@ def aicp_route(prompt: str, mode: str = "think", profile: str = "") -> str:
         profile: Optional profile name to use (default: active profile).
     """
     try:
-        from aicp.core.controller import Controller, Task
-        from aicp.core.modes import Mode
-        from aicp.config.loader import load_config, get_backend_config
-
-        config = load_config()
-        if profile:
-            from aicp.core.profiles import load_profile, profile_to_config_overlay
-            prof = load_profile(profile)
-            if prof:
-                overlay = profile_to_config_overlay(prof)
-                config = {**config, **overlay}
-
-        backend = _get_backend()
-        backends = {"local": backend}
-
         try:
             m = Mode(mode)
         except ValueError:
             return f"Error: invalid mode '{mode}'. Use think, edit, or act."
 
-        controller = Controller(backends, config=config)
+        if profile:
+            # Profile override: build a one-off controller with the profile's config
+            from aicp.core.profiles import load_profile, profile_to_config_overlay
+            prof = load_profile(profile)
+            config = load_config()
+            if prof:
+                overlay = profile_to_config_overlay(prof)
+                config = {**config, **overlay}
+            backend = _get_backend()
+            controller = Controller({"local": backend}, config=config)
+        else:
+            # Use the shared controller (includes all backends + full failover)
+            controller = _get_controller()
+
         task = Task(prompt=prompt, mode=m, project_path=Path("."))
         result = controller.run(task)
         return result

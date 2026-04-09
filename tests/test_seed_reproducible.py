@@ -301,16 +301,17 @@ class TestMcpSeed:
         assert call_kwargs.kwargs["seed"] == 42
 
     def test_chat_no_seed(self):
+        """Without seed, chat routes through controller (not direct backend)."""
         from aicp.mcp.server import aicp_chat
 
-        mock_backend = MagicMock()
-        mock_backend.execute.return_value = "response"
+        mock_ctrl = MagicMock()
+        mock_ctrl.run.return_value = "response"
 
-        with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
+        with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):
             aicp_chat("test")
 
-        call_kwargs = mock_backend.execute.call_args
-        assert call_kwargs.kwargs["seed"] is None
+        # Should go through controller, not direct backend call
+        mock_ctrl.run.assert_called_once()
 
     def test_json_with_seed(self):
         from aicp.mcp.server import aicp_json

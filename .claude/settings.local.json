@@ -125,7 +125,17 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(s[''''rfilename'''']\\) for s in d.get\\(''''siblings'''',[]\\)]\")",
       "Bash(curl -s https://huggingface.co/gpustack/stable-diffusion-v3-5-medium-GGUF/raw/main/README.md)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader)"
+      "Bash(nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader)",
+      "Bash(python -m pytest tests/ --tb=no -q)",
+      "Bash(ruff check:*)",
+      "Bash(wc -l aicp/**/*.py aicp/*.py)",
+      "Bash(python3 -m pytest tests/ --tb=no -q)",
+      "Bash(python3 -m ruff check aicp/ tests/)",
+      "Bash(.venv/bin/pytest tests/test_circuit_breaker.py -v)",
+      "Bash(grep -l \"draft\\\\|Draft\\\\|DRAFT\\\\|TODO\\\\|outdated\\\\|deprecated\" /home/jfortin/devops-expert-local-ai/docs/*.md)",
+      "Bash(python -m pytest tests/ --collect-only -q)",
+      "Bash(~/.pyenv/bin/python -m pytest tests/ --collect-only -q)",
+      "Bash(/usr/bin/python3 -m pytest tests/ --collect-only -q)"
     ]
   }
 }
