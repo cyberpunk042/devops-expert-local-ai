@@ -50,10 +50,11 @@ class TestHealthCheck:
         backend = _make_backend()
 
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
-            result = backend.health_check()
+            with patch("time.sleep"):  # don't wait through retries
+                result = backend.health_check()
 
         assert result["healthy"] is False
-        assert "connection" in result["error"]
+        assert "model loading" in result["error"] or "retried" in result["error"]
 
     def test_timeout(self):
         import httpx

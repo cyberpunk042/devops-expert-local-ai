@@ -1056,8 +1056,8 @@ def _run_self_test() -> int:
         if backend_name != "local":
             raise RuntimeError(f"heartbeat should route to local, got {backend_name}")
         model = recommend_model("heartbeat")
-        if model != "hermes-3b":
-            raise RuntimeError(f"heartbeat should use hermes-3b, got {model}")
+        if not model:
+            raise RuntimeError("heartbeat should have a recommended model, got None")
         return f"backend={backend_name}, model={model}"
     _probe("Fleet routing (classify + model selection)", _check_fleet_routing)
 

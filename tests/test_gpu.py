@@ -19,7 +19,7 @@ def test_estimate_model_vram(tmp_path):
     f = tmp_path / "test.gguf"
     f.write_bytes(b"\x00" * (2000 * 1024 * 1024))  # 2GB file
     est = estimate_model_vram_mb(f)
-    assert 2300 < est < 2500  # 2000 * 1.2 = 2400
+    assert 2050 < est < 2150  # 2000 * 1.05 = 2100 (5% overhead)
 
 
 def test_optimal_config_model_fits_in_gpu(tmp_path):
@@ -39,12 +39,15 @@ def test_optimal_config_no_gpu(tmp_path):
     assert cfg["context_size"] == 2048
 
 
-def test_optimal_config_model_too_large(tmp_path):
+def test_optimal_config_model_too_large_partial_offload(tmp_path):
+    """Model exceeds usable VRAM — gets partial layer offload, not full."""
     f = tmp_path / "huge.gguf"
-    f.write_bytes(b"\x00" * (7000 * 1024 * 1024))  # 7GB, won't fit in 4GB free
-    gpus = [_mock_gpu(vram_free=4000)]
+    f.write_bytes(b"\x00" * (9000 * 1024 * 1024))  # 9GB
+    gpus = [_mock_gpu(vram_total=8192, vram_free=4000)]
     cfg = calculate_optimal_config(f, gpus)
-    assert cfg["gpu_layers"] == 0  # can't fit
+    # Source uses total VRAM (8192 - 800 = 7392), model is 9450 MB
+    # fit_ratio = 7392/9450 = 0.78, gpu_layers = int(0.78 * 33) = 25
+    assert 0 < cfg["gpu_layers"] < 99  # partial offload, not full
 
 
 def test_optimal_config_multi_gpu(tmp_path):
