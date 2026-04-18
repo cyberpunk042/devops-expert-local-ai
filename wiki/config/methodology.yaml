@@ -1,0 +1,657 @@
+# Portable Methodology Engine — Generic Model Definitions
+#
+# This is the wiki's authoritative methodology configuration.
+# Projects import this and layer domain-specific overrides via domain profiles.
+#
+# NOT hardcoded to any technology stack. Domain-specific details (path patterns,
+# gate commands, forbidden zones) live in config/domain-profiles/*.yaml.
+#
+# Design: wiki/domains/cross-domain/e003-artifact-type-system-design.md
+# Epic: E003 Artifact Type System
+# Version: 1.0 (2026-04-11)
+#
+# Composition rules (how models combine): see the `composition_rules:` section
+# below, and wiki/domains/cross-domain/model-composition-rules.md for full
+# explanation of each pattern with examples.
+
+# ---------------------------------------------------------------------------
+# Stages — the universal stage vocabulary
+# ---------------------------------------------------------------------------
+stages:
+  document:
+    description: "Understand the problem. Map what exists. Identify gaps."
+    readiness_range: [0, 25]
+    purpose: produce-understanding
+    allowed_outputs: [wiki-page]
+    forbidden_outputs: [code-file, test-file]
+
+  design:
+    description: "Make decisions. Resolve trade-offs. Define shapes and interfaces."
+    readiness_range: [25, 50]
+    purpose: produce-decisions
+    allowed_outputs: [wiki-page, design-document]
+    forbidden_outputs: [code-file, test-file]
+
+  scaffold:
+    description: "Create the skeleton. Types, schemas, stubs. Zero behavior."
+    readiness_range: [50, 80]
+    purpose: produce-structure
+    allowed_outputs: [type-definition, test-stub, config-file]
+    forbidden_outputs: [implementation, test-implementation]
+
+  implement:
+    description: "Fill the skeleton with logic. Wire into existing runtime."
+    readiness_range: [80, 95]
+    purpose: produce-behavior
+    allowed_outputs: [implementation, integration-wiring, config-file]
+    forbidden_outputs: [test-implementation]
+
+  test:
+    description: "Prove it works. Replace stubs with real assertions. Zero failures."
+    readiness_range: [95, 100]
+    purpose: produce-proof
+    allowed_outputs: [test-implementation, test-results]
+    forbidden_outputs: []
+
+# ---------------------------------------------------------------------------
+# Models — named methodology sequences, each solving a different problem
+#
+# Selection: task_type is the PRIMARY selector. Other dimensions (scale,
+# domain, urgency) may override — see model_selection below.
+# ---------------------------------------------------------------------------
+models:
+
+  # -------------------------------------------------------------------------
+  # Feature Development — the most complex model
+  # Full 5-stage sequence. Solution not yet known. Design required.
+  # -------------------------------------------------------------------------
+  feature-development:
+    description: "Full 5-stage model for complex work. Solution not yet known."
+    stages: [document, design, scaffold, implement, test]
+    readiness_cap: 100
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1+"
+            purpose: "Requirements spec, infrastructure analysis, gap analysis"
+            templates:
+              - methodology/requirements-spec    # formal FR/NFR/AC
+              - methodology/infrastructure-analysis  # mapping existing state
+              - methodology/gap-analysis         # current vs required delta
+        forbidden: [code-file, test-file]
+        gate:
+          checks: [wiki-page-exists, no-code-files-created]
+
+      design:
+        required:
+          - artifact: design-document
+            count: "1+"
+            purpose: "Design decisions, tech spec, config shapes, type sketches (IN DOCS)"
+            depends_on: [document.wiki-page]
+            templates:
+              - methodology/design-plan    # complex decision analysis
+              - decision                   # ADRs (architecture decision records)
+              - methodology/tech-spec      # API/interface definitions
+              - methodology/test-plan      # test strategy and test cases
+        forbidden: [code-file, test-file]
+        gate:
+          checks: [design-doc-exists, no-code-files-created]
+
+      scaffold:
+        required:
+          - artifact: type-definition
+            count: "1+"
+            purpose: "Types, interfaces, schemas, static data — zero behavior"
+            depends_on: [design.design-document]
+          - artifact: test-stub
+            count: "1+"
+            purpose: "Empty test files with placeholder assertions"
+            depends_on: [design.design-document]
+        optional:
+          - artifact: config-file
+            purpose: "Config wiring, .env.example entries"
+        forbidden: [implementation, test-implementation]
+        gate:
+          checks: [types-compile, no-business-logic, test-stubs-exist]
+
+      implement:
+        required:
+          - artifact: implementation
+            count: "1+"
+            purpose: "Business logic filling scaffold stubs"
+            depends_on: [scaffold.type-definition]
+          - artifact: integration-wiring
+            count: "1+"
+            purpose: "Existing file imports and calls new code"
+            depends_on: [scaffold.type-definition]
+        optional:
+          - artifact: config-file
+            purpose: "Env readers, config loaders"
+        forbidden: [test-implementation]
+        gate:
+          checks: [code-compiles, lint-passes, integration-wiring-exists]
+
+      test:
+        required:
+          - artifact: test-implementation
+            count: "1+"
+            purpose: "Real assertions replacing scaffold placeholders"
+            depends_on: [scaffold.test-stub, implement.implementation]
+          - artifact: test-results
+            purpose: "Gate output showing 0 failures"
+        gate:
+          checks: [tests-pass, no-placeholder-assertions]
+
+  # -------------------------------------------------------------------------
+  # Research — investigation without implementation
+  # Produces understanding and recommendations. 50% IS done.
+  # -------------------------------------------------------------------------
+  research:
+    description: "Investigation without implementation. Produces understanding."
+    stages: [document, design]
+    readiness_cap: 50  # 50% is completion for research
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1+"
+            purpose: "Research findings with sources and evidence"
+            templates:
+              - source-synthesis  # primary — capturing external material
+              - concept           # when investigation yields a structured concept
+              - reference         # when output is a comparison/options table
+        forbidden: [code-file, test-file]
+        gate:
+          checks: [wiki-page-exists]
+
+      design:
+        required:
+          - artifact: design-document
+            count: "1+"
+            purpose: "Options compared, recommendation stated, implications mapped"
+            depends_on: [document.wiki-page]
+            templates:
+              - methodology/design-plan  # problem + options + recommendation
+              - decision                  # resolved decision from research
+        forbidden: [code-file, test-file]
+        gate:
+          checks: [design-doc-exists, options-compared]
+
+  # -------------------------------------------------------------------------
+  # Knowledge Evolution — distill higher-layer pages from existing knowledge
+  # No scaffold needed. Source inventory → evolved page.
+  # -------------------------------------------------------------------------
+  knowledge-evolution:
+    description: "Distill higher-layer pages (lesson, pattern, decision) from existing knowledge."
+    stages: [document, implement]
+    readiness_cap: 100
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1"
+            purpose: "Source inventory: pages to distill from, convergence identified"
+            templates:
+              - note  # lightweight — inventory notes, not evolved content yet
+        gate:
+          checks: [sources-identified, convergence-stated]
+
+      implement:
+        required:
+          - artifact: wiki-page
+            count: "1"
+            purpose: "Evolved page with evidence from source pages"
+            depends_on: [document.wiki-page]
+            templates:
+              - lesson     # failure-pattern or success-pattern distillation
+              - pattern    # reusable structural/architectural pattern
+              - decision   # resolved policy question with alternatives
+              - principle  # highest-layer convergence (rare — needs 3+ lessons)
+        gate:
+          checks: [evolved-page-valid, evidence-from-sources, pipeline-post-passes]
+
+  # -------------------------------------------------------------------------
+  # Documentation — single-stage, done when page passes quality gates
+  # -------------------------------------------------------------------------
+  documentation:
+    description: "Single-stage. Done when document passes quality gates."
+    stages: [document]
+    readiness_cap: 100
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1+"
+            purpose: "Complete wiki page meeting all quality gates"
+            templates:
+              # Documentation tasks can produce any wiki page type — pick based on content shape
+              - concept           # explanatory prose about a subject
+              - reference         # structured lookup material (tables, lists)
+              - deep-dive         # extended analysis where a concept isn't enough
+              - domain-overview   # orientation for a domain's pages
+              - learning-path     # curriculum / guided sequence
+              - evolution         # historical record of how something changed
+              - note              # quick log entry (operator directives, session notes)
+        gate:
+          checks: [wiki-page-valid, pipeline-post-passes]
+
+  # -------------------------------------------------------------------------
+  # Bug Fix — restore correct behavior, no design needed
+  # Document root cause → fix → regression test
+  # -------------------------------------------------------------------------
+  bug-fix:
+    description: "Restore correct behavior. Don't introduce new architecture."
+    stages: [document, implement, test]
+    readiness_cap: 100
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1"
+            purpose: "Bug analysis: description, reproduction steps, root cause with file refs"
+            templates:
+              - note     # quick bug log with reproduction + root cause
+              - concept  # when bug requires understanding a non-trivial subsystem
+        gate:
+          checks: [root-cause-identified]
+
+      implement:
+        required:
+          - artifact: code-fix
+            count: "1+"
+            purpose: "Code change fixing the documented root cause"
+            depends_on: [document.wiki-page]
+        forbidden: [new-architecture]
+        gate:
+          checks: [code-compiles, lint-passes]
+
+      test:
+        required:
+          - artifact: test-implementation
+            count: "1+"
+            purpose: "Regression test proving bug is fixed and won't recur"
+            depends_on: [implement.code-fix]
+          - artifact: test-results
+            purpose: "0 failures"
+        gate:
+          checks: [tests-pass, regression-test-covers-bug]
+
+  # -------------------------------------------------------------------------
+  # Refactor — restructure without changing behavior
+  # Document target → scaffold new types → move code → prove behavior unchanged
+  # -------------------------------------------------------------------------
+  refactor:
+    description: "Restructure without changing behavior. Target defined in document."
+    stages: [document, scaffold, implement, test]
+    readiness_cap: 100
+    chain:
+      document:
+        required:
+          - artifact: wiki-page
+            count: "1"
+            purpose: "Current structure mapped, target structure defined, migration plan"
+            templates:
+              - methodology/gap-analysis  # current vs target with migration plan
+              - concept                    # explanatory mapping when gap-analysis is overkill
+        gate:
+          checks: [current-and-target-documented]
+
+      scaffold:
+        required:
+          - artifact: type-definition
+            count: "1+"
+            purpose: "New type definitions for target structure"
+            depends_on: [document.wiki-page]
+        gate:
+          checks: [types-compile]
+
+      implement:
+        required:
+          - artifact: implementation
+            count: "1+"
+            purpose: "Code moved to new structure, all consumers updated"
+            depends_on: [scaffold.type-definition]
+        gate:
+          checks: [code-compiles, lint-passes, no-broken-imports]
+
+      test:
+        required:
+          - artifact: test-implementation
+            count: "1+"
+            purpose: "Tests proving behavior is UNCHANGED"
+            depends_on: [implement.implementation]
+          - artifact: test-results
+            purpose: "Same test pass as before refactor"
+        gate:
+          checks: [tests-pass, behavior-unchanged]
+
+  # -------------------------------------------------------------------------
+  # Hotfix — emergency fix, problem and solution already known
+  # Minimal process. Implement → test. No documentation required upfront.
+  # -------------------------------------------------------------------------
+  hotfix:
+    description: "Emergency fix. Problem and solution already understood."
+    stages: [implement, test]
+    readiness_cap: 100
+    quality_tier: pyramid  # by definition — deliberate compression
+    chain:
+      implement:
+        required:
+          - artifact: code-fix
+            count: "1+"
+            purpose: "Direct fix for known problem"
+        gate:
+          checks: [code-compiles]
+
+      test:
+        required:
+          - artifact: test-implementation
+            count: "1+"
+            purpose: "Proof the fix works"
+            depends_on: [implement.code-fix]
+          - artifact: test-results
+            purpose: "0 failures"
+        gate:
+          checks: [tests-pass]
+
+  # -------------------------------------------------------------------------
+  # Integration — wire existing standalone modules into runtime consumers
+  # Bridge pattern recommended. No document/design needed — modules exist.
+  # -------------------------------------------------------------------------
+  integration:
+    description: "Wire existing standalone modules into runtime. Bridge pattern."
+    stages: [scaffold, implement, test]
+    readiness_cap: 100
+    chain:
+      scaffold:
+        required:
+          - artifact: type-definition
+            count: "1+"
+            purpose: "Bridge adapter interfaces, stub functions"
+          - artifact: test-stub
+            count: "1+"
+            purpose: "Placeholder tests for bridge + integration"
+        gate:
+          checks: [types-compile, no-business-logic]
+
+      implement:
+        required:
+          - artifact: implementation
+            count: "1+"
+            purpose: "Bridge logic (adapter, <80 LOC recommended)"
+          - artifact: integration-wiring
+            count: "1+"
+            purpose: "Existing consumer file modified to import bridge"
+        gate:
+          checks: [code-compiles, lint-passes, integration-wiring-exists]
+
+      test:
+        required:
+          - artifact: test-implementation
+            count: "1+"
+            purpose: "Tests proving the wiring works — import chain, data flow"
+            depends_on: [implement.implementation]
+          - artifact: test-results
+            purpose: "0 failures"
+        gate:
+          checks: [tests-pass]
+
+  # -------------------------------------------------------------------------
+  # Project Lifecycle (SFIF) — macro-level model
+  # Other models run INSIDE its stages via composition.
+  # -------------------------------------------------------------------------
+  project-lifecycle:
+    description: "Macro-level SFIF model. Other models run inside its stages."
+    stages: [scaffold, foundation, infrastructure, features]
+    composition: nested
+    chain:
+      scaffold:
+        required:
+          - artifact: wiki-page
+            purpose: "Project structure, directory layout, config skeleton"
+            templates:
+              - concept           # describes the project's structural decisions
+              - domain-overview   # if the project IS a domain getting orientation
+        gate:
+          checks: [project-structure-exists]
+
+      foundation:
+        required:
+          - artifact: wiki-page
+            purpose: "Core dependencies, base config, CI setup documented"
+            templates:
+              - reference  # tables of dependencies, configs, CI steps
+              - concept    # narrative explanation of foundation choices
+        composition_model: documentation
+        gate:
+          checks: [foundation-documented]
+
+      infrastructure:
+        required:
+          - artifact: wiki-page
+            purpose: "Tooling, automation, deployment pipeline documented"
+            templates:
+              - methodology/tech-spec  # API/interface contracts for infra components
+              - reference              # tooling reference tables
+              - operations-plan        # if infrastructure setup needs sequential steps
+        composition_model: feature-development
+        gate:
+          checks: [infrastructure-operational]
+
+      features:
+        composition_model: feature-development
+        gate:
+          checks: [features-delivered]
+
+# ---------------------------------------------------------------------------
+# Model Selection — maps task context to named model
+# ---------------------------------------------------------------------------
+model_selection:
+  # Primary selector: task_type
+  by_task_type:
+    epic: feature-development
+    module: feature-development
+    task: feature-development  # default, may be overridden by scale/context
+    bug: bug-fix
+    research: research
+    docs: documentation
+    refactor: refactor
+    hotfix: hotfix
+    integration: integration
+    evolve: knowledge-evolution
+
+  # Override conditions (checked in order, first match wins)
+  overrides:
+    - condition: "task_type == task AND scale == small AND solution_known == true"
+      model: hotfix
+    - condition: "task_type == task AND scale == large"
+      model: feature-development
+    - condition: "task_type == refactor AND scope == cross-project"
+      model: feature-development  # promote to full model for cross-project refactors
+
+# ---------------------------------------------------------------------------
+# Composition Rules — how models combine when work is multi-layered
+#
+# Four composition patterns exist. Not all are encoded here — each lives at
+# its natural config layer. This section declares what IS encodable here and
+# what belongs elsewhere (task frontmatter, orchestrator config).
+#
+# See wiki/domains/cross-domain/model-composition-rules.md for full explanation
+# of each pattern with examples.
+# ---------------------------------------------------------------------------
+composition_rules:
+
+  # -------------------------------------------------------------------------
+  # NESTED — inner model runs inside outer model's stage
+  # Encoded: YES (via model.composition: nested + chain.<stage>.composition_model)
+  # Example: project-lifecycle.chain.infrastructure.composition_model: feature-development
+  # -------------------------------------------------------------------------
+  nested:
+    description: "Inner model runs inside outer model's stage. Outer defines scope; inner defines process."
+    implementation_location: "methodology.yaml — model.composition + model.chain.<stage>.composition_model"
+    rules:
+      - "Outer model's stage defines WHAT kind of work belongs"
+      - "Inner model defines HOW that work is executed"
+      - "Inner model runs its FULL artifact chain — nesting doesn't skip inner stages"
+      - "Readiness propagation: inner task readiness feeds into outer stage readiness (weighted average)"
+      - "Outer stage is complete when ALL inner tasks are complete"
+      - "Inner model artifacts live within the outer stage's scope directory/domain"
+
+  # -------------------------------------------------------------------------
+  # CONDITIONAL (initial selection) — model picked at task creation time
+  # Encoded: YES (via model_selection section above)
+  # -------------------------------------------------------------------------
+  conditional_initial:
+    description: "Model chosen at task creation based on task_type + overrides."
+    implementation_location: "methodology.yaml — model_selection section"
+    rules:
+      - "Primary selector: task_type (epic/module/task/bug/research/docs/refactor/hotfix/integration/evolve)"
+      - "Override conditions checked in order, first match wins"
+      - "Scale and scope can promote a task to a different model"
+
+  # -------------------------------------------------------------------------
+  # CONDITIONAL (runtime promotion) — model changes mid-execution
+  # Encoded: PARTIAL — promotion graph declared here; actual promotion is agent logic
+  # -------------------------------------------------------------------------
+  conditional_runtime:
+    description: "Task's model changes mid-execution when conditions shift (e.g., a docs task reveals real implementation needed)."
+    implementation_location: "This section (valid_promotions) + task frontmatter (promoted_from, promoted_to, promotion_reason)"
+    valid_promotions:
+      documentation: [research, feature-development]    # docs can escalate to research or build
+      research: [feature-development, refactor]         # research leads to build or restructure
+      bug-fix: []                                       # terminal — don't escalate bug-fixes
+      hotfix: []                                        # terminal — hotfixes are emergency scope
+      refactor: [feature-development]                   # refactor can expand to full feature work
+      feature-development: []                           # terminal — already the most complete
+      integration: []                                   # terminal — wiring-focused
+      knowledge-evolution: []                           # terminal — distillation work
+    promotion_rules:
+      - "Completed stages are preserved (not re-run)"
+      - "New model's remaining stages are appended"
+      - "Readiness is recalculated for new model's stage count"
+      - "Promotion must be logged in task frontmatter (promoted_from, promoted_to, promotion_reason, promoted_at)"
+      - "Promotion is one-way: once promoted, can't demote within same task"
+
+  # -------------------------------------------------------------------------
+  # SEQUENTIAL — Model A completes before Model B starts
+  # Encoded: NO (lives on task instances, not model definitions)
+  # -------------------------------------------------------------------------
+  sequential:
+    description: "Model A completes fully before Model B starts. Phased work with clear handoff."
+    implementation_location: "Task/epic frontmatter — depends_on, followed_by"
+    methodology_guidance:
+      - "Model A must reach readiness_cap before Model B starts"
+      - "Model B reads A's outputs but doesn't depend on A's internal artifacts"
+      - "Transition point must be explicit in task frontmatter"
+      - "Example: Research task completes → creates Feature Development epic"
+    note: |
+      Not encoded in methodology.yaml because sequencing is a property of
+      TASK INSTANCES, not model definitions. methodology.yaml doesn't know
+      about specific tasks. Schema support: wiki-schema.yaml defines
+      followed_by and depends_on as optional frontmatter fields for tasks/epics.
+
+  # -------------------------------------------------------------------------
+  # PARALLEL — multiple models run simultaneously on independent tracks
+  # Encoded: NO (belongs in orchestrator/harness config, not methodology)
+  # -------------------------------------------------------------------------
+  parallel:
+    description: "Multiple models run simultaneously on independent tracks. Not composition — orchestration."
+    implementation_location: "Orchestrator / harness config (OpenFleet-style), NOT methodology.yaml"
+    methodology_guidance:
+      - "Tracks coordinate through shared state (backlog, wiki, completion logs)"
+      - "No artifact or stage dependencies cross tracks"
+      - "Example: execution track + PM track + knowledge track running in parallel"
+    note: |
+      Not encoded in methodology.yaml because parallel execution is a property
+      of the SYSTEM LAYER (how multiple agents coordinate), not the methodology
+      layer (how one agent executes stages). Belongs in harness/fleet config.
+
+# ---------------------------------------------------------------------------
+# Execution Modes — controls where the agent stops
+# ---------------------------------------------------------------------------
+modes:
+  autonomous:
+    description: "Default. Works through all stages until end condition."
+    stop_after: null
+    human_review: false
+    end_condition: backlog-empty
+
+  semi-autonomous:
+    description: "Stops after each task for human review."
+    stop_after: null
+    human_review: true
+    end_condition: backlog-empty
+
+  document-only:
+    description: "Runs document stage only. Good for planning sessions."
+    stop_after: document
+    human_review: false
+
+  design-only:
+    description: "Runs through design stage. Produces specs and architecture."
+    stop_after: design
+    human_review: false
+
+  scaffold-only:
+    description: "Runs through scaffold. Creates the skeleton."
+    stop_after: scaffold
+    human_review: false
+
+  plan:
+    description: "Alias for design-only."
+    stop_after: design
+    human_review: false
+
+  custom:
+    description: "Ephemeral. Stop condition defined per-run."
+    stop_after: null
+    human_review: false
+
+# ---------------------------------------------------------------------------
+# End Conditions
+# ---------------------------------------------------------------------------
+end_conditions:
+  backlog-empty:
+    description: "All tasks in backlog are done or archived."
+  stage-reached:
+    description: "Current task reached specified stage."
+    parameter: stage_name
+  task-count:
+    description: "Agent completed N tasks."
+    parameter: count
+  time-limit:
+    description: "Agent worked for N hours."
+    parameter: hours
+  cost-limit:
+    description: "Agent spent $N on API calls."
+    parameter: dollars
+
+# ---------------------------------------------------------------------------
+# Quality Tiers — explicit parameter, never implicit
+# ---------------------------------------------------------------------------
+quality_tiers:
+  skyscraper:
+    description: "Full process. Every stage, every gate, every artifact."
+    stages: all
+    compression: none
+
+  pyramid:
+    description: "Deliberate compression with documented reasoning."
+    stages: subset  # must document which stages skipped and why
+    compression: documented
+
+  mountain:
+    description: "Accidental chaos. NEVER choose this — it's the anti-pattern."
+    stages: ad-hoc
+    compression: undocumented
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+defaults:
+  mode: autonomous
+  end_condition: backlog-empty
+  quality_tier: skyscraper
+  task_priority_order: [P0, P1, P2, P3]
+  max_stage_retries: 2

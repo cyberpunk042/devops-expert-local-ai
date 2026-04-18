@@ -13,15 +13,66 @@ This is one of four projects in the fleet ecosystem:
 | **DSPD** | `devops-solution-product-development` | Project management via self-hosted Plane |
 | **NNRT** | `Narrative-to-Neutral-Report-Transformer` | Report transformation NLP pipeline |
 
+## Identity Profile
+
+| Dimension | Value | Evidence |
+|-----------|-------|----------|
+| **Type** | product (backend AI platform) | CLI (`python -m aicp.cli`) + 4-tier router + MCP server (11 tools) + guardrails + 9 operational profiles |
+| **Domain** | backend-ai-platform-python | Python 3.11+; 61 modules in `aicp/`; 94 test files / 1,758 tests; backend stack = LocalAI v4.1.3 (Docker, GPU via WSL2) + Claude Code subprocess |
+| **Second-brain** | connected | Forwarder at [tools/gateway.py](tools/gateway.py) → `~/devops-solutions-research-wiki`. AICP is documented in `wiki/ecosystem/project_profiles/aicp/identity-profile.md`. Compliance currently Tier 0/4 — adoption underway. |
+| **Phase** | production — Stage 2 routing operational; **Stage 3 hardware unlocked 2026-04-17** | LocalAI Stage 1 complete; 4-tier router with circuit breakers + DLQ + warmup deployed; hardware upgrade to **19GB VRAM** (RTX 2080 8GB + RTX 2080 Ti 11GB) confirmed today — unblocks Qwen3-30B-A3B MoE and Gemma 4 26B (dual-gpu profile becomes runnable) |
+| **Scale** | medium | 61 Python modules, 94 test files, 1,758 tests, 78 skills (.claude/skills/), 9 profiles (config/profiles/), 14 model configs (config/models/) |
+
+### Why these five fields and not others
+
+The Identity Profile above declares AICP per the second brain's Project
+Self-Identification Protocol (`wiki/domains/cross-domain/methodology-framework/project-self-identification-protocol.md`).
+The protocol distinguishes three classes of properties — only the **stable**
+(type, domain, second-brain) and **phase/scale state** classes belong here.
+**Consumer/task properties** (execution mode, SDLC profile, methodology model,
+current stage) are deliberately NOT hardcoded — declaring them in CLAUDE.md is
+a documented drift failure (see
+`wiki/lessons/01_drafts/execution-mode-is-consumer-property-not-project-property.md`).
+They are decided per work unit by the consumer (solo Claude Code session,
+harness, or fleet) at connection time.
+
+### Consumer / task properties (NOT declared here)
+
+These are per-work-unit choices the consumer makes — declaring them as project
+properties conflates task-dependent state with project identity, a recurring
+drift failure ("the project is frozen to a model"). The defaults below
+apply when the consumer doesn't override them at MCP connect or task start.
+
+| Property | Default | Where it's actually decided |
+|----------|---------|-----------------------------|
+| **Execution mode** | solo | The consumer's runtime — solo Claude Code session, harness (e.g., OpenArms v10), fleet orchestrator (e.g., OpenFleet). Non-default declared at MCP connect via the `runtime:` field in the consumer's `.mcp.json`. From inside this project we cannot detect who is consuming us elsewhere. |
+| **SDLC profile** | default (Goldilocks — stage-gated, hooks-optional, gates enforced) | Per-task. A production project running a hotfix wants `simplified`; running an architecture review wants `full`. Selected at task start, not project setup. |
+| **Methodology model** | task-dependent | One of 9 chains: feature-development, bug-fix, research, refactor, hotfix, integration, documentation, knowledge-evolution, project-lifecycle. Selected per task; menu via `python3 -m tools.gateway query --chains`. |
+| **Current stage** | task-dependent | document → design → scaffold → implement → test (varies by chain). Set per task. |
+
+### How to verify or refresh
+
+```bash
+python3 -m tools.gateway status        # second brain's view of AICP identity + SDLC profile
+python3 -m tools.gateway compliance    # adoption tier (currently Tier 0/4 — adoption in progress)
+python3 -m tools.gateway query --chains  # methodology chains menu (per-task selection)
+python3 -m tools.gateway orient        # full orientation flow
+```
+
+Identity reviews quarterly or when phase/scale crosses a threshold. The phase
+field changes when a stage in the Mission completes — that update belongs here.
+Scale field changes when module/test counts cross an order-of-magnitude (medium
+→ large at ~500 modules, etc.).
+
 ## The Mission
 
 **LocalAI independence.** Progressive offload from Claude to LocalAI. 5 stages:
 
-1. **Make LocalAI functional** ← CURRENT (assessment done, models working)
-2. **Route simple operations to LocalAI** — inference router
-3. **Progressive offload** — heartbeats, simple reviews, status checks
-4. **Reliability and failover** — graceful degradation, cluster peering
-5. **Near-independent operation** — 80%+ Claude token reduction
+1. **Make LocalAI functional** — done (LocalAI v4.1.3 on Docker, 9 models loaded, OpenAI-compatible API on :8090)
+2. **Route simple operations to LocalAI** — done (4-tier router with circuit breakers, DLQ, warmup, 9 profiles)
+3. **Progressive offload** ← **CURRENT** — hardware unlocked 2026-04-17 (19GB VRAM, dual-gpu profile runnable). Open question: empirical routing split with the new capacity. Heartbeats, simple reviews, status checks moving to local.
+4. **Reliability and failover** — graceful degradation, cluster peering (partial: circuit breakers + DLQ + reliable profile shipped; cluster peering pending)
+5. **Near-independent operation** — 80%+ Claude token reduction (target)
 
 > "Its important that the main first mission is to make localAI functional
 > and then make it more and more reliable to offload as much as possible
@@ -563,3 +614,33 @@ quality-coverage, foundation-docker, pm-plan, ops-deploy, etc.
 - **OpenArms**: `../openarms/` (AI assistant vendor/runtime)
 - **DSPD**: `../devops-solution-product-development/` (project management via Plane)
 - **NNRT**: `../Narrative-to-Neutral-Report-Transformer/` (report transformation)
+<!-- SECOND-BRAIN-CONNECTION -->
+## Second Brain Connection
+
+This project is connected to the **second brain** (research wiki) — a shared
+knowledge system holding methodology, standards, validated lessons, patterns,
+and decisions across the ecosystem.
+
+**Your brain** (this CLAUDE.md/AGENTS.md + skills + hooks) is YOUR agent.
+**The second brain** is a SEPARATE system. The goal is NOT runtime dependency —
+it's to ADOPT what fits your identity and EVOLVE your own brain.
+
+**Adoption tiers** — check where you are: `python3 -m tools.gateway compliance`
+- Tier 1: Agent foundation (schema + templates)
+- Tier 2: Stage-gate process (methodology + backlog + enforcement)
+- Tier 3: Evolution pipeline (maturity lifecycle + scoring)
+- Tier 4: Hub integration (bidirectional sync + export + contribute)
+
+**First step for any fresh session:** `python3 -m tools.gateway orient`
+
+**Browse the second brain's knowledge:**
+```
+python3 -m tools.view spine          # all 16 models, standards, sub-models
+python3 -m tools.view standards      # what "good" looks like per artifact type
+python3 -m tools.view model <name>   # one model in full
+python3 -m tools.view lessons        # 44 validated operational lessons
+python3 -m tools.view search <query> # search across all knowledge
+```
+
+**Contribute learnings back:** `python3 -m tools.gateway contribute --type lesson --title "..."`
+<!-- SECOND-BRAIN-CONNECTION -END -->

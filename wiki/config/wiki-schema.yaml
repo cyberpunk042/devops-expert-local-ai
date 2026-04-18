@@ -1,0 +1,324 @@
+# Wiki page frontmatter schema definition
+# Used by tools/validate.py to enforce page structure
+
+required_fields:
+  - title
+  - type
+  - domain
+  - status
+  - confidence
+  - created
+  - updated
+  - sources
+  - tags
+
+optional_fields:
+  - subdomain
+  - aliases
+  - complexity
+  - resolution
+  - layer
+  - derived_from
+  - maturity
+  - instances
+  - reversibility
+  - priority
+  - task_type
+  - current_stage
+  - readiness             # 0-100: definition completeness (is this READY to work on?)
+  - progress              # 0-100: execution completeness (how far is the WORK?)
+  - stages_completed
+  - artifacts
+  - estimate
+  - epic
+  - module
+  - depends_on           # sequential composition — this task/epic requires these to complete first
+  - followed_by          # sequential composition — after this completes, these start (forward reference)
+  - promoted_from        # runtime promotion — previous model (e.g. "documentation" → "feature-development")
+  - promoted_to          # runtime promotion — new model after promotion
+  - promotion_reason     # runtime promotion — why the model changed
+  - promoted_at          # runtime promotion — ISO date of the promotion event
+  - methodology_doc_type # optional: declare methodology role (e.g. requirements-spec, ADR, tech-spec, test-plan) while retaining structural type (concept/decision/reference). Makes methodology identity queryable without new wiki types.
+  - contributed_by       # audit: who/what contributed this page (e.g. "operator", "openarms-harness-v10", "gateway-cli")
+  - contribution_source  # audit: origin path or "self" (e.g. "~/openarms" for sister-project contribution)
+  - contribution_date    # audit: ISO date of contribution
+  - contribution_status  # audit: pending-review / accepted / rejected / superseded
+  - note_type
+  - impediment_type
+  - blocked_by
+  - blocked_since
+  - escalated
+  - resolution            # how an impediment was resolved
+  - target_date
+  - epics
+  - acceptance_criteria
+
+enums:
+  type:
+    - concept
+    - source-synthesis
+    - comparison
+    - reference
+    - deep-dive
+    - index
+    - lesson
+    - pattern
+    - decision
+    - domain-overview
+    - learning-path
+    - evolution
+    - epic
+    - module
+    - task
+    - note
+    - operations-plan
+    - milestone
+    - principle
+  status:
+    - raw
+    - processing
+    - synthesized
+    - verified
+    - stale
+    - draft
+    - active
+    - in-progress
+    - review
+    - done
+    - archived
+    - blocked
+  confidence:
+    - low
+    - medium
+    - high
+    - authoritative
+  complexity:
+    - beginner
+    - intermediate
+    - advanced
+    - expert
+  maturity:
+    - seed
+    - growing
+    - mature
+    - canonical
+  reversibility:
+    - easy
+    - moderate
+    - hard
+    - irreversible
+  priority:
+    - P0
+    - P1
+    - P2
+    - P3
+  task_type:
+    - epic
+    - module
+    - task
+    - research
+    - evolve
+    - docs
+    - bug
+    - refactor
+  stage:
+    - document
+    - design
+    - scaffold
+    - implement
+    - test
+  estimate:
+    - XS
+    - S
+    - M
+    - L
+    - XL
+  note_type:
+    - directive
+    - session
+    - completion
+    - archived
+  methodology_doc_type:
+    - requirements-spec
+    - infrastructure-analysis
+    - gap-analysis
+    - design-plan
+    - tech-spec
+    - test-plan
+    - operations-plan
+    - ADR
+  contribution_status:
+    - pending-review
+    - accepted
+    - rejected
+    - superseded
+  impediment_type:
+    - technical
+    - dependency
+    - decision
+    - environment
+    - clarification
+    - scope
+    - external
+    - quality
+  source_type:
+    - article
+    - youtube-transcript
+    - paper
+    - documentation
+    - notes
+    - paste
+    - book
+    - podcast-transcript
+
+required_sections:
+  concept:
+    - Summary
+    - Key Insights
+    - Deep Analysis
+    - Relationships
+  source-synthesis:
+    - Summary
+    - Key Insights
+    - Relationships
+  comparison:
+    - Summary
+    - Comparison Matrix
+    - Key Insights
+    - Deep Analysis
+    - Relationships
+  reference:
+    - Summary
+    - Relationships
+  deep-dive:
+    - Summary
+    - Key Insights
+    - Deep Analysis
+    - Relationships
+  index: []
+  lesson:
+    - Summary
+    - Context
+    - Insight
+    - Evidence
+    - Applicability
+    - Relationships
+  pattern:
+    - Summary
+    - Pattern Description
+    - Instances
+    - When To Apply
+    - When Not To
+    - Relationships
+  decision:
+    - Summary
+    - Decision
+    - Alternatives
+    - Rationale
+    - Reversibility
+    - Dependencies
+    - Relationships
+  domain-overview:
+    - Summary
+    - State of Knowledge
+    - Maturity Map
+    - Gaps
+    - Priorities
+    - Key Pages
+    - Relationships
+  learning-path:
+    - Summary
+    - Prerequisites
+    - Sequence
+    - Outcomes
+    - Relationships
+  evolution:
+    - Summary
+    - Timeline
+    - Key Shifts
+    - Current State
+    - Relationships
+  epic:
+    - Summary
+    - Goals
+    - Done When
+    - Relationships
+  module:
+    # Per Q41 resolution (e003-artifact-type-system-design): "Same pattern as
+    # epic but lighter." A module page CONTAINS tasks (not modules — that
+    # would be an epic). So Tasks is the right section name, not
+    # "Module Breakdown" (which would fit an epic's child-modules list).
+    # Dependencies = structural scheduling blockers (cross-module).
+    # Goals collapses into Summary at module scope (the module's purpose
+    # IS what it does). Impediments is an optional runtime-blocker section.
+    - Summary
+    - Tasks
+    - Dependencies
+    - Done When
+    - Relationships
+  task:
+    - Summary
+    - Done When
+  note:
+    - Summary
+  operations-plan:
+    - Summary
+    - Prerequisites
+    - Steps
+    - Rollback
+    - Completion Criteria
+    - Relationships
+  milestone:
+    - Summary
+    - Delivery Target
+    - Epic Composition
+    - Acceptance Criteria
+    - Relationships
+  principle:
+    - Summary
+    - Statement
+    - Derived From
+    - Application
+    - Boundaries
+    - Relationships
+
+relationship_verbs:
+  - BUILDS ON
+  - ENABLES
+  - COMPARES TO
+  - CONTRADICTS
+  - USED BY
+  - RELATES TO
+  - FEEDS INTO
+  - DERIVED FROM
+  - SUPERSEDES
+  - IMPLEMENTS
+  - EXTENDS
+  - CONSTRAINS
+  - CONSTRAINED BY
+  - PARALLELS
+  - SYNTHESIZES
+  - ENABLED BY
+  - CONTRASTS WITH
+
+source_required_fields:
+  - id
+  - type
+
+# A source must carry at least one of these locator fields:
+# - url: external web reference (any absolute URL)
+# - file: path relative to project root OR legacy absolute path (deprecated; migrate to project+path)
+# - project: sister-project identifier from wiki/config/sister-projects.yaml
+#            (when project is present, `path` is also REQUIRED and is relative to the project root)
+# The project+path form is preferred for anything inside the 5-project ecosystem —
+# it is portable (no hardcoded home paths), supports git-remote fallback via
+# tools/source_resolver.py, and makes the registry the single source of truth for
+# project locations. Verified 2026-04-15.
+source_needs_one_of:
+  - url
+  - file
+  - project
+
+# When source declares `project:`, the `path:` field is also required.
+# Validator should flag source entries with project-but-no-path as warnings.
+source_project_companion_field: path

@@ -1,0 +1,100 @@
+# AICP Export Profiles — outbound knowledge transfer to other projects
+#
+# Companion to the second brain's wiki/config/export-profiles.yaml. The brain
+# exports TO AICP (its `aicp` profile sends research-wiki content to
+# docs/kb/research-wiki/). This file defines AICP's own outbound exports —
+# knowledge that AICP authors and contributes to other projects.
+#
+# Honest reporting: this file exists to satisfy second-brain Tier 4 STRUCTURAL
+# compliance. Operational export pipeline (the runtime that reads these
+# profiles, transforms content, writes to target_dir) is pending — tracked
+# under Step 9 of the adoption plan.
+
+# Target: contribute lessons/patterns/decisions UP to the second brain.
+# Used when AICP authors a wiki page that generalizes beyond AICP-specific
+# concerns and would benefit the broader ecosystem.
+second-brain:
+  description: "Contribute AICP lessons/patterns/decisions back to the second brain"
+  target_format: second-brain-wiki
+  output_dir: ../devops-solutions-research-wiki/raw/articles/from-aicp/
+  transforms:
+    frontmatter: preserve  # second brain expects YAML frontmatter
+    type_map:
+      lesson: "lesson"
+      pattern: "pattern"
+      decision: "decision"
+      concept: "concept"
+    status_map:
+      validated: "synthesized"
+      reviewed: "synthesized"
+    add_metadata:
+      - key: "contributed_by"
+        value: "aicp"
+      - key: "contribution_source"
+        value: "~/devops-expert-local-ai"
+      - key: "contribution_date"
+        value: "{updated}"
+      - key: "contribution_status"
+        value: "pending-review"
+    relationship_format: preserve
+    resolution: full
+  filters:
+    min_confidence: medium
+    min_status: validated
+    exclude_domains: []
+    # Only export pages that generalize beyond AICP-specific concerns
+    require_tags_any:
+      - "ecosystem"
+      - "transferable"
+      - "principle"
+      - "pattern"
+
+# Target: share AICP-specific patterns and operational lessons with OpenFleet.
+# Useful for fleet's agent design (AICP backend patterns, routing, profiles).
+openfleet:
+  description: "Share AICP backend patterns + operational lessons with the fleet"
+  target_format: openfleet-kb
+  output_dir: ../openfleet/docs/knowledge-map/kb/from-aicp/
+  transforms:
+    frontmatter: strip  # openfleet KB uses headers not frontmatter
+    type_map:
+      pattern: "Backend Pattern"
+      decision: "Backend Decision"
+      lesson: "Operational Lesson"
+      concept: "Backend Concept"
+    add_metadata:
+      - key: "Type"
+        value: "{type_mapped}"
+      - key: "Source Project"
+        value: "aicp"
+      - key: "Date"
+        value: "{updated}"
+    relationship_format: preserve
+    resolution: condensed
+  filters:
+    min_confidence: medium
+    min_status: validated
+    domains:
+      - backend-ai-platform-python
+      - infrastructure
+
+# Target: AICP forks / future AICP instances.
+# Allows a new AICP deployment to bootstrap with our hard-won knowledge
+# (router config, profile choices, model VRAM maps, debugging gotchas).
+aicp-instance:
+  description: "Bootstrap a new AICP fork/instance with operational knowledge"
+  target_format: aicp-bootstrap
+  output_dir: ./dist/aicp-bootstrap/
+  transforms:
+    frontmatter: preserve
+    type_map: {}  # all types preserved as-is
+    relationship_format: preserve
+    resolution: full
+  filters:
+    min_confidence: medium
+    min_status: validated
+    require_tags_any:
+      - "bootstrap"
+      - "operational"
+      - "config"
+      - "runbook"

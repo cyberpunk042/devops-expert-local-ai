@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "research-wiki": {
+      "command": "/home/jfortin/devops-solutions-research-wiki/.venv/bin/python",
+      "args": [
+        "-m",
+        "tools.mcp_server"
+      ],
+      "cwd": "/home/jfortin/devops-solutions-research-wiki"
+    }
+  }
+}
