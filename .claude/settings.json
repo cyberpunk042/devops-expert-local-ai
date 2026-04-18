@@ -26,5 +26,18 @@
     "additionalDirectories": [
       "/tmp"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/jfortin/devops-expert-local-ai/tools/hooks/pretool_safety.py"
+          }
+        ]
+      }
+    ]
   }
 }
