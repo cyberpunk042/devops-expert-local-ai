@@ -29,7 +29,7 @@ sources:
     type: file
     file: tests/test_profiles.py
     description: 49 profile tests
-tags: [decision, router, profiles, architecture, aicp, backend-ai-platform-python, local-first]
+tags: [decision, router, profiles, architecture, aicp, backend-ai-platform-python, local-first, transferable, pattern]
 ---
 
 # Decision: 4-tier router with configurable profiles over hardcoded routing
