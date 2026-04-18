@@ -1,0 +1,176 @@
+# Domain Profile: Backend AI Platform (Python)
+#
+# For projects like AICP — Python backend platforms that orchestrate AI
+# inference (LocalAI + cloud), expose CLI + MCP server, manage configuration
+# profiles, and have a large skill library.
+#
+# Layers over generic methodology.yaml definitions. Closest sibling:
+# python-wiki.yaml (same language, different artifact spectrum).
+# AICP differs from python-wiki in: pytest over pipeline post, ruff over
+# custom validate, Docker as runtime (LocalAI + Prometheus + Grafana),
+# profiles as coordination bundles, 78 skills as primary extension.
+
+domain: backend-ai-platform-python
+description: "Python backend platforms orchestrating AI inference (local + cloud) with CLI, MCP server, and skill libraries"
+examples: [aicp, devops-expert-local-ai]
+
+# ---------------------------------------------------------------------------
+# Stage Overrides — resolve generic artifacts to backend-ai-platform-python specifics
+# ---------------------------------------------------------------------------
+stage_overrides:
+  document:
+    gate_commands:
+      - "ruff check --select F,E aicp/ tests/"  # syntax + undefined name only at document stage
+    path_patterns:
+      wiki-page: "wiki/**/*.md"
+      design-note: "docs/**/*.md"
+    forbidden_zones:
+      - "aicp/"           # no source code during document stage (understanding, not building)
+      - "tests/"
+      - "config/profiles/"  # no profile changes during document
+    # Templates used at this stage:
+    #   methodology/requirements-spec → wiki/domains/{domain}/{slug}-requirements.md
+    #   methodology/infrastructure-analysis → wiki/domains/{domain}/{slug}-infrastructure.md
+    #   methodology/gap-analysis → wiki/domains/{domain}/{slug}-gaps.md
+
+  design:
+    gate_commands:
+      - "ruff check --select F,E aicp/ tests/"
+    path_patterns:
+      design-document: "wiki/domains/**/*.md"
+      decision-page: "wiki/decisions/**/*.md"
+      architecture-doc: "docs/**/*.md"
+    forbidden_zones:
+      - "aicp/"
+      - "tests/"
+      - "config/profiles/"
+    # Templates used at this stage:
+    #   methodology/design-plan → wiki/domains/{domain}/{slug}-design.md
+    #   decision → wiki/decisions/{slug}.md  (for ADRs)
+    #   methodology/tech-spec → wiki/domains/{domain}/{slug}-tech-spec.md
+    #   methodology/test-plan → wiki/domains/{domain}/{slug}-test-plan.md
+
+  scaffold:
+    gate_commands:
+      - "ruff check aicp/ tests/"
+      - "ruff format --check aicp/ tests/"
+    path_patterns:
+      type-definition: "aicp/**/types.py"          # type aliases, dataclasses
+      protocol-definition: "aicp/**/protocols.py"  # ABCs, Protocols
+      config-file: "config/**/*.yaml"              # AICP YAML configs
+      profile-file: "config/profiles/*.yaml"       # profile bundles
+      model-file: "config/models/*.yaml"           # model GGUF configs
+      test-stub: "tests/test_*.py"                 # pytest stubs
+      template-file: "wiki/config/templates/*.md"  # wiki page templates
+    forbidden_zones: []
+    allowed_content:
+      type-definition: "Type aliases, dataclasses, Protocols — no business logic"
+      config-file: "YAML declarations only — no Python logic"
+      test-stub: "pytest test functions with NotImplementedError or pass body — no real assertions"
+    verification:
+      no-business-logic: "Scaffold files contain declarations only, no algorithmic logic"
+      types-importable: "Python files parse and import (ruff check --select F,E exits 0)"
+
+  implement:
+    gate_commands:
+      - "ruff check aicp/ tests/"
+      - "ruff format --check aicp/ tests/"
+      - "pytest tests/ -x --tb=short"  # fail fast at implement stage; full suite at test stage
+    path_patterns:
+      implementation: "aicp/**/*.py"        # business logic
+      backend: "aicp/backends/*.py"
+      core: "aicp/core/*.py"
+      cli: "aicp/cli/*.py"
+      mcp: "aicp/mcp/*.py"
+      guardrails: "aicp/guardrails/*.py"
+      tool: "tools/*.py"                    # gateway forwarder, evolve/lint stubs, future utilities
+      skill: ".claude/skills/**/*.md"       # skill definitions
+      profile-impl: "config/profiles/*.yaml"
+    integration_requirement:
+      description: "New code must be wired into runtime — imported by existing module, exposed via CLI/MCP, or registered in a profile"
+      check: "At least one existing file in aicp/ references the new code, OR a CLI subcommand / MCP tool / profile entry exposes it"
+    verification:
+      ruff-clean: "ruff check aicp/ tests/ exits 0 with 0 violations"
+      ruff-formatted: "ruff format --check exits 0 (no diff)"
+      pytest-fail-fast: "pytest -x exits 0 (first failure stops the run)"
+      no-orphans: "Every new public function/class is imported by ≥1 existing file (per OpenArms Bug 6 — code that nothing imports)"
+
+  test:
+    gate_commands:
+      - "ruff check aicp/ tests/"
+      - "ruff format --check aicp/ tests/"
+      - "pytest tests/ --tb=short"          # full suite, no -x
+      - "pytest tests/ --co -q | tail -1"   # count tests collected, drift signal
+    path_patterns:
+      test-implementation: "tests/test_*.py"
+      integration-test: "tests/integration/*.py"
+      benchmark: "tests/benchmark/*.py"
+      test-fixture: "tests/fixtures/*.py"
+    verification:
+      ruff-clean: "ruff check exits 0"
+      pytest-full-pass: "pytest tests/ exits 0 (all 1,758+ tests pass)"
+      no-test-deletions: "Test count did not decrease vs prior commit (catches assertion tampering — Quality Standards Anti-Pattern)"
+      coverage-not-degraded: "Coverage did not decrease materially (advisory)"
+
+# ---------------------------------------------------------------------------
+# Backend AI Platform Extensions — unique to AICP-class projects
+# ---------------------------------------------------------------------------
+backend_operations:
+  inference_routing:
+    description: "Score request complexity, select backend (local vs cloud), apply circuit breaker, fail over"
+    pipeline: "router.score() → circuit_breaker.allow() → backend.invoke() → quality.score() → maybe escalate"
+    gate: "All 4 router tiers (local → fleet → openrouter → claude) testable via aicp --route"
+    quality_rule: "Quality score < 0.25 → auto-retry on next tier (configurable per profile)"
+
+  profile_management:
+    description: "9 named profiles coordinating backend + router + RAG + budget + cache + Docker"
+    pipeline: "make profile-use PROFILE=<name> → writes .env → docker compose restart"
+    gate: "make profile-validate exits 0 for all profiles"
+    iac_rule: "All profile changes via make profile-use, never manual .env edits"
+
+  model_management:
+    description: "Single-active backend on GPU (8GB constraint), LRU eviction with MAX_ACTIVE_BACKENDS=3"
+    pipeline: "Model swap on demand (10-80s cold start), warm inference 1-1.2s for 3B/7B"
+    gate: "All model configs in config/models/*.yaml; binaries gitignored (downloaded by make setup)"
+    iac_rule: "No manual GGUF downloads — use make model-* targets"
+
+  observability:
+    description: "Prometheus + Grafana stack (optional profile), structured JSON logs, deep health endpoint"
+    pipeline: "make monitoring-up → :9101/metrics scraped → Grafana :3000 (admin/aicp)"
+    gate: "aicp --health-report generates trend deltas; alerts in config/alerts.yaml (7 rules)"
+
+  reliability:
+    description: "Circuit breaker per backend, DLQ for failed tasks, startup warmup, deep health"
+    pipeline: "make profile-use PROFILE=reliable → breaker threshold=2, warmup pre-loads, DLQ retries up to 5"
+    gate: "aicp --retry-dlq processes failed tasks; circuit breaker state queryable per backend"
+
+  knowledge:
+    description: "RAG via SQLite vector store + nomic-embed; KB synced to LocalAI Collections"
+    pipeline: "make kb-sync (or kb-sync-force) → uploaded to localhost:8090/app/collections"
+    gate: "/api/agents/collections/aicp-kb/search returns relevant results"
+
+# ---------------------------------------------------------------------------
+# Conventions specific to backend-ai-platform-python domain
+# ---------------------------------------------------------------------------
+conventions:
+  module_layout: "aicp/{core,backends,cli,mcp,guardrails,agent,config}/ — one responsibility per package"
+  file_layout: "Small modules, single responsibility per file (per CLAUDE.md)"
+  type_hints: "Type hints on all public functions (CLAUDE.md convention)"
+  config_format: "YAML, loaded via aicp/config/loader.py — no secrets in code (use .env, gitignored)"
+  test_layout: "tests/ mirrors aicp/ structure"
+  test_runner: "pytest with markers; integration tests in tests/integration/"
+  lint: "ruff check aicp/ tests/ (configured in pyproject.toml)"
+  format: "ruff format aicp/ tests/"
+  docker: "docker compose up -d — host port 8090 → container 8080 (LocalAI)"
+  commit_style: "conventional commits: type(scope): description (CLAUDE.md convention)"
+  iac: "Everything reproducible via make setup — no manual runtime changes (CLAUDE.md non-negotiable rule #3)"
+  permission_modes: "Think (read/analyze) → Edit (modify scoped files) → Act (run commands)"
+
+# ---------------------------------------------------------------------------
+# Real Example: 4-tier router with circuit breakers (Stage 2 Feature Dev)
+# ---------------------------------------------------------------------------
+# Document: docs/kb/research/* (router decision background, model evaluations, complexity scoring research)
+# Design:   wiki/decisions/<future>/4-tier-router-with-profiles.md (to author)
+# Scaffold: config/profiles/*.yaml (9 profiles), aicp/core/router.py types
+# Implement: aicp/core/router.py (score → tier → backend), aicp/core/circuit_breaker.py, aicp/core/dlq.py
+# Test:     tests/test_router.py, tests/test_circuit_breaker.py, tests/test_dlq.py — part of 1,758-test suite
