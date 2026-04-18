@@ -3,8 +3,11 @@ title: AICP Backlog
 type: index
 domain: backend-ai-platform-python
 status: active
+confidence: high
 created: 2026-04-17
 updated: 2026-04-17
+sources: []
+tags: [backlog, index, aicp]
 ---
 
 # AICP Backlog

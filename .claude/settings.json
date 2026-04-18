@@ -17,7 +17,10 @@
       "Bash(python3 -m tools.gateway status)",
       "Bash(python3 -m tools.gateway compliance)",
       "Bash(python3 -m tools.gateway template)",
-      "Bash(python3 -m tools.gateway contribute --help)"
+      "Bash(python3 -m tools.gateway contribute --help)",
+      "Bash(python3 -m tools.lint)",
+      "Bash(python3 -m tools.lint wiki/decisions/01_drafts/4-tier-router-with-profiles-over-hardcoded-routing.md)",
+      "Bash(python3 -m tools.evolve --score)"
     ],
     "additionalDirectories": [
       "/tmp"
