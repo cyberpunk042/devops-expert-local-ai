@@ -1,0 +1,31 @@
+# AICP runtime state — template for `.aicp/state.yaml` (gitignored copy).
+#
+# Copy this file to `.aicp/state.yaml` and edit for your active task.
+# Per the decision at wiki/decisions/01_drafts/aicp-active-state-mechanism-for-hooks.md,
+# this is the PRIMARY source of truth for "what task + stage am I in" — read by
+# tools/hooks/pretool_safety.py for stage-gate enforcement.
+#
+# Bootstrap order when the hook needs state:
+#   1. Read .aicp/state.yaml (this file's runtime copy)
+#   2. If missing/unreadable, parse current git branch name (pattern: <type>/T<id>-<slug>)
+#   3. If neither yields a task ID, fall back to no per-stage enforcement (Layer A safety only)
+
+# Task ID — must match a file at wiki/backlog/tasks/<task_id>-*.md
+# Format: T<NNN> (e.g., T001, T042). Auto-set by `aicp task switch <id>` (when CLI lands).
+active_task: T001
+
+# Current stage — mirrors the task's frontmatter `current_stage` field.
+# Mirroring here lets the hook avoid parsing the task .md on every check.
+# Valid values: document | design | scaffold | implement | test | done
+# Update simultaneously with the task frontmatter when stage advances.
+active_stage: implement
+
+# Three Permission Mode (per wiki/patterns/01_drafts/three-permission-modes-think-edit-act.md)
+# Valid values: think | edit | act
+# Operator-controlled per session. Hook may use this to gate authority alongside stage.
+mode: edit
+
+# ISO 8601 timestamp — last update.
+# Used by the hook to flag stale state (e.g., active_stage hasn't moved in 30+ days
+# might mean the task is forgotten).
+updated: 2026-04-18T00:00:00Z
