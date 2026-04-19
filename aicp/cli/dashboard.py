@@ -30,6 +30,9 @@ def run_dashboard(local_url: str) -> int:
                 live.update(panel)
                 time.sleep(5)
     except KeyboardInterrupt:
+        # Per Gateway Output Contract Rule 5 — closing NEXT-move
+        # See wiki/decisions/00_inbox/aicp-cli-mcp-outputs-adopt-gateway-output-contract.md
+        print("NEXT: `aicp --metrics` for a static snapshot, or `aicp --check` for backend validation")
         return 0
 
 

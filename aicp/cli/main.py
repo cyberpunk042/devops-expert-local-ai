@@ -86,6 +86,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stage for --task-cmd switch (e.g. implement); defaults to task file's current_stage",
     )
     parser.add_argument(
+        "--model-cmd",
+        metavar="CMD",
+        help="Model lifecycle commands: unload <name>, delete <name>, status <name|job>, update <name> (replaces deprecated aicp_model_* MCP tools per wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md)",
+    )
+    parser.add_argument(
+        "--model-arg",
+        metavar="ARG",
+        help="Model name (or job UUID for status) for --model-cmd",
+    )
+    parser.add_argument(
+        "--lora-cmd",
+        metavar="CMD",
+        help="LoRA adapter commands: list, load <model> <adapter> (replaces deprecated aicp_lora_* MCP tools per wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md)",
+    )
+    parser.add_argument(
+        "--lora-arg",
+        metavar="ARG",
+        help="Model name for --lora-cmd load",
+    )
+    parser.add_argument(
+        "--lora-arg2",
+        metavar="ARG2",
+        help="Adapter path/URL for --lora-cmd load",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Check config validity and backend availability, then exit",
@@ -495,6 +520,174 @@ def _print_next(msg: str) -> None:
     for adoption rationale. Use a single command or a 1-2-option chooser; never a 5+ menu.
     """
     print(f"NEXT: {msg}")
+
+
+def _run_model_cmd(cmd: str, model_arg: Optional[str]) -> int:
+    """Handle --model-cmd subcommands: unload, delete, status, update.
+
+    Replaces deprecated aicp_model_unload/delete/status/config_update MCP tools per
+    wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md.
+
+    `delete` includes a confirmation prompt — destructive operations should never
+    fire without operator confirmation.
+    """
+    local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+    backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+
+    if cmd == "unload":
+        if not model_arg:
+            print_error("Usage: aicp --model-cmd unload --model-arg <name>")
+            _print_next("`aicp --check` to see currently-loaded models, then unload one")
+            return 1
+        try:
+            success = backend.model_shutdown(model_arg)
+        except Exception as e:
+            print_error(f"Unload failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable")
+            return 1
+        if success:
+            print(f"Unloaded: {model_arg}")
+            _print_next("`aicp --check` to verify VRAM freed, or `aicp --models activate --models-arg <other>` to load a different model")
+            return 0
+        print_error(f"Failed to unload: {model_arg}")
+        _print_next(f"`aicp --check` to verify {model_arg} was actually loaded")
+        return 1
+
+    if cmd == "delete":
+        if not model_arg:
+            print_error("Usage: aicp --model-cmd delete --model-arg <name>")
+            _print_next("`aicp --models list` to see available model names")
+            return 1
+        try:
+            confirm = input(f"Delete model '{model_arg}' (irreversible — files removed from disk)? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Aborted.")
+            _print_next(f"rerun if you want to delete: `aicp --model-cmd delete --model-arg {model_arg}`")
+            return 1
+        if confirm != "y":
+            print("Aborted.")
+            _print_next(f"rerun if you want to delete: `aicp --model-cmd delete --model-arg {model_arg}`")
+            return 0
+        try:
+            success = backend.model_delete(model_arg)
+        except Exception as e:
+            print_error(f"Delete failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable")
+            return 1
+        if success:
+            print(f"Deleted: {model_arg}")
+            _print_next("`aicp --models list` to confirm removal, or `aicp --models gallery` to install another")
+            return 0
+        print_error(f"Failed to delete: {model_arg}")
+        _print_next(f"`aicp --models list` to verify {model_arg} exists")
+        return 1
+
+    if cmd == "status":
+        if not model_arg:
+            print_error("Usage: aicp --model-cmd status --model-arg <name|job-uuid>")
+            _print_next("`aicp --models list` to see model names, or use UUID from a recent install")
+            return 1
+        try:
+            # UUIDs are 36 chars with hyphens
+            if len(model_arg) > 30 and "-" in model_arg:
+                info = backend.model_job_status(model_arg)
+                print(f"Job: {model_arg}")
+                if info.get("processed"):
+                    print("  Status: complete")
+                    _print_next("`aicp --models list` to verify the new model is in the catalog")
+                else:
+                    progress = info.get("progress", 0)
+                    print(f"  Progress: {progress:.1f}%")
+                    print(f"  Status:   {info.get('message', 'downloading')}")
+                    _print_next(f"rerun `aicp --model-cmd status --model-arg {model_arg}` after a few minutes")
+            else:
+                info = backend.model_monitor(model_arg)
+                state_map = {0: "uninitialized", 1: "busy", 2: "ready", -1: "error"}
+                print(f"Model: {model_arg}")
+                print(f"  State: {state_map.get(info.get('state', -1), 'unknown')}")
+                memory = info.get("memory", {})
+                if memory:
+                    total_mb = memory.get("total", 0) / 1024 / 1024
+                    print(f"  Memory: {total_mb:.0f} MiB total")
+                _print_next("`aicp --metrics` for cross-model GPU summary, or `aicp --model-cmd unload --model-arg <name>` to free VRAM")
+        except Exception as e:
+            print_error(f"Status query failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable")
+            return 1
+        return 0
+
+    if cmd == "update":
+        # Update yaml + restart guidance per asymmetric-kv-cache-quantization decision
+        if not model_arg:
+            print_error("Usage: aicp --model-cmd update --model-arg <name>")
+            _print_next("`aicp --models list` to see available model names")
+            return 1
+        config_path = Path(__file__).parent.parent.parent / "config" / "models" / f"{model_arg}.yaml"
+        if not config_path.exists():
+            print_error(f"Model config not found: {config_path}")
+            _print_next("`aicp --models list` to see model names with config files")
+            return 1
+        print(f"Edit: {config_path}")
+        print("After editing, restart LocalAI to apply: docker compose restart localai")
+        print("Per asymmetric-KV-cache decision, runtime config_update is discouraged — durable yaml + restart is correct.")
+        _print_next("edit the YAML, then `docker compose restart localai`, then `aicp --check` to verify")
+        return 0
+
+    print_error(f"Unknown model command: {cmd!r}")
+    print("Valid commands: unload, delete, status, update")
+    _print_next("`aicp --models list` for the model catalog, or `aicp --models gallery` to browse installable")
+    return 1
+
+
+def _run_lora_cmd(cmd: str, model_arg: Optional[str], adapter_arg: Optional[str]) -> int:
+    """Handle --lora-cmd subcommands: list, load.
+
+    Replaces deprecated aicp_lora_load and aicp_lora_list MCP tools per
+    wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md.
+    """
+    local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+    backend = LocalAIBackend(base_url=local_url, model="hermes", max_tokens=256, api_key="")
+
+    if cmd == "list":
+        try:
+            models = backend.lora_list()
+        except Exception as e:
+            print_error(f"LoRA list failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable")
+            return 1
+        if not models:
+            print("No LoRA adapters loaded.")
+            _print_next("`aicp --lora-cmd load --lora-arg <model> --lora-arg2 <adapter>` to attach an adapter")
+            return 0
+        print(f"{'Model':<30} {'Adapters'}")
+        print("-" * 60)
+        for m in models:
+            adapters = ", ".join(m.get("adapters", [])) if isinstance(m, dict) else str(m)
+            name = m.get("name", "?") if isinstance(m, dict) else str(m)
+            print(f"{name:<30} {adapters}")
+        _print_next("`aicp --models list` to see base models, or `aicp --lora-cmd load --lora-arg <model> --lora-arg2 <new>` to attach")
+        return 0
+
+    if cmd == "load":
+        if not model_arg or not adapter_arg:
+            print_error("Usage: aicp --lora-cmd load --lora-arg <model> --lora-arg2 <adapter-path-or-url>")
+            _print_next("`aicp --lora-cmd list` to see currently-loaded adapters")
+            return 1
+        try:
+            result = backend.lora_load(model_arg, adapter_arg)
+        except Exception as e:
+            print_error(f"LoRA load failed: {e}")
+            _print_next(f"`aicp --models list` to verify {model_arg} is a loaded base model")
+            return 1
+        print(f"LoRA adapter loaded: {model_arg} ← {adapter_arg}")
+        _print_next("`aicp --lora-cmd list` to verify, or `aicp \"<prompt>\"` to test the specialized model")
+        return 0
+
+    print_error(f"Unknown lora command: {cmd!r}")
+    print("Valid commands: list, load")
+    _print_next("`aicp --lora-cmd list` to see current LoRA state")
+    return 1
 
 
 def _run_task_cmd(
@@ -1246,6 +1439,10 @@ def _run_self_test() -> int:
         console.print()
     console.print()
 
+    if failed:
+        _print_next("triage FAIL items above (likely LocalAI / KB / Docker config); rerun `aicp --self-test` to verify fixes")
+    else:
+        _print_next("`aicp --bench` for performance baseline, or `aicp \"<prompt>\"` to start using AICP")
     return 1 if failed else 0
 
 
@@ -1709,9 +1906,11 @@ def _run_models(command: str, model_name: str = None) -> int:
             table.add_row("Tokens/sec", f"{result['tokens_per_second']:.1f}")
             table.add_row("Preview", result["response_preview"])
             console.print(table)
+            _print_next(f"`aicp --models activate --models-arg {model_name}` to switch to it, or benchmark another for comparison")
             return 0
         except Exception as e:
             print_error(f"Benchmark failed: {e}")
+            _print_next(f"`aicp --check` to verify {model_name} is loaded, or `aicp --models list` to see available models")
             return 1
 
     elif command == "gallery":
@@ -1722,10 +1921,12 @@ def _run_models(command: str, model_name: str = None) -> int:
             available = backend.models_available()
         except Exception as e:
             print_error(f"Gallery unavailable: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable, or `docker compose up -d localai`")
             return 1
 
         if not available:
             console.print("[dim]No models in gallery.[/]")
+            _print_next("LocalAI gallery is empty — verify gallery URL in LocalAI config")
             return 0
 
         # Filter by search term if provided
@@ -1748,6 +1949,7 @@ def _run_models(command: str, model_name: str = None) -> int:
         console.print(table)
         if len(available) > 50:
             console.print(f"[dim]  ... and {len(available) - 50} more. Use --models-arg to filter.[/]")
+        _print_next("`aicp --models download --models-arg <name>` to install, or refine filter via `--models-arg <search>`")
         return 0
 
     elif command == "install" and model_name:
@@ -1760,9 +1962,11 @@ def _run_models(command: str, model_name: str = None) -> int:
             console.print(f"[green]Installation started:[/] {model_name}")
             console.print(f"  Job UUID: {job_uuid}")
             console.print(f"  Track:    aicp --models job --models-arg {job_uuid}")
+            _print_next(f"`aicp --models job --models-arg {job_uuid}` to track download progress")
             return 0
         except Exception as e:
             print_error(f"Install failed: {e}")
+            _print_next("`aicp --models gallery` to verify the model name, then retry install")
             return 1
 
     elif command == "job" and model_name:
@@ -1774,19 +1978,23 @@ def _run_models(command: str, model_name: str = None) -> int:
 
             if status.get("error"):
                 print_error(f"Job failed: {status['error']}")
+                _print_next(f"`aicp --models install --models-arg <name>` to retry, or `aicp --models gallery` to verify name")
                 return 1
 
             if status.get("processed"):
                 console.print(f"[green]Download complete.[/]")
+                _print_next("`aicp --models list` to verify the model is in the catalog, then `aicp --models activate --models-arg <name>`")
             else:
                 progress = status.get("progress", 0)
                 file_size = status.get("file_size", "?")
                 downloaded = status.get("downloaded_size", "?")
                 console.print(f"  Progress: {progress:.1f}%  ({downloaded} / {file_size})")
                 console.print(f"  Status:   {status.get('message', 'downloading')}")
+                _print_next(f"rerun `aicp --models job --models-arg {model_name}` after a few minutes to check progress")
             return 0
         except Exception as e:
             print_error(f"Job status failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable, then retry the job query")
             return 1
 
     elif command == "unload" and model_name:
@@ -1797,12 +2005,15 @@ def _run_models(command: str, model_name: str = None) -> int:
             success = backend.model_shutdown(model_name)
             if success:
                 console.print(f"[green]Unloaded:[/] {model_name}")
+                _print_next("`aicp --check` to verify VRAM freed, or `aicp --models activate --models-arg <other>` to load a different model")
             else:
                 print_error(f"Failed to unload: {model_name}")
+                _print_next(f"`aicp --check` to verify {model_name} was actually loaded")
                 return 1
             return 0
         except Exception as e:
             print_error(f"Unload failed: {e}")
+            _print_next("`aicp --check` to verify LocalAI is reachable")
             return 1
 
     elif command == "monitor" and model_name:
@@ -1826,15 +2037,18 @@ def _run_models(command: str, model_name: str = None) -> int:
                 weights_mb = breakdown.get("weights", 0) / 1024 / 1024
                 kv_mb = breakdown.get("kv_cache", 0) / 1024 / 1024
                 console.print(f"  Memory: {total_mb:.0f} MiB total (weights: {weights_mb:.0f}, KV: {kv_mb:.0f})")
+            _print_next("`aicp --metrics` for cross-model GPU summary, or `aicp --models unload --models-arg <name>` to free VRAM")
             return 0
         except Exception as e:
             print_error(f"Monitor failed: {e}")
+            _print_next(f"`aicp --models list` to verify {model_name} exists, or `aicp --check` for LocalAI reachability")
             return 1
 
     else:
         print_error(
             "Usage: --models list|gallery|install|job|unload|monitor|info|download|activate|benchmark --models-arg <name>"
         )
+        _print_next("`aicp --models list` to start with the configured model catalog")
         return 1
 
 
@@ -1849,19 +2063,23 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
     if cmd == "register":
         entry = register_project(project_path, name=name, description=desc or "")
         console.print(f"[green]Registered:[/] {entry['name']} at {entry['path']}")
+        _print_next("`aicp --project-cmd status` to see project state, or `aicp --project-cmd plan` to define milestones")
         return 0
 
     elif cmd == "unregister":
         if unregister_project(project_path):
             console.print(f"[yellow]Unregistered:[/] {project_path}")
+            _print_next("`aicp --project-cmd list` to see remaining registered projects")
         else:
             print_error("Project not found in registry.")
+            _print_next("`aicp --project-cmd list` to see registered projects")
         return 0
 
     elif cmd == "list":
         projects = list_projects()
         if not projects:
             console.print("[dim]No projects registered. Use --project-cmd register[/]")
+            _print_next("`aicp --project-cmd register --project-name <name>` from inside the project directory")
             return 0
 
         table = Table(title="AICP Projects", show_header=True)
@@ -1891,6 +2109,7 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
         state = load_project_state(project_path)
         if state is None:
             print_error("No project state found. Register first with --project-cmd register")
+            _print_next("`aicp --project-cmd register --project-name <name>` from inside the project directory")
             return 1
 
         console.print(f"[bold]{state.get('name', '?')}[/]")
@@ -1918,16 +2137,19 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
             for d in decisions[-5:]:
                 console.print(f"    {d.get('timestamp', '')[:10]} {d['decision']}")
 
+        _print_next("`aicp --project-cmd plan` to update milestones, or `aicp --project-cmd assess` for AI assessment")
         return 0
 
     # Commands that need a backend are handled separately
     elif cmd in ("create", "plan", "assess"):
         print_error(f"'{cmd}' needs backends. Use after config load (handled in main).")
+        _print_next("rerun without --project-cmd flag to load config first; backend-dependent commands run from main path")
         return 1
 
     else:
         print_error(f"Unknown project command: {cmd}")
         print_error("Available: register, unregister, list, status, create, plan, assess")
+        _print_next("`aicp --project-cmd list` to see registered projects")
         return 1
 
 
@@ -1947,6 +2169,7 @@ def _run_skill(
         skills = discover_skills(project_path)
         if not skills:
             console.print("[dim]No skills found. Create one with --skill create --skill-name <name>[/]")
+            _print_next("`aicp --skill create --skill-name <name>` to author one")
             return 0
 
         table = Table(title="Available Skills", show_header=True)
@@ -1959,17 +2182,20 @@ def _run_skill(
             param_str = ", ".join(p.name for p in s.parameters) if s.parameters else "-"
             table.add_row(s.name, s.source, s.description[:60], param_str)
         console.print(table)
+        _print_next("`aicp --skill run --skill-name <name> [--param k=v]` to execute one")
         return 0
 
     elif cmd == "run" and skill_name:
         skill = get_skill(skill_name, project_path)
         if not skill:
             print_error(f"Skill not found: {skill_name}")
+            _print_next("`aicp --skill list` to see available skill names")
             return 1
 
         if not skill.steps:
             print_error(f"Skill '{skill_name}' has no steps (may be a Claude Code command).")
             console.print(f"  Use in Claude Code: [bold]/{skill_name}[/]")
+            _print_next(f"in Claude Code: invoke /{skill_name} via the slash command surface")
             return 1
 
         # Parse --param key=value
@@ -1983,6 +2209,7 @@ def _run_skill(
             resolved = resolve_params(skill, provided)
         except ValueError as e:
             print_error(str(e))
+            _print_next(f"`aicp --skill list` then re-run with all required params via --param key=value")
             return 1
 
         steps = apply_params(skill.steps, resolved)
@@ -1990,17 +2217,24 @@ def _run_skill(
         console.print(f"Running skill [bold]{skill_name}[/] ({len(steps)} steps)")
         if backends is None:
             print_error("No backends available. Provide config.")
+            _print_next("`aicp --check` to verify backend availability, then re-run the skill")
             return 1
 
         results = run_pipeline(steps, backends, project_path, config)
+        any_err = False
         for r in results:
             status = "[green]OK[/]" if not r.get("error") else "[red]ERR[/]"
             console.print(f"  {status} Step {r['step_index'] + 1}: {r['mode']}/{r['backend']}")
             if r.get("error"):
                 print_error(r["error"])
+                any_err = True
             elif r.get("result"):
                 print_response(r["result"])
-        return 0 if all(not r.get("error") for r in results) else 1
+        if any_err:
+            _print_next("`aicp --history 5` to inspect failed step output, then `aicp --dlq-status` if persistent")
+        else:
+            _print_next("`aicp --history 5` to verify step record, or `aicp --skill run` again with different params")
+        return 0 if not any_err else 1
 
     elif cmd == "create" and skill_name:
         console.print(f"Creating skill: [bold]{skill_name}[/]")
@@ -2039,20 +2273,24 @@ def _run_skill(
         path = create_skill(skill_name, desc, [], steps, target)
         console.print(f"[green]Created:[/] {path}")
         console.print("Edit the YAML to customize prompts, add parameters, or change modes.")
+        _print_next(f"edit {path} to refine, then `aicp --skill run --skill-name {skill_name}` to test")
         return 0
 
     elif cmd == "export" and skill_name:
         skill = get_skill(skill_name, project_path)
         if not skill:
             print_error(f"Skill not found: {skill_name}")
+            _print_next("`aicp --skill list` to see available skill names")
             return 1
         path = generate_claude_command(skill, project_path)
         console.print(f"[green]Exported to Claude Code command:[/] {path}")
         console.print(f"  Use in Claude Code: [bold]/{skill_name}[/]")
+        _print_next(f"in Claude Code, invoke /{skill_name} to verify the export")
         return 0
 
     else:
         print_error("Usage: --skill list | --skill run|create|export --skill-name <name>")
+        _print_next("`aicp --skill list` to see available skills and operations")
         return 1
 
 
@@ -2135,6 +2373,10 @@ def _run_kb(
         console.print(f"  Chunks:   {info['total_chunks']}")
         console.print(f"  DB path:  {db_path}")
         console.print(f"  RAG enabled: {'[green]yes[/]' if rag_cfg['enabled'] else '[dim]no[/]'}")
+        if info['total_sources'] == 0:
+            _print_next("`aicp --kb add --kb-arg <file-or-dir>` to ingest sources")
+        else:
+            _print_next("`aicp --kb list` for source detail, or `aicp --rag` to query the KB")
         return 0
 
     if command == "list":
@@ -2143,6 +2385,7 @@ def _run_kb(
         vs.close()
         if not sources:
             console.print("[dim]Knowledge base is empty. Add files with: aicp --kb add --kb-arg <path>[/]")
+            _print_next("`aicp --kb add --kb-arg <path>` to ingest a file or directory")
             return 0
         from rich.table import Table
         t = Table(title="Knowledge Base Sources", show_header=True)
@@ -2151,6 +2394,7 @@ def _run_kb(
         for s in sources:
             t.add_row(s["source"], str(s["chunks"]))
         console.print(t)
+        _print_next("`aicp --rag` to query the KB, or `aicp --kb add --kb-arg <path>` to ingest more sources")
         return 0
 
     if command == "add":
@@ -2208,14 +2452,17 @@ def _run_kb(
                     print_warning(f"Skipped {f.name}: {e}")
 
         console.print(f"[green]Ingested {len(files)} file(s), {total_chunks} chunks into KB[/]")
+        _print_next("`aicp --kb status` to verify chunk count, or `aicp --kb search --kb-arg \"<query>\"` to test retrieval")
         return 0
 
     if command == "search":
         if not arg:
             print_error("Usage: aicp --kb search --kb-arg <query>")
+            _print_next("`aicp --kb status` to confirm KB has content, then retry with a query")
             return 1
         if not local_backend:
             print_error("KB search requires the local backend (for embeddings)")
+            _print_next("`aicp --check` to confirm local backend is available, or `docker compose up -d localai`")
             return 1
 
         from aicp.core.kb import KnowledgeBase
@@ -2226,6 +2473,7 @@ def _run_kb(
 
         if not results:
             console.print("[dim]No relevant results found.[/]")
+            _print_next("`aicp --kb list` to verify ingested sources, or refine the query (try broader terms)")
             return 0
 
         for i, r in enumerate(results, 1):
@@ -2236,22 +2484,27 @@ def _run_kb(
                 preview += "..."
             console.print(f"  {preview}")
 
+        _print_next("`aicp --rag \"<task>\"` to use these results as RAG context for an inference task")
         return 0
 
     if command == "delete":
         if not arg:
             print_error("Usage: aicp --kb delete --kb-arg <source>")
+            _print_next("`aicp --kb list` to see source names available for deletion")
             return 1
         vs = VectorStore(db_path)
         count = vs.delete_source(rag_cfg["store_name"], arg)
         vs.close()
         if count > 0:
             console.print(f"[green]Deleted {count} chunks from source: {arg}[/]")
+            _print_next("`aicp --kb status` to confirm new chunk count, or re-add a corrected source via `aicp --kb add`")
         else:
             print_warning(f"No chunks found for source: {arg}")
+            _print_next("`aicp --kb list` to see actual source names — check for typos in the source path")
         return 0
 
     print_error(f"Unknown KB command: {command}. Use: add, search, list, status, delete")
+    _print_next("`aicp --kb status` to start with the KB summary")
     return 1
 
 
@@ -2405,6 +2658,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception:
             pass
 
+        _print_next("`aicp --metrics` for prometheus details, or `aicp --check` for full backend validation")
         return 0
 
     # --self-test: validate all features (no config needed)
@@ -2613,12 +2867,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         results = run_extraction(memory_dir, dry_run=dry)
         if not results:
             print("Nothing to extract (not enough task history or no notable patterns).")
+            _print_next("`aicp \"<prompt>\"` to build task history; rerun extraction after a few sessions")
         else:
             for r in results:
                 saved = r.get("saved_to", r.get("dry_run", r.get("skipped", "")))
                 print(f"  [{r['type']}] {r['content'][:80]}")
                 print(f"    confidence={r['confidence']:.1f} category={r['category']} → {saved}")
             print(f"\n{len(results)} facts {'would be' if dry else ''} extracted.")
+            if dry:
+                _print_next("rerun without `--dry-run` to persist these to memory, or refine task history first")
+            else:
+                _print_next(f"review extracted memories at {memory_dir}/MEMORY.md and edit/remove any inaccurate")
         return 0
 
     # --bench: quick performance benchmark (no config needed)
@@ -2684,6 +2943,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"results={result['results']}"
             )
 
+        _print_next("`aicp --metrics` for live snapshot, or `aicp --stats` for aggregated comparison vs other runs")
         return 0
 
     # --profile-cmd: profile management (runs before config load)
@@ -2697,6 +2957,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             getattr(args, "task_arg", None),
             getattr(args, "task_arg2", None),
             getattr(args, "mode", "edit"),
+        )
+
+    # --model-cmd: model lifecycle management (replaces deprecated aicp_model_* MCP tools)
+    if getattr(args, "model_cmd", None):
+        return _run_model_cmd(
+            args.model_cmd,
+            getattr(args, "model_arg", None),
+        )
+
+    # --lora-cmd: LoRA adapter management (replaces deprecated aicp_lora_* MCP tools)
+    if getattr(args, "lora_cmd", None):
+        return _run_lora_cmd(
+            args.lora_cmd,
+            getattr(args, "lora_arg", None),
+            getattr(args, "lora_arg2", None),
         )
 
     # Load config (with optional profile overlay)

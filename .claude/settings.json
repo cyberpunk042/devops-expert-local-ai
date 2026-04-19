@@ -23,7 +23,8 @@
       "Bash(python3 -m tools.evolve --score)",
       "Edit(/.claude/skills/feature-document/**)",
       "Edit(/.claude/skills/aicp-ops-dlq/**)",
-      "Edit(/.claude/skills/aicp-ops-metrics/**)"
+      "Edit(/.claude/skills/aicp-ops-metrics/**)",
+      "Edit(/.claude/skills/aicp-lora/**)"
     ],
     "additionalDirectories": [
       "/tmp",
