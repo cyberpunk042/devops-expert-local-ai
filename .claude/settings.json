@@ -21,10 +21,13 @@
       "Bash(python3 -m tools.lint)",
       "Bash(python3 -m tools.lint wiki/decisions/01_drafts/4-tier-router-with-profiles-over-hardcoded-routing.md)",
       "Bash(python3 -m tools.evolve --score)",
-      "Edit(/.claude/skills/feature-document/**)"
+      "Edit(/.claude/skills/feature-document/**)",
+      "Edit(/.claude/skills/aicp-ops-dlq/**)",
+      "Edit(/.claude/skills/aicp-ops-metrics/**)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/home/jfortin/devops-expert-local-ai/.claude/skills"
     ]
   },
   "hooks": {

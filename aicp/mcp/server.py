@@ -330,11 +330,20 @@ def aicp_embed(text: str) -> list[float]:
 
 @mcp.tool()
 def aicp_models() -> str:
-    """List all models currently loaded in LocalAI.
+    """[DEPRECATED] List all models currently loaded in LocalAI.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational catalog). Use the CLI flag instead:
+        - `aicp --models list` (configured + loaded model catalog)
+        - `aicp --models info --models-arg <name>` (full config)
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON string with model IDs and status.
+        JSON string with model IDs and status, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_models MCP tool deprecated; use 'aicp --models list' CLI. Removal next release.",
+    }
     backend = _get_backend()
     import httpx
     try:
@@ -342,10 +351,10 @@ def aicp_models() -> str:
         if resp.status_code == 200:
             data = resp.json()
             models = [{"id": m.get("id"), "object": m.get("object")} for m in data.get("data", [])]
-            return json.dumps(models, indent=2)
-        return f"Error: HTTP {resp.status_code}"
+            return json.dumps({**deprecation, "models": models}, indent=2)
+        return json.dumps({**deprecation, "error": f"HTTP {resp.status_code}"})
     except Exception as e:
-        return f"LocalAI not reachable: {e}"
+        return json.dumps({**deprecation, "error": f"LocalAI not reachable: {e}"})
 
 
 @mcp.tool()
@@ -410,19 +419,28 @@ def aicp_rerank(
 
 @mcp.tool()
 def aicp_system() -> str:
-    """Get LocalAI system status: active GPU model, installed backends, and all available models.
+    """[DEPRECATED] Get LocalAI system status: active GPU model, installed backends, and all available models.
 
-    Useful for understanding which model is currently loaded in GPU memory
-    (with SINGLE_ACTIVE_BACKEND, only one GPU model is loaded at a time).
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational). Use the CLI flags instead:
+        - `aicp --check` (full system status: GPU + LocalAI + backends + cluster)
+        - `aicp --models list` (configured model catalog)
+    Per the single-active-backend pattern (wiki/patterns/01_drafts/single-active-backend-with-lru-eviction.md),
+    only ONE GPU model is loaded at a time; both flags above show this.
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON with loaded_models (in GPU), backends, and all configured models.
+        JSON with loaded_models (in GPU), backends, and all configured models, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_system MCP tool deprecated; use 'aicp --check' / 'aicp --models list' CLI. Removal next release.",
+    }
     backend = _get_backend()
     from aicp.core.observability import get_system_info, get_loaded_models
     sys_info = get_system_info(backend.base_url)
     models = get_loaded_models(backend.base_url)
     return json.dumps({
+        **deprecation,
         "active_gpu_model": sys_info.get("loaded_models", []),
         "installed_backends": sys_info.get("backends", []),
         "configured_models": models,
@@ -677,41 +695,63 @@ def aicp_complete(
 
 @mcp.tool()
 def aicp_model_gallery(search: str = "") -> str:
-    """Browse LocalAI's model gallery — see what's available to install.
+    """[DEPRECATED] Browse LocalAI's model gallery — see what's available to install.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, administrative). Use the CLI flag instead:
+        - `aicp --models gallery [--models-arg <search>]` (browse)
+    Removal scheduled for next release cycle.
 
     Args:
         search: Optional search filter (matches name or description).
 
     Returns:
-        JSON array of available models with name, installed status, and tags.
+        JSON array of available models with name, installed status, and tags, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_gallery MCP tool deprecated; use 'aicp --models gallery' CLI. Removal next release.",
+    }
     backend = _get_backend()
     available = backend.models_available()
     if search:
         available = [m for m in available if search.lower() in m["name"].lower()
                      or search.lower() in m.get("description", "").lower()]
-    return json.dumps(available[:30], indent=2)
+    return json.dumps({**deprecation, "available": available[:30]}, indent=2)
 
 
 @mcp.tool()
 def aicp_model_install(model_id: str, name: str = "") -> str:
-    """Install a model from the LocalAI gallery (async download).
+    """[DEPRECATED] Install a model from the LocalAI gallery (async download).
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, administrative). Use the CLI flag instead:
+        - `aicp --models download --models-arg <model_id>` (install)
+    Removal scheduled for next release cycle.
 
     Args:
         model_id: Gallery model ID (e.g. "huggingface@user/model" or model name).
         name: Optional custom name for the installed model.
 
     Returns:
-        JSON with job UUID for tracking progress.
+        JSON with job UUID for tracking progress, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_install MCP tool deprecated; use 'aicp --models download' CLI. Removal next release.",
+    }
     backend = _get_backend()
     result = backend.model_apply(model_id, name=name)
-    return json.dumps(result, indent=2)
+    return json.dumps({**deprecation, **result}, indent=2)
 
 
 @mcp.tool()
 def aicp_model_status(model_or_job: str) -> str:
-    """Check model state or download job progress.
+    """[DEPRECATED] Check model state or download job progress.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle). New CLI flag pending: `aicp --model-cmd status <name|job>`.
+    For now, use `aicp --models list` to see catalog status; for job progress, the gallery
+    install workflow is operator-deliberate.
+    Removal scheduled for next release cycle (after CLI flag ships).
 
     If given a UUID, checks download job progress.
     If given a model name, checks if the model is loaded and its memory usage.
@@ -720,37 +760,47 @@ def aicp_model_status(model_or_job: str) -> str:
         model_or_job: Model name or job UUID.
 
     Returns:
-        JSON with status information.
+        JSON with status information, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_status MCP tool deprecated; CLI flag 'aicp --model-cmd status' pending. Removal after CLI ships.",
+    }
     backend = _get_backend()
     # Try as job UUID first (UUIDs contain hyphens and are 36 chars)
     if len(model_or_job) > 30 and "-" in model_or_job:
         try:
-            return json.dumps(backend.model_job_status(model_or_job), indent=2)
+            return json.dumps({**deprecation, **backend.model_job_status(model_or_job)}, indent=2)
         except Exception:
             pass
     # Fall back to model monitor
     info = backend.model_monitor(model_or_job)
     state_map = {0: "uninitialized", 1: "busy", 2: "ready", -1: "error"}
     info["state_label"] = state_map.get(info.get("state", -1), "unknown")
-    return json.dumps(info, indent=2)
+    return json.dumps({**deprecation, **info}, indent=2)
 
 
 @mcp.tool()
 def aicp_model_unload(model_name: str) -> str:
-    """Unload a model from GPU memory (does not delete files).
+    """[DEPRECATED] Unload a model from GPU memory (does not delete files).
 
-    Useful with SINGLE_ACTIVE_BACKEND to free GPU for another model.
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle). New CLI flag pending: `aicp --model-cmd unload <name>`.
+    Per single-active-backend pattern, unload is operator-deliberate (swaps out the active
+    GPU model). For now, switch profiles to trigger the swap, or restart LocalAI.
+    Removal scheduled for next release cycle (after CLI flag ships).
 
     Args:
         model_name: Name of the model to unload.
 
     Returns:
-        Success or failure message.
+        JSON with success status and deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_unload MCP tool deprecated; CLI flag 'aicp --model-cmd unload' pending. Removal after CLI ships.",
+    }
     backend = _get_backend()
     success = backend.model_shutdown(model_name)
-    return f"Unloaded: {model_name}" if success else f"Failed to unload: {model_name}"
+    return json.dumps({**deprecation, "model": model_name, "unloaded": success})
 
 
 @mcp.tool()
@@ -803,39 +853,64 @@ def aicp_detect(image_path: str) -> str:
 
 @mcp.tool()
 def aicp_health() -> str:
-    """Check LocalAI health and readiness status.
+    """[DEPRECATED] Check LocalAI health and readiness status.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational; redundant with --check). Use the CLI flag instead:
+        - `aicp --check` (full backend availability + GPU + Docker passthrough + health/ready probes)
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON with healthy (bool), ready (bool), and status details.
+        JSON with healthy (bool), ready (bool), and status details, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_health MCP tool deprecated; use 'aicp --check' CLI. Removal next release.",
+    }
     backend = _get_backend()
     health = backend.health_check()
     ready = backend.is_ready()
-    return json.dumps({"healthy": health.get("healthy", False), "ready": ready, **health})
+    return json.dumps({**deprecation, "healthy": health.get("healthy", False), "ready": ready, **health})
 
 
 @mcp.tool()
 def aicp_backends_list() -> str:
-    """List installed LocalAI backends (execution engines).
+    """[DEPRECATED] List installed LocalAI backends (execution engines).
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational). Use the CLI flag instead:
+        - `aicp --check` (includes installed backends + GPU + LocalAI status)
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON array of installed backends.
+        JSON array of installed backends, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_backends_list MCP tool deprecated; use 'aicp --check' CLI. Removal next release.",
+    }
     backend = _get_backend()
     backends = backend.backends_list()
-    return json.dumps(backends)
+    return json.dumps({**deprecation, "backends": backends})
 
 
 @mcp.tool()
 def aicp_server_config() -> str:
-    """Detect LocalAI server capabilities and features.
+    """[DEPRECATED] Detect LocalAI server capabilities and features.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational). Use the CLI flag instead:
+        - `aicp --check` (full server status incl. capabilities and detected features)
+        - `aicp --capabilities` (capabilities-only summary)
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON with health, readiness, loaded models, backends, and detected features.
+        JSON with health, readiness, loaded models, backends, and detected features, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_server_config MCP tool deprecated; use 'aicp --check' / 'aicp --capabilities' CLI. Removal next release.",
+    }
     backend = _get_backend()
     config = backend.server_config()
-    return json.dumps(config)
+    return json.dumps({**deprecation, "config": config})
 
 
 @mcp.tool()
@@ -882,33 +957,46 @@ def aicp_embed_image(image_path: str) -> str:
 
 @mcp.tool()
 def aicp_lora_load(model_name: str, adapter_path: str) -> str:
-    """Load a LoRA adapter onto a model at runtime.
+    """[DEPRECATED] Load a LoRA adapter onto a model at runtime.
 
-    LoRA adapters allow specializing a base model for specific tasks
-    (coding, analysis, creative writing) without reloading the full model.
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, low-frequency admin). New CLI flag pending:
+    `aicp --lora-cmd load <name> <adapter>`. LoRA loading specializes a base model;
+    operator-deliberate workflow per single-active-backend pattern.
+    Removal scheduled for next release cycle (after CLI flag ships).
 
     Args:
         model_name: Base model to attach the adapter to.
         adapter_path: Path or URL to the LoRA adapter.
 
     Returns:
-        Server response as JSON.
+        Server response as JSON, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_lora_load MCP tool deprecated; CLI flag 'aicp --lora-cmd load' pending. Removal after CLI ships.",
+    }
     backend = _get_backend()
     result = backend.lora_load(model_name, adapter_path)
-    return json.dumps(result, indent=2)
+    return json.dumps({**deprecation, **result}, indent=2)
 
 
 @mcp.tool()
 def aicp_lora_list() -> str:
-    """List models with LoRA adapters configured.
+    """[DEPRECATED] List models with LoRA adapters configured.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle). New CLI flag pending: `aicp --lora-cmd list`.
+    Removal scheduled for next release cycle (after CLI flag ships).
 
     Returns:
-        JSON array of models that have LoRA adapters attached.
+        JSON array of models that have LoRA adapters attached, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_lora_list MCP tool deprecated; CLI flag 'aicp --lora-cmd list' pending. Removal after CLI ships.",
+    }
     backend = _get_backend()
     models = backend.lora_list()
-    return json.dumps(models, indent=2)
+    return json.dumps({**deprecation, "lora_models": models}, indent=2)
 
 
 @mcp.tool()
@@ -955,62 +1043,99 @@ def aicp_batch(prompts: str, mode: str = "think", max_workers: int = 4) -> str:
 
 @mcp.tool()
 def aicp_metrics() -> str:
-    """Get live Prometheus metrics, GPU status, and API call stats from LocalAI.
+    """[DEPRECATED] Get live Prometheus metrics, GPU status, and API call stats from LocalAI.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational tooling). Use the CLI flag instead:
+        - `aicp --metrics` (live snapshot)
+        - `aicp --stats` (aggregated history)
+    See `.claude/skills/aicp-ops-metrics/SKILL.md` for the CLI workflow.
+    Removal scheduled for next release cycle.
 
     Returns a JSON snapshot of goroutines, memory usage, loaded models,
     API call histograms, and GPU utilization.
 
     Returns:
-        JSON object with localai and gpu sub-objects.
+        JSON object with localai and gpu sub-objects, plus a deprecation warning.
     """
     backend = _get_backend()
     status = backend.metrics()
-    return json.dumps(status, indent=2)
+    payload = {
+        "warning": "aicp_metrics MCP tool deprecated; use 'aicp --metrics' / 'aicp --stats' CLI. See .claude/skills/aicp-ops-metrics/SKILL.md. Removal next release.",
+        **status,
+    }
+    return json.dumps(payload, indent=2)
 
 
 @mcp.tool()
 def aicp_model_delete(model_name: str) -> str:
-    """Delete/uninstall a model from LocalAI.
+    """[DEPRECATED] Delete/uninstall a model from LocalAI.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, destructive admin). New CLI flag pending:
+    `aicp --model-cmd delete <name>` (with confirmation prompt). Destructive operations
+    should NEVER be agent-callable without operator confirmation; CLI workflow enforces
+    that confirmation. Removal scheduled for next release cycle (after CLI flag ships).
 
     Args:
         model_name: Name of the model to delete.
 
     Returns:
-        Success or failure message.
+        JSON with success status and deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_delete MCP tool deprecated; CLI flag 'aicp --model-cmd delete' pending (with confirmation). Removal after CLI ships.",
+    }
     backend = _get_backend()
     success = backend.model_delete(model_name)
-    return f"Deleted: {model_name}" if success else f"Failed to delete: {model_name}"
+    return json.dumps({**deprecation, "model": model_name, "deleted": success})
 
 
 @mcp.tool()
 def aicp_warmup(model_name: str = "") -> str:
-    """Pre-load a model into VRAM to avoid cold-start latency.
+    """[DEPRECATED] Pre-load a model into VRAM to avoid cold-start latency.
 
-    Sends a minimal inference to trigger model loading. On SINGLE_ACTIVE_BACKEND,
-    this will swap the currently loaded model for the requested one.
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational pre-load). Per the single-active-backend pattern
+    (wiki/patterns/01_drafts/single-active-backend-with-lru-eviction.md), warmup
+    SWAPS the active model — operators should run this deliberately, not from agent
+    invocation. Use deliberate operator workflow: edit `config/profiles/<name>.yaml`
+    `warmup.models:` list, then `make profile-use PROFILE=<name>` to activate.
+    Removal scheduled for next release cycle.
 
     Args:
         model_name: Model to warm up (empty = default model).
 
     Returns:
-        JSON with loaded status, model name, and duration.
+        JSON with loaded status, model name, and duration, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_warmup MCP tool deprecated; warmup is operator-deliberate (config/profiles/<name>.yaml warmup.models). Removal next release.",
+    }
     backend = _get_backend()
     result = backend.model_warmup(model_name or None)
-    return json.dumps(result, indent=2)
+    return json.dumps({**deprecation, **result}, indent=2)
 
 
 @mcp.tool()
 def aicp_models_loaded() -> str:
-    """List all currently loaded model IDs in LocalAI.
+    """[DEPRECATED] List all currently loaded model IDs in LocalAI.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational; redundant with --check). Use the CLI flag instead:
+        - `aicp --check` (shows GPU loaded models in the system status section)
+        - `aicp --models list` (full configured catalog with loaded/not-loaded markers)
+    Removal scheduled for next release cycle.
 
     Returns:
-        JSON array of loaded model ID strings.
+        JSON array of loaded model ID strings, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_models_loaded MCP tool deprecated; use 'aicp --check' / 'aicp --models list' CLI. Removal next release.",
+    }
     backend = _get_backend()
     models = backend.models_loaded()
-    return json.dumps(models, indent=2)
+    return json.dumps({**deprecation, "loaded_models": models}, indent=2)
 
 
 @mcp.tool()
@@ -1217,20 +1342,27 @@ def aicp_seed(seed: int = -1) -> str:
 
 @mcp.tool()
 def aicp_model_config(model_name: str = "") -> str:
-    """Read runtime configuration for a model (context_size, gpu_layers, threads, etc.).
+    """[DEPRECATED] Read runtime configuration for a model (context_size, gpu_layers, threads, etc.).
 
-    Shows the current settings the model is running with. Useful for checking
-    VRAM allocation before adjusting parameters.
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, infrequent admin). Use the CLI flag instead:
+        - `aicp --models info --models-arg <name>` (full configured + runtime params)
+    Source of truth is `config/models/<name>.yaml` — read directly for static config;
+    runtime config matches static unless modified via the deprecated config_update.
+    Removal scheduled for next release cycle.
 
     Args:
         model_name: Model to query (empty string = default model).
 
     Returns:
-        JSON object with the model's configuration.
+        JSON object with the model's configuration, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_config MCP tool deprecated; use 'aicp --models info' CLI or read config/models/<name>.yaml directly. Removal next release.",
+    }
     backend = _get_backend()
     cfg = backend.model_config(model_name or None)
-    return json.dumps(cfg, indent=2)
+    return json.dumps({**deprecation, "config": cfg}, indent=2)
 
 
 @mcp.tool()
@@ -1243,7 +1375,16 @@ def aicp_model_config_update(
     mmap: str = "",
     model_name: str = "",
 ) -> str:
-    """Update model runtime parameters without restarting LocalAI.
+    """[DEPRECATED] Update model runtime parameters without restarting LocalAI.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category E — model lifecycle, deliberate admin tuning). Per the asymmetric KV cache
+    decision (wiki/decisions/01_drafts/asymmetric-kv-cache-quantization-q4-keys-q2-values.md)
+    and single-active-backend pattern, runtime tuning is operator-deliberate work that
+    should edit `config/models/<name>.yaml` deliberately + restart LocalAI to validate
+    the new config loads correctly. Runtime updates without yaml change drift quickly.
+    New CLI flag pending: `aicp --model-cmd update <name> --param <k=v>`.
+    Removal scheduled for next release cycle (after CLI flag ships).
 
     Adjust context window, GPU offload, threads, etc. at runtime.
     Critical for VRAM optimization on consumer GPUs.
@@ -1259,8 +1400,11 @@ def aicp_model_config_update(
         model_name: Model to update (empty = default model).
 
     Returns:
-        Server response as JSON.
+        Server response as JSON, plus deprecation warning.
     """
+    deprecation = {
+        "warning": "aicp_model_config_update MCP tool deprecated; edit config/models/<name>.yaml + restart LocalAI for durable changes. CLI flag 'aicp --model-cmd update' pending. Removal after CLI ships.",
+    }
     backend = _get_backend()
     kwargs: dict = {}
     if model_name:
@@ -1278,7 +1422,7 @@ def aicp_model_config_update(
     if mmap:
         kwargs["mmap"] = mmap.lower() in ("true", "1", "yes")
     result = backend.model_config_update(**kwargs)
-    return json.dumps(result, indent=2)
+    return json.dumps({**deprecation, **result}, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -1599,14 +1743,24 @@ def aicp_route(prompt: str, mode: str = "think", profile: str = "") -> str:
 
 @mcp.tool()
 def aicp_deep_health() -> str:
-    """Get deep health status of all AICP backends.
+    """[DEPRECATED] Get deep health status of all AICP backends.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational). Use the CLI flags instead:
+        - `aicp --check` (live backend availability + GPU + Docker passthrough)
+        - `aicp --health-report` (trend deltas vs baseline)
+    Removal scheduled for next release cycle.
 
     Returns backend availability, circuit breaker states, warming status,
     and active profile information.
     """
+    deprecation = {
+        "warning": "aicp_deep_health MCP tool deprecated; use 'aicp --check' / 'aicp --health-report' CLI. Removal next release.",
+    }
     try:
         backend = _get_backend()
         health = {
+            **deprecation,
             "status": "ok",
             "backends": {},
             "warming": False,
@@ -1632,12 +1786,22 @@ def aicp_deep_health() -> str:
 
         return json.dumps(health, indent=2)
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e)})
+        return json.dumps({**deprecation, "status": "error", "error": str(e)})
 
 
 @mcp.tool()
 def aicp_profile(action: str = "show", profile_name: str = "") -> str:
-    """Manage AICP configuration profiles.
+    """[DEPRECATED] Manage AICP configuration profiles.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational config). Use the CLI flag instead:
+        - `aicp --profile-cmd list` (list available profiles)
+        - `aicp --profile-cmd show --profile <name>` (resolved config)
+        - `aicp --profile-cmd diff --profile <a> --profile-arg <b>` (compare two)
+        - `aicp --profile-cmd validate` (validate all profiles)
+        - `aicp --profile-cmd use --profile <name>` (activate; writes .env)
+    All CLI variants honor the Gateway Output Contract (NEXT-line guidance).
+    Removal scheduled for next release cycle.
 
     Args:
         action: One of: show, list, active.
@@ -1646,6 +1810,9 @@ def aicp_profile(action: str = "show", profile_name: str = "") -> str:
             - active: Show the currently active profile name
         profile_name: Profile name (required for 'show' action).
     """
+    deprecation = {
+        "warning": "aicp_profile MCP tool deprecated; use 'aicp --profile-cmd list/show/diff/validate/use' CLI. Removal next release.",
+    }
     try:
         from aicp.core.profiles import (
             get_active_profile,
@@ -1656,23 +1823,23 @@ def aicp_profile(action: str = "show", profile_name: str = "") -> str:
 
         if action == "list":
             profiles = list_profiles()
-            return json.dumps([{"name": p.get("name"), "description": p.get("description", "")} for p in profiles], indent=2)
+            return json.dumps({**deprecation, "profiles": [{"name": p.get("name"), "description": p.get("description", "")} for p in profiles]}, indent=2)
 
         if action == "active":
             active = get_active_profile() or "default"
-            return json.dumps({"active_profile": active})
+            return json.dumps({**deprecation, "active_profile": active})
 
         if action == "show":
             name = profile_name or get_active_profile() or "default"
             profile = load_profile(name)
             if profile is None:
-                return f"Error: profile '{name}' not found"
+                return json.dumps({**deprecation, "error": f"profile '{name}' not found"})
             resolved = resolve_profile(profile)
-            return json.dumps(resolved, indent=2, default=str)
+            return json.dumps({**deprecation, "resolved": resolved}, indent=2, default=str)
 
-        return f"Error: unknown action '{action}'. Use: show, list, active"
+        return json.dumps({**deprecation, "error": f"unknown action '{action}'. Use: show, list, active"})
     except Exception as e:
-        return f"Error: {e}"
+        return json.dumps({**deprecation, "error": str(e)})
 
 
 @mcp.tool()
@@ -1698,11 +1865,22 @@ def aicp_kb_search_collection(query: str, top_k: int = 5, collection: str = "aic
 
 @mcp.tool()
 def aicp_task_status(task_id: str = "") -> str:
-    """Check task status or list recent tasks.
+    """[DEPRECATED] Check task status or list recent tasks.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational). Use the CLI flags instead:
+        - `aicp --tasks` (active + recent runtime tasks via task_manager)
+        - `aicp --task-cmd show` (active workflow task — different concern, in .aicp/state.yaml)
+        - `aicp --task-cmd list` (workflow task backlog)
+    See `.claude/skills/aicp-ops-dlq/` for the related-skill pattern; new
+    `aicp-ops-tasks` skill pending. Removal scheduled for next release cycle.
 
     Args:
         task_id: Specific task ID to check. If empty, lists recent tasks.
     """
+    deprecation = {
+        "warning": "aicp_task_status MCP tool deprecated; use 'aicp --tasks' (runtime) / 'aicp --task-cmd show|list' (workflow). Removal next release.",
+    }
     try:
         from aicp.core.tasks import get_task_manager, TaskStatus
 
@@ -1711,18 +1889,25 @@ def aicp_task_status(task_id: str = "") -> str:
         if task_id:
             task = mgr.get(task_id)
             if task is None:
-                return f"Error: task '{task_id}' not found"
-            return json.dumps(task.to_dict(), indent=2)
+                return json.dumps({**deprecation, "error": f"task '{task_id}' not found"})
+            return json.dumps({**deprecation, "task": task.to_dict()}, indent=2)
 
         tasks = mgr.list_tasks(limit=20)
-        return json.dumps([t.to_dict() for t in tasks], indent=2)
+        return json.dumps({**deprecation, "tasks": [t.to_dict() for t in tasks]}, indent=2)
     except Exception as e:
-        return f"Error: {e}"
+        return json.dumps({**deprecation, "error": str(e)})
 
 
 @mcp.tool()
 def aicp_dlq_status(action: str = "list") -> str:
-    """Check the dead-letter queue status or retry failed tasks.
+    """[DEPRECATED] Check the dead-letter queue status or retry failed tasks.
+
+    DEPRECATED 2026-04-19 per `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`
+    (Category D — operational tooling). Use the CLI flags instead:
+        - `aicp --dlq-status` (list/count)
+        - `aicp --retry-dlq` (retry pending)
+    See `.claude/skills/aicp-ops-dlq/SKILL.md` for the CLI workflow.
+    Removal scheduled for next release cycle.
 
     Args:
         action: One of: list, count, retry.
@@ -1730,25 +1915,28 @@ def aicp_dlq_status(action: str = "list") -> str:
             - count: Show DLQ entry count
             - retry: Retry all pending entries
     """
+    deprecation = {
+        "warning": "aicp_dlq_status MCP tool deprecated; use 'aicp --dlq-status' / 'aicp --retry-dlq' CLI. See .claude/skills/aicp-ops-dlq/SKILL.md. Removal next release.",
+    }
     try:
         from aicp.core.dlq import list_pending, retry_pending, count_pending
 
         if action == "count":
-            return json.dumps({"pending": count_pending()})
+            return json.dumps({**deprecation, "pending": count_pending()})
 
         if action == "list":
             entries = list_pending()
-            return json.dumps(entries[:20], indent=2, default=str)
+            return json.dumps({**deprecation, "entries": entries[:20]}, indent=2, default=str)
 
         if action == "retry":
             retried = retry_pending()
-            return json.dumps({"retried": retried})
+            return json.dumps({**deprecation, "retried": retried})
 
-        return f"Error: unknown action '{action}'. Use: list, count, retry"
+        return json.dumps({**deprecation, "error": f"unknown action '{action}'. Use: list, count, retry"})
     except ImportError:
-        return json.dumps({"error": "DLQ module not available"})
+        return json.dumps({**deprecation, "error": "DLQ module not available"})
     except Exception as e:
-        return f"Error: {e}"
+        return json.dumps({**deprecation, "error": str(e)})
 
 
 # ---------------------------------------------------------------------------

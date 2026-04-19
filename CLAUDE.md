@@ -19,7 +19,7 @@ This is one of four projects in the fleet ecosystem:
 
 | Dimension | Value | Evidence |
 |-----------|-------|----------|
-| **Type** | product (backend AI platform) | CLI (`python -m aicp.cli`) + 4-tier router + MCP server (11 tools) + guardrails + 9 operational profiles |
+| **Type** | product (backend AI platform) | CLI (`python -m aicp.cli`) + 4-tier router + MCP server (**64 tools — audit pending**, see lesson `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`) + guardrails + 9 operational profiles |
 | **Domain** | backend-ai-platform-python | Python 3.11+; 61 modules in `aicp/`; 94 test files / 1,758 tests; backend stack = LocalAI v4.1.3 (Docker, GPU via WSL2) + Claude Code subprocess |
 | **Second-brain** | connected | Forwarder at [tools/gateway.py](tools/gateway.py) → `~/devops-solutions-research-wiki`. AICP is documented in `wiki/ecosystem/project_profiles/aicp/identity-profile.md`. Compliance currently **Tier 4/4 STRUCTURAL** (see `python3 -m tools.gateway compliance`). |
 | **Phase** | production — Stage 2 routing operational; **Stage 3 hardware unlocked 2026-04-17** | LocalAI Stage 1 complete; 4-tier router with circuit breakers + DLQ + warmup deployed; hardware upgrade to **19GB VRAM** (RTX 2080 8GB + RTX 2080 Ti 11GB) — unblocks Qwen3-30B-A3B MoE and Gemma 4 26B (dual-gpu profile becomes runnable) |
@@ -71,7 +71,7 @@ Python 3.11+ • LocalAI v4.1.3 (Docker, GPU via WSL2) • Claude Code CLI subpr
 | [aicp/guardrails/](aicp/guardrails/) | Permission enforcement | checks, paths, response |
 | [aicp/cli/](aicp/cli/) | CLI dispatcher + interactive + dashboard | main, control, interactive, dashboard, display, project_ops |
 | [aicp/agent/](aicp/agent/) | Agent server (fleet integration) | client, server (task lifecycle, away summary, progress events) |
-| [aicp/mcp/](aicp/mcp/) | MCP server — 11 tools | server (chat, vision, route, health, profile, tasks, DLQ, kb_search) |
+| [aicp/mcp/](aicp/mcp/) | MCP server — **64 tools (audit pending)** | server.py — chat, vision, transcribe, speak, voice_pipeline, imagine, embed, models, grammar, rerank, system, agent, store_*, kb_*, route, deep_health, profile, task_status, dlq_status, model_*, lora_*, tts*, transcribe_detailed, tokenize*, embed_typed*, similarity, nearest_neighbors, fleet_*, multimodal, bestof, logprobs, json, seed, infill, batch, metrics, warmup, models_loaded, complete*, vad, detect, p2p_status, sound, edit, model_gallery/install/status/unload/delete/config*, embed_image/dims, server_config, tools_stream, backends_list — see `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md` for audit findings |
 | [config/](config/) | Default config + 9 profiles + 14 model YAMLs + alerts | default.yaml, fleet.yaml, alerts.yaml, profiles/, models/ |
 | [tests/](tests/) | 94 test files, 1,758 tests | mirrors aicp/ structure |
 | [wiki/](wiki/) | AICP knowledge wiki (per second brain standards) | config/, backlog/, lessons/, patterns/, decisions/ |
@@ -173,7 +173,7 @@ Patterns adopted from Claude Code's production architecture, adapted for AICP's 
 | Skill model override | [aicp/core/skills.py](aicp/core/skills.py) | Skills specify `model:` in frontmatter; `allowed-tools`, `context: fork`, `paths` |
 | Auto-memory extraction | [aicp/core/memory_extract.py](aicp/core/memory_extract.py) | Heuristic extraction of learnable facts from task history |
 | Away summary | [aicp/agent/server.py](aicp/agent/server.py) | 1-3 sentence summary on shutdown; loaded on restart |
-| Extended MCP tools | [aicp/mcp/server.py](aicp/mcp/server.py) | 11 tools: chat, vision, transcribe, speak, voice_pipeline, route, deep_health, profile, kb_search_collection, task_status, dlq_status |
+| Extended MCP tools | [aicp/mcp/server.py](aicp/mcp/server.py) | **64 tools registered** (was claimed 11 — drift discovered 2026-04-19, see `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`). Categories: inference (chat, vision, transcribe, speak, voice_pipeline, imagine, embed, multimodal, bestof, complete*), KB (kb_search, kb_ingest, kb_stats, kb_augment, kb_search_collection), stores (store_set, store_find), models (models, model_*, lora_*), audio (tts, tts_voices, transcribe_detailed, sound, vad), tokenization (tokenize, tokenize_batch, detokenize, token_count), embeddings (embed, embed_typed, embed_typed_batch, embed_dims, embed_image, similarity, nearest_neighbors), operational (route, deep_health, profile, task_status, dlq_status, metrics, warmup, models_loaded, system, server_config, backends_list, p2p_status), fleet (fleet_status, fleet_run, agent), advanced (grammar, rerank, json, seed, infill, batch, edit, detect, logprobs, complete_logprobs, complete_n, tools_stream). Per the second brain's `cli-tools-beat-mcp-for-token-efficiency` lesson, this surface needs an audit: which tools are external-bridge (justified MCP) vs operational (should be CLI+Skills). |
 
 ## Configuration Profiles
 

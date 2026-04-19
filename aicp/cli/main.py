@@ -488,6 +488,15 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
     return backends
 
 
+def _print_next(msg: str) -> None:
+    """Print a closing NEXT-move line per the Gateway Output Contract Rule 5.
+
+    See wiki/decisions/00_inbox/aicp-cli-mcp-outputs-adopt-gateway-output-contract.md
+    for adoption rationale. Use a single command or a 1-2-option chooser; never a 5+ menu.
+    """
+    print(f"NEXT: {msg}")
+
+
 def _run_task_cmd(
     cmd: str,
     task_arg: Optional[str],
@@ -499,6 +508,9 @@ def _run_task_cmd(
     Writes .aicp/state.yaml (gitignored) which is read by tools/hooks/pretool_safety.py
     for Layer B stage-gate enforcement. See the decision page at
     wiki/decisions/01_drafts/aicp-active-state-mechanism-for-hooks.md.
+
+    Outputs follow the Gateway Output Contract (5 rules). See
+    wiki/decisions/00_inbox/aicp-cli-mcp-outputs-adopt-gateway-output-contract.md.
     """
     from aicp.core import state as aicp_state
 
@@ -508,7 +520,7 @@ def _run_task_cmd(
         active_id = (current or {}).get("active_task") if current else None
         if not tasks:
             print(f"No tasks in {aicp_state.TASKS_DIR.relative_to(aicp_state.REPO_ROOT)}/")
-            print("Create one at: wiki/backlog/tasks/T<NNN>-<slug>.md")
+            _print_next("create wiki/backlog/tasks/T<NNN>-<slug>.md, then `aicp --task-cmd switch --task-arg T<NNN>`")
             return 0
         print(f"{'ID':<8} {'Stage':<10} {'Status':<12} Slug")
         print("-" * 78)
@@ -517,19 +529,23 @@ def _run_task_cmd(
             print(f"{marker}{task['id']:<6} {task['stage']:<10} {task['status']:<12} {task['slug']}")
         if active_id:
             print(f"\nActive task: {active_id}")
+            _print_next(f"`aicp --task-cmd show` for details, or `aicp --task-cmd switch --task-arg <id>` to change")
+        else:
+            _print_next("`aicp --task-cmd switch --task-arg <id>` to activate one (Layer B hook then enforces stage gates)")
         return 0
 
     if cmd == "show":
         current = aicp_state.read_state()
         if not current:
             print("No active task (no .aicp/state.yaml).")
-            print("Activate one: aicp --task-cmd switch --task-arg T001")
+            _print_next("`aicp --task-cmd list` to see available tasks, then `aicp --task-cmd switch --task-arg T<NNN>`")
             return 0
         print(f"Active task:  {current.get('active_task', '?')}")
         print(f"Active stage: {current.get('active_stage', '?')}")
         print(f"Mode:         {current.get('mode', '?')}")
         print(f"Updated:      {current.get('updated', '?')}")
         task_id = current.get("active_task")
+        drift = False
         if task_id:
             task_file = aicp_state.find_task_file(task_id)
             if task_file:
@@ -541,17 +557,23 @@ def _run_task_cmd(
                         f"state.yaml has active_stage={current.get('active_stage')!r}. "
                         f"Re-switch to resync."
                     )
+                    drift = True
+        if drift:
+            _print_next(f"`aicp --task-cmd switch --task-arg {task_id}` to resync state.yaml with the task file")
+        else:
+            _print_next("proceed with stage-appropriate work (Layer B hook enforces forbidden-zone writes per stage)")
         return 0
 
     if cmd == "switch":
         task_id = task_arg
         if not task_id:
             print_error("Usage: aicp --task-cmd switch --task-arg T<NNN> [--task-arg2 <stage>] [--mode <think|edit|act>]")
+            _print_next("`aicp --task-cmd list` to see available task IDs")
             return 1
         task_file = aicp_state.find_task_file(task_id)
         if not task_file:
             print_error(f"Task file not found: wiki/backlog/tasks/{task_id}-*.md")
-            print("Create the task file first, or run: aicp --task-cmd list")
+            _print_next(f"create the task file at wiki/backlog/tasks/{task_id}-<slug>.md, OR `aicp --task-cmd list` to see existing IDs")
             return 1
         # Determine stage: explicit arg > task file's current_stage > error
         stage = stage_arg or aicp_state.read_task_stage(task_id)
@@ -560,25 +582,31 @@ def _run_task_cmd(
                 f"Stage not resolvable for {task_id}. "
                 f"Pass --task-arg2 <stage> or set current_stage in the task frontmatter."
             )
+            _print_next(f"`aicp --task-cmd switch --task-arg {task_id} --task-arg2 document` to start at the document stage")
             return 1
         try:
             path = aicp_state.write_state(task_id, stage, mode)
         except ValueError as e:
             print_error(str(e))
+            _print_next("`aicp --task-cmd list` to see valid task IDs and stages")
             return 1
         print(f"Switched to task {task_id} (stage={stage}, mode={mode})")
         print(f"State written: {path.relative_to(aicp_state.REPO_ROOT)}")
+        _print_next("proceed with stage work (Layer B hook now enforces forbidden zones for this stage)")
         return 0
 
     if cmd == "clear":
         if aicp_state.clear_state():
             print("Active task cleared. Hook falls back to Layer A only (no stage-gate).")
+            _print_next("`aicp --task-cmd switch --task-arg T<NNN>` to re-enable Layer B stage enforcement")
         else:
             print("No active task to clear.")
+            _print_next("`aicp --task-cmd switch --task-arg T<NNN>` to activate a task")
         return 0
 
     print_error(f"Unknown task command: {cmd!r}")
     print("Valid commands: list, show, switch, clear")
+    _print_next("`aicp --task-cmd list` to see available task operations")
     return 1
 
 
@@ -599,6 +627,7 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
         active = profile_name or get_active_profile()
         if not profiles:
             print("No profiles found in", PROFILES_DIR)
+            _print_next(f"create a profile YAML in {PROFILES_DIR}/, then re-run `aicp --profile-cmd list`")
             return 1
         print(f"{'Name':<20} {'Description':<50} {'Active'}")
         print("-" * 78)
@@ -607,6 +636,9 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
             print(f"{p['name']:<20} {p['description']:<50}{marker}")
         if active:
             print(f"\nActive profile: {active}")
+            _print_next(f"`aicp --profile-cmd show --profile {active}` for full config, or `aicp --profile-cmd use --profile <name>` to switch")
+        else:
+            _print_next("`aicp --profile-cmd use --profile <name>` to activate (writes .env, restart Docker if changing context_size)")
         return 0
 
     if cmd == "show":
@@ -618,7 +650,9 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
             print(yaml.dump(overlay, default_flow_style=False, sort_keys=False))
         except (FileNotFoundError, ValueError) as e:
             print_error(str(e))
+            _print_next("`aicp --profile-cmd list` to see available profile names")
             return 1
+        _print_next(f"`aicp --profile-cmd use --profile {name}` to activate, or `aicp --profile-cmd diff --profile <other>` to compare")
         return 0
 
     if cmd == "diff":
@@ -628,6 +662,7 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
             diffs = diff_profiles(name_a, name_b)
             if not diffs:
                 print(f"Profiles '{name_a}' and '{name_b}' are identical.")
+                _print_next(f"`aicp --profile-cmd show --profile {name_a}` to view full config")
                 return 0
             print(f"{'Section':<20} {name_a:<30} {name_b}")
             print("-" * 78)
@@ -637,13 +672,16 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
                 print(f"{key:<20} {a_val:<30} {b_val}")
         except (FileNotFoundError, ValueError) as e:
             print_error(str(e))
+            _print_next("`aicp --profile-cmd list` to see valid profile names")
             return 1
+        _print_next(f"`aicp --profile-cmd use --profile {name_a}` or `aicp --profile-cmd use --profile {name_b}` to activate one")
         return 0
 
     if cmd == "validate":
         profiles = list_profiles()
         if not profiles:
             print("No profiles found.")
+            _print_next(f"create a profile YAML in {PROFILES_DIR}/")
             return 1
         all_valid = True
         for p in profiles:
@@ -661,6 +699,10 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
             except Exception as e:
                 print(f"  FAIL  {p['name']}: {e}")
                 all_valid = False
+        if all_valid:
+            _print_next("`aicp --profile-cmd use --profile <name>` to activate any of the above")
+        else:
+            _print_next("fix FAIL profiles by editing their YAML in config/profiles/, then re-run `aicp --profile-cmd validate`")
         return 0 if all_valid else 1
 
     if cmd == "use":
@@ -902,8 +944,10 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     console.print()
     if all_ok:
         console.print("  [bold green]All systems ready.[/]")
+        _print_next("`aicp \"<prompt>\"` to run a task, or `aicp --self-test` for end-to-end validation")
     else:
         console.print("  [yellow]Some backends or nodes are unavailable.[/]")
+        _print_next("address the FAIL/OFFLINE items above (Docker/LocalAI/cluster); rerun `aicp --check` to verify")
 
     return 0
 
@@ -1338,6 +1382,7 @@ def _run_capabilities() -> int:
     console.print("    [cyan]/offload[/]             Offload metrics (interactive)")
     console.print()
 
+    _print_next("`aicp --check` for live status of these capabilities, or `aicp --self-test` for end-to-end validation")
     return 0
 
 
@@ -1355,6 +1400,7 @@ def _run_metrics() -> int:
     lai = status.get("localai", {})
     if not lai.get("available"):
         console.print(f"  [red]LocalAI not reachable at {local_url}[/]")
+        _print_next(f"`docker compose up -d localai` to start, or set LOCALAI_BASE_URL to a reachable instance")
         return 1
 
     console.print(f"  URL:         {lai.get('url', local_url)}")
@@ -1414,6 +1460,7 @@ def _run_metrics() -> int:
     else:
         console.print(f"  [yellow]GPU: {gpu.get('error', 'not available')}[/]\n")
 
+    _print_next("`aicp --stats` for aggregated task metrics, or `aicp --health-report` for trend analysis")
     return 0
 
 
@@ -1427,6 +1474,7 @@ def _run_stats() -> int:
 
     if m["total_tasks"] == 0:
         console.print("[dim]No history yet.[/]")
+        _print_next("`aicp \"<prompt>\"` to run a task; rerun `aicp --stats` afterward")
         return 0
 
     # Summary row
@@ -1477,6 +1525,7 @@ def _run_stats() -> int:
         _row("Est. cost", *[f"${by_backend[n]['cost']:.4f}" for n in backend_names])
         console.print(bt)
 
+    _print_next("`aicp --history <N>` for per-task detail, or `aicp --health-report` for trend deltas")
     return 0
 
 
@@ -1540,6 +1589,7 @@ def _run_auto_config() -> int:
             console.print("  [green]Already optimal.[/]")
         console.print()
 
+    _print_next("`make local-up` to apply any config updates, then `aicp --check` to verify GPU passthrough")
     return 0
 
 
@@ -1576,6 +1626,7 @@ def _run_models(command: str, model_name: str = None) -> int:
         models = list_models()
         if not models:
             console.print("[dim]No models found.[/]")
+            _print_next("`aicp --models gallery` to see installable options, or `aicp --models download --models-arg <name>`")
             return 0
 
         table = Table(title="Local Models", show_header=True)
@@ -1592,16 +1643,19 @@ def _run_models(command: str, model_name: str = None) -> int:
                 m.backend, str(m.gpu_layers), str(m.context_size),
             )
         console.print(table)
+        _print_next("`aicp --models info --models-arg <name>` for full config, or `aicp --models activate --models-arg <name>` to switch")
         return 0
 
     elif command == "info" and model_name:
         cfg = get_model_config(model_name)
         if cfg is None:
             print_error(f"Model not found: {model_name}")
+            _print_next("`aicp --models list` to see available model names")
             return 1
         import yaml
         console.print(f"[bold]{model_name}[/] configuration:")
         console.print(yaml.dump(cfg, default_flow_style=False))
+        _print_next(f"`aicp --models activate --models-arg {model_name}` to switch, or `aicp --models benchmark --models-arg {model_name}` to test")
         return 0
 
     elif command == "download" and model_name:
@@ -1617,12 +1671,15 @@ def _run_models(command: str, model_name: str = None) -> int:
                 path = download_model(model_name, progress_callback=on_progress)
             console.print(f"[green]Downloaded:[/] {path}")
             console.print("Config generated. Restart LocalAI to load: [bold]make local-up[/]")
+            _print_next("`make local-up` to load the model, then `aicp --models list` to verify")
             return 0
         except FileExistsError as e:
             print_error(str(e))
+            _print_next("`aicp --models list` to see if the model is already present")
             return 1
         except Exception as e:
             print_error(f"Download failed: {e}")
+            _print_next("`aicp --models gallery` to verify the model name, then retry")
             return 1
 
     elif command == "activate" and model_name:
@@ -1632,9 +1689,11 @@ def _run_models(command: str, model_name: str = None) -> int:
             activate_model(model_name, config)
             console.print(f"[green]Active model set to:[/] {model_name}")
             console.print("Restart LocalAI to apply: [bold]make local-up[/]")
+            _print_next("`make local-up` to apply, then `aicp --check` to verify the new model loads")
             return 0
         except Exception as e:
             print_error(str(e))
+            _print_next("`aicp --models list` to see valid model names")
             return 1
 
     elif command == "benchmark" and model_name:
@@ -2002,6 +2061,7 @@ def _run_history(count: int) -> int:
     records = list_tasks(count)
     if not records:
         console.print("[dim]No history yet.[/]")
+        _print_next("`aicp \"<prompt>\"` to run a task; rerun `aicp --history <N>` after")
         return 0
 
     for r in records:
@@ -2015,6 +2075,7 @@ def _run_history(count: int) -> int:
             record_id=r.get("id", "?"),
         )
 
+    _print_next("`aicp --replay <id>` to see full output of a record, or `aicp --stats` for aggregates")
     return 0
 
 
@@ -2023,6 +2084,7 @@ def _run_replay(record_id: str) -> int:
     record = get_task(record_id)
     if record is None:
         print_error(f"Task not found: {record_id}")
+        _print_next("`aicp --history <N>` to see valid record IDs")
         return 1
 
     console.print(f"[bold]--- Task: {record.get('id', '?')} ---[/]")
@@ -2037,8 +2099,10 @@ def _run_replay(record_id: str) -> int:
     error = record.get("error")
     if error:
         print_error(error)
+        _print_next("`aicp --dlq-status` to check if this task was DLQ'd, or rerun with a different `--backend`/`--profile`")
     else:
         print_response(record.get("response", ""))
+        _print_next("`aicp --history <N>` for more records, or `aicp --stats` for aggregate metrics")
 
     return 0
 
@@ -2241,6 +2305,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         sessions = list_sessions()
         if not sessions:
             console.print("[dim]No saved sessions. Use --session NAME to start one.[/]")
+            _print_next("`aicp --session <name> \"<prompt>\"` to start a multi-turn session")
             return 0
         t = Table(title="Saved Sessions", show_header=True)
         t.add_column("Name", style="bold")
@@ -2249,6 +2314,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         for s in sessions:
             t.add_row(s["name"], str(s["turns"]), s["updated"][:19])
         console.print(t)
+        _print_next("`aicp --session <name> \"<prompt>\"` to resume one, or `aicp --session-delete <name>` to remove")
         return 0
 
     # --session-delete (no config needed)
@@ -2256,8 +2322,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         from aicp.core.session import delete_session
         if delete_session(args.session_delete):
             console.print(f"[green]Deleted session:[/] {args.session_delete}")
+            _print_next("`aicp --session-list` to confirm, or `aicp --session <new>` to start a fresh one")
         else:
             print_error(f"Session not found: {args.session_delete}")
+            _print_next("`aicp --session-list` to see valid session names")
         return 0
 
     # --observe: live system status (no config needed)
@@ -2465,6 +2533,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         report = generate_report(tasks)
         save_report(report)
         print(format_report(report))
+        _print_next("`aicp --check` for live backend status, or `aicp --dlq-status` if the report flagged failures")
         return 0
 
     # --retry-dlq: retry pending DLQ entries
@@ -2473,11 +2542,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         pending = count()
         if pending == 0:
             print("DLQ is empty — no entries to retry.")
+            _print_next("nothing to do — `aicp --dlq-status` to monitor over time")
             return 0
         print(f"Retrying {pending} pending DLQ entries...")
         ctrl = Controller(config_path=getattr(args, "config", None))
         retried = retry_pending(ctrl, ctrl.config)
         print(f"Retried: {retried}")
+        _print_next("`aicp --dlq-status` to see remaining entries; rerun `aicp --retry-dlq` after retry-delay window if any are still pending")
         return 0
 
     # --dlq-status: show DLQ status
@@ -2494,6 +2565,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"  [{i+1}] {ts} | mode={mode} | {err}")
             if pending > 10:
                 print(f"  ... and {pending - 10} more")
+            _print_next("`aicp --retry-dlq` to retry pending entries (respects retry_delay_seconds)")
+        else:
+            _print_next("queue empty — no action needed")
         return 0
 
     # --tasks: show active and recent tasks
@@ -2503,12 +2577,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         tasks = mgr.list_tasks(limit=20)
         if not tasks:
             print("No active or recent tasks.")
+            _print_next("`aicp \"<prompt>\"` to run a task (it will appear here)")
             return 0
         print(f"Tasks ({mgr.active_count} active / {mgr.total_count} total):\n")
         for t in tasks:
             status_icon = {"pending": "⏳", "running": "🔄", "completed": "✅", "failed": "❌", "killed": "🛑"}.get(t.status.value, "?")
             dur = f" ({t.duration_seconds:.1f}s)" if t.duration_seconds else ""
             print(f"  {status_icon} {t.id} [{t.status.value}] {t.prompt[:60]}{dur}")
+        _print_next("`aicp --history <N>` for full history, or `aicp --health-report` if many failed")
         return 0
 
     # --extract-memories / --extract-memories-dry-run

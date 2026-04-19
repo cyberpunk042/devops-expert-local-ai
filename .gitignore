@@ -51,3 +51,5 @@ data/collections/
 data/outputs/
 data/*.lock
 data/*.pid
+
+scheduled_tasks.lock
