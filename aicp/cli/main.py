@@ -71,6 +71,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Second argument for --profile-cmd (e.g. second profile name for diff)",
     )
     parser.add_argument(
+        "--task-cmd",
+        metavar="CMD",
+        help="Task commands: switch <id> [stage], show, list, clear (writes .aicp/state.yaml read by Layer B PreToolUse hook)",
+    )
+    parser.add_argument(
+        "--task-arg",
+        metavar="ARG",
+        help="Task ID for --task-cmd switch (e.g. T001)",
+    )
+    parser.add_argument(
+        "--task-arg2",
+        metavar="ARG2",
+        help="Stage for --task-cmd switch (e.g. implement); defaults to task file's current_stage",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Check config validity and backend availability, then exit",
@@ -471,6 +486,100 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
         )
 
     return backends
+
+
+def _run_task_cmd(
+    cmd: str,
+    task_arg: Optional[str],
+    stage_arg: Optional[str],
+    mode: str = "edit",
+) -> int:
+    """Handle --task-cmd subcommands: switch, show, list, clear.
+
+    Writes .aicp/state.yaml (gitignored) which is read by tools/hooks/pretool_safety.py
+    for Layer B stage-gate enforcement. See the decision page at
+    wiki/decisions/01_drafts/aicp-active-state-mechanism-for-hooks.md.
+    """
+    from aicp.core import state as aicp_state
+
+    if cmd == "list":
+        tasks = aicp_state.list_tasks()
+        current = aicp_state.read_state()
+        active_id = (current or {}).get("active_task") if current else None
+        if not tasks:
+            print(f"No tasks in {aicp_state.TASKS_DIR.relative_to(aicp_state.REPO_ROOT)}/")
+            print("Create one at: wiki/backlog/tasks/T<NNN>-<slug>.md")
+            return 0
+        print(f"{'ID':<8} {'Stage':<10} {'Status':<12} Slug")
+        print("-" * 78)
+        for task in tasks:
+            marker = " *" if task["id"] == active_id else "  "
+            print(f"{marker}{task['id']:<6} {task['stage']:<10} {task['status']:<12} {task['slug']}")
+        if active_id:
+            print(f"\nActive task: {active_id}")
+        return 0
+
+    if cmd == "show":
+        current = aicp_state.read_state()
+        if not current:
+            print("No active task (no .aicp/state.yaml).")
+            print("Activate one: aicp --task-cmd switch --task-arg T001")
+            return 0
+        print(f"Active task:  {current.get('active_task', '?')}")
+        print(f"Active stage: {current.get('active_stage', '?')}")
+        print(f"Mode:         {current.get('mode', '?')}")
+        print(f"Updated:      {current.get('updated', '?')}")
+        task_id = current.get("active_task")
+        if task_id:
+            task_file = aicp_state.find_task_file(task_id)
+            if task_file:
+                print(f"Task file:    {task_file.relative_to(aicp_state.REPO_ROOT)}")
+                file_stage = aicp_state.read_task_stage(task_id)
+                if file_stage and file_stage != current.get("active_stage"):
+                    print_warning(
+                        f"Drift: task file has current_stage={file_stage!r}, "
+                        f"state.yaml has active_stage={current.get('active_stage')!r}. "
+                        f"Re-switch to resync."
+                    )
+        return 0
+
+    if cmd == "switch":
+        task_id = task_arg
+        if not task_id:
+            print_error("Usage: aicp --task-cmd switch --task-arg T<NNN> [--task-arg2 <stage>] [--mode <think|edit|act>]")
+            return 1
+        task_file = aicp_state.find_task_file(task_id)
+        if not task_file:
+            print_error(f"Task file not found: wiki/backlog/tasks/{task_id}-*.md")
+            print("Create the task file first, or run: aicp --task-cmd list")
+            return 1
+        # Determine stage: explicit arg > task file's current_stage > error
+        stage = stage_arg or aicp_state.read_task_stage(task_id)
+        if not stage:
+            print_error(
+                f"Stage not resolvable for {task_id}. "
+                f"Pass --task-arg2 <stage> or set current_stage in the task frontmatter."
+            )
+            return 1
+        try:
+            path = aicp_state.write_state(task_id, stage, mode)
+        except ValueError as e:
+            print_error(str(e))
+            return 1
+        print(f"Switched to task {task_id} (stage={stage}, mode={mode})")
+        print(f"State written: {path.relative_to(aicp_state.REPO_ROOT)}")
+        return 0
+
+    if cmd == "clear":
+        if aicp_state.clear_state():
+            print("Active task cleared. Hook falls back to Layer A only (no stage-gate).")
+        else:
+            print("No active task to clear.")
+        return 0
+
+    print_error(f"Unknown task command: {cmd!r}")
+    print("Valid commands: list, show, switch, clear")
+    return 1
 
 
 def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optional[str]) -> int:
@@ -2504,6 +2613,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --profile-cmd: profile management (runs before config load)
     if getattr(args, "profile_cmd", None):
         return _run_profile_cmd(args.profile_cmd, args.profile, getattr(args, "profile_arg", None))
+
+    # --task-cmd: active-task state management for Layer B PreToolUse hook
+    if getattr(args, "task_cmd", None):
+        return _run_task_cmd(
+            args.task_cmd,
+            getattr(args, "task_arg", None),
+            getattr(args, "task_arg2", None),
+            getattr(args, "mode", "edit"),
+        )
 
     # Load config (with optional profile overlay)
     try:
