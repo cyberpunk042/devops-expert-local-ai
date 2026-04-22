@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 6
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.454. Substantively meets growing-tier bar: 4 alternatives with operational evidence (incl. 'AICP tried TEI for embeddings, reverted' as concrete failure data), 6 evidence-backed rationale items, hard reversibility (load-bearing for 14 model configs + backend module + Docker compose + Makefile + MCP). Foundational runtime decision that constrains all subsequent backend choices."
 derived_from:
   - "model-local-ai"
 reversibility: hard

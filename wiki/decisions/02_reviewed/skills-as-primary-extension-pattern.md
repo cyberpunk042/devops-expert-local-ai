@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 6
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.404. Post-decision execution evidence STRONGER than raw score: this decision drove the entire MCP audit (Phase 2 + Phase 3 deprecated 21 of 64 MCP tools, ~32% schema reduction). Three-mechanism split (skills/MCP/guardrails) validated by 6 new ops skills authored 2026-04-19 to migrate operational MCP tools to CLI+Skills. Cross-referenced with cli-tools-beat-mcp-for-token-efficiency lesson (3rd-party validation)."
 derived_from:
   - "model-skills-commands-hooks"
   - "model-claude-code"

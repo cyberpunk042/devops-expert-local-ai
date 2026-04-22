@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 6
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.454. Post-decision execution evidence STRONGER than score suggests: both Layer A (R01-R04 universal safety) and Layer B (stage-gate enforcement) shipped 2026-04-18 with verified live behavior (hook self-blocked test commands containing literal `git push --force`). Backed by Quality Standards' 25%→98% compliance jump. 4 alternatives with rejection reasons. Layered approach validated in production."
 derived_from:
   - "model-quality-failure-prevention"
   - "model-claude-code"

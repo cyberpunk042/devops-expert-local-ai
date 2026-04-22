@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 6
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.479 — lower than patterns because decisions are AICP-specific moments (lower cross-source convergence by nature). Substantively meets growing-tier bar: 4 alternatives with explicit rejection reasons, 6 evidence-backed rationale items, easy reversibility, full dependencies analysis (reverse + extend paths). 9 profiles in production use, 49 profile tests. Foundational architectural decision — every AICP routing behavior derives from this."
 derived_from:
   - "model-local-ai"
   - "gateway-centric-routing"
