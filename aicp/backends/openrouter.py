@@ -61,6 +61,7 @@ class OpenRouterBackend(Backend):
         base_url: str = "https://openrouter.ai/api/v1",
         timeout: float = 120.0,
         free_only: bool = False,
+        name: str = "openrouter",
     ) -> None:
         self.api_key = api_key
         self.model = model or (DEFAULT_FREE_MODEL if free_only else DEFAULT_PAID_MODEL)
@@ -69,10 +70,11 @@ class OpenRouterBackend(Backend):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.free_only = free_only
+        self._name = name
 
     @property
     def name(self) -> str:
-        return "openrouter"
+        return self._name
 
     def is_available(self) -> bool:
         """Check if OpenRouter API is reachable and key is valid."""

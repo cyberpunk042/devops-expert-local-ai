@@ -38,9 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend", "-b",
-        choices=["local", "claude", "auto"],
+        choices=["local", "claude", "openrouter", "k2_6_openrouter", "auto"],
         default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
-        help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND)",
+        help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND). "
+             "k2_6_openrouter routes to Kimi K2.6 via OpenRouter (E011-m002).",
     )
     parser.add_argument(
         "--project", "-d",
@@ -509,6 +510,22 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             timeout=or_cfg.get("timeout", 120),
             free_only=or_cfg.get("free_only", False),
         )
+
+        # K2.6 via OpenRouter — second OpenRouterBackend instance keyed on model + name.
+        # Per E011-m002 (~/devops-solutions-research-wiki/wiki/backlog/modules/e011-m002-k2-6-openrouter-backend-adapter.md).
+        # Operator opts in via `--backend k2_6_openrouter`; auto-routing handled by E011-m001 (router refactor, deferred).
+        try:
+            k2_cfg = get_backend_config(config, "k2_6_openrouter")
+        except ValueError:
+            k2_cfg = {}
+        if k2_cfg.get("enabled", True) and k2_cfg.get("model"):
+            backends["k2_6_openrouter"] = OpenRouterBackend(
+                api_key=or_key,
+                model=k2_cfg["model"],
+                max_tokens=k2_cfg.get("max_tokens", 8192),
+                timeout=k2_cfg.get("timeout", 300),
+                name="k2_6_openrouter",
+            )
 
     return backends
 

@@ -34,6 +34,17 @@ backends:
     # free_only: true                (restrict to $0 models)
     max_tokens: 4096
     timeout: 120
+  k2_6_openrouter:
+    # Kimi K2.6 via OpenRouter — premium-cheap agentic tier (E011-m002).
+    # MIT-licensed, 1T/32B-active MoE, agentic frontier per second brain synthesis at
+    # ~/devops-solutions-research-wiki/wiki/sources/tools-integration/src-kimi-k2-6-moonshot-agent-swarm.md
+    # ~$0.60/$2.50 per M tokens (OpenRouter advertised), ~6-7× cheaper than Opus through OpenRouter.
+    # Reuses OpenRouterBackend (same OpenAI-compatible HTTP shape) — see aicp/backends/openrouter.py.
+    # Auto-routing to this tier deferred to E011-m001 (router refactor); operator opts in via --backend k2_6_openrouter.
+    model: moonshotai/kimi-k2.6
+    max_tokens: 8192          # K2.6 runs long agentic sessions
+    timeout: 300              # generous for multi-tool-call sequences
+    enabled: true
   claude:
     model: opus
     max_turns: 10
