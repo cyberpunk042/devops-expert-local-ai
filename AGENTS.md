@@ -160,3 +160,34 @@ python3 -m tools.gateway orient     # full orientation flow
 3. [wiki/backlog/_index.md](wiki/backlog/_index.md) (current work tracking)
 4. Tool-specific overrides if applicable (CLAUDE.md for Claude Code; future: CODEX.md, COPILOT.md, etc.)
 5. Skills loaded conditionally on demand from `.claude/skills/`
+
+<!-- SECOND-BRAIN-CONNECTION -->
+## Second Brain Connection
+
+This project is connected to the **second brain** (research wiki) — a shared
+knowledge system holding methodology, standards, validated lessons, patterns,
+and decisions across the ecosystem.
+
+**Your brain** (this CLAUDE.md/AGENTS.md + skills + hooks) is YOUR agent.
+**The second brain** is a SEPARATE system. The goal is NOT runtime dependency —
+it's to ADOPT what fits your identity and EVOLVE your own brain.
+
+**Adoption tiers** — check where you are: `python3 -m tools.gateway compliance`
+- Tier 1: Agent foundation (schema + templates)
+- Tier 2: Stage-gate process (methodology + backlog + enforcement)
+- Tier 3: Evolution pipeline (maturity lifecycle + scoring)
+- Tier 4: Hub integration (bidirectional sync + export + contribute)
+
+**First step for any fresh session:** `python3 -m tools.gateway orient`
+
+**Browse the second brain's knowledge:**
+```
+python3 -m tools.view spine          # all 16 models, standards, sub-models
+python3 -m tools.view standards      # what "good" looks like per artifact type
+python3 -m tools.view model <name>   # one model in full
+python3 -m tools.view lessons        # 44 validated operational lessons
+python3 -m tools.view search <query> # search across all knowledge
+```
+
+**Contribute learnings back:** `python3 -m tools.gateway contribute --type lesson --title "..."`
+<!-- SECOND-BRAIN-CONNECTION -END -->

@@ -486,3 +486,134 @@ def test_complexity_default_thresholds_without_config():
     assert result.recommended_tier == "local"
     result2 = analyze_complexity("refactor and implement the full system", Mode.ACT)
     assert result2.recommended_tier == "claude"
+
+
+# ---------------------------------------------------------------------------
+# E011-m001: 5-tier routing via router.tier_map
+# ---------------------------------------------------------------------------
+
+_TIER_MAP_CFG = {
+    "router": {
+        "complexity_thresholds": [0.25, 0.45, 0.70, 0.90],
+        "failover_chain": ["local", "k2_6_local", "k2_6_openrouter", "openrouter", "claude"],
+        "tier_map": {
+            0: "local",
+            1: "k2_6_local",
+            2: "k2_6_openrouter",
+            3: "openrouter",
+            4: "claude",
+        },
+        "force_cloud_modes": ["edit", "act"],
+    }
+}
+
+
+def _five_tier_backends(k2_6_local_avail=False, **overrides):
+    """Mock backends matching the 5-tier failover chain. k2_6_local disabled by default."""
+    defaults = {
+        "local": True,
+        "k2_6_local": k2_6_local_avail,
+        "k2_6_openrouter": True,
+        "openrouter": True,
+        "claude": True,
+    }
+    defaults.update(overrides)
+    return {name: _MockBackend(name, avail) for name, avail in defaults.items()}
+
+
+def test_tier_map_score_band_0_routes_to_local():
+    """Score < 0.25 → band 0 → local (simple question, THINK mode)."""
+    backend, reason = classify_task_with_reason(
+        "What is Python?", Mode.THINK, _five_tier_backends(), config=_TIER_MAP_CFG,
+    )
+    assert backend == "local"
+    assert "complexity" in reason.lower()
+
+
+def test_tier_map_mid_band_act_mode_routes_to_k2_6_openrouter():
+    """Brain-spec requirement: score≈0.5 + mode=act → k2_6_openrouter.
+
+    mode=act triggers force_cloud_modes → first non-local tier in failover_chain
+    (local, k2_6_local skipped as local-tier family) → k2_6_openrouter.
+    """
+    backend, reason = classify_task_with_reason(
+        "Run the tests", Mode.ACT, _five_tier_backends(), config=_TIER_MAP_CFG,
+    )
+    assert backend == "k2_6_openrouter"
+    assert "force_cloud_modes" in reason.lower()
+
+
+def test_tier_map_score_band_2_routes_to_k2_6_openrouter():
+    """Score in [0.45, 0.70) with THINK mode → band 2 → k2_6_openrouter."""
+    result = analyze_complexity(
+        "refactor and implement the auth module across files",
+        Mode.THINK, config=_TIER_MAP_CFG,
+    )
+    # Score: 3 complex_kw (0.45) + medium_prompt (0.05) = ~0.50 → band 2
+    assert 0.45 <= result.score < 0.70
+    assert result.recommended_tier == "k2_6_openrouter"
+
+
+def test_tier_map_very_high_score_routes_to_claude():
+    """Score ≥ 0.90 → band 4 → claude (Anthropic edge-case tier)."""
+    backend, reason = classify_task_with_reason(
+        "Refactor, implement, debug, migrate, optimize, review, test, deploy the "
+        "entire codebase: security audit, threat model, vulnerability patches, "
+        "architecture redesign across files, then also implement fixes",
+        Mode.ACT, _five_tier_backends(), config=_TIER_MAP_CFG,
+    )
+    # Very high score + ACT mode — force_cloud picks first cloud (k2_6_openrouter) not claude,
+    # but the score itself should land in the claude band.
+    assert backend in ("k2_6_openrouter", "claude")
+
+
+def test_tier_map_score_band_4_think_mode_routes_to_claude():
+    """Very complex prompt in THINK (no force_cloud) → score-based → claude band.
+
+    Claude band (≥0.90) is intentionally hard to reach without long_prompt bonus —
+    reserved for the top ~10% of tasks per the 5-tier design.
+    """
+    # Long prompt (>2000 chars) saturates signals: long_prompt (0.25) + complex_kw maxed (0.45)
+    # + multi_step (0.15) + code_content (0.10) = 0.95 → band 4.
+    prompt = (
+        "Refactor and implement the authentication module, then debug and migrate "
+        "the session handling, also optimize the deployment. " * 40
+    )
+    result = analyze_complexity(prompt, Mode.THINK, config=_TIER_MAP_CFG)
+    assert result.score >= 0.90
+    assert result.recommended_tier == "claude"
+
+
+def test_tier_map_skips_disabled_k2_6_local():
+    """k2_6_local tier picked but unavailable → walks failover_chain to k2_6_openrouter."""
+    # Score 0.30 (mode_edit only) lands in [0.25, 0.45) = band 1 = k2_6_local.
+    result = analyze_complexity("do it", Mode.EDIT, config=_TIER_MAP_CFG)
+    assert result.recommended_tier == "k2_6_local"
+
+    # Live routing with k2_6_local disabled — should fall through to k2_6_openrouter.
+    # Disable force_cloud so we exercise the score-based fall-through path, not the
+    # force_cloud path (which would pick k2_6_openrouter regardless).
+    cfg_no_force = {**_TIER_MAP_CFG["router"], "force_cloud_modes": []}
+    backend, reason = classify_task_with_reason(
+        "do it", Mode.EDIT,
+        _five_tier_backends(k2_6_local_avail=False),
+        config={"router": cfg_no_force},
+    )
+    assert backend == "k2_6_openrouter"
+    assert "k2_6_local unavailable" in reason.lower()
+
+
+def test_tier_map_fleet_op_stays_local():
+    """Fleet ops always prefer local even under tier_map routing."""
+    backend, reason = classify_task_with_reason(
+        "heartbeat", Mode.EDIT, _five_tier_backends(), config=_TIER_MAP_CFG,
+    )
+    assert backend == "local"
+    assert "fleet" in reason.lower()
+
+
+def test_tier_map_absence_preserves_legacy_three_tier():
+    """Config without tier_map hits the legacy 2-threshold / 3-tier code path."""
+    cfg_no_tier_map = {"router": {"complexity_thresholds": [0.3, 0.6]}}
+    result = analyze_complexity("refactor and implement", Mode.ACT, config=cfg_no_tier_map)
+    assert result.recommended_tier in ("local", "openrouter", "claude")

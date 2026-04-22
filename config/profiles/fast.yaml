@@ -18,6 +18,9 @@ backends:
 router:
   complexity_thresholds: [0.5, 0.8]
   failover_chain: [local, openrouter]
+  # Opt out of default's 5-tier map — fast is a local-first 2-threshold profile.
+  # Cloud hop to K2.6 conflicts with the "low-latency" goal; quality.yaml is the K2.6 profile.
+  tier_map: null
 
 mode_profiles:
   think: { temperature: 0.3 }

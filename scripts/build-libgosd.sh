@@ -70,9 +70,11 @@ SD_CPP_VERSION="8afbeb6ba9702c15d41a38296f2ab1fe5c829fa0"
 if [ ! -f "$SD_CPP_DIR/CMakeLists.txt" ]; then
     echo "Cloning sd.cpp @ $SD_CPP_VERSION..."
     mkdir -p "$VENDOR_SD/sources"
-    git clone --recursive https://github.com/leejet/stable-diffusion.cpp.git "$SD_CPP_DIR"
+    git clone https://github.com/leejet/stable-diffusion.cpp.git "$SD_CPP_DIR"
     cd "$SD_CPP_DIR"
     git checkout "$SD_CPP_VERSION"
+    # examples/server/frontend (sdcpp-webui) pins a dead upstream commit; skip — not needed by CUDA build
+    git config submodule.examples/server/frontend.update none
     git submodule update --init --recursive --depth 1 --single-branch
 else
     CURRENT="$(git -C "$SD_CPP_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -82,6 +84,7 @@ else
         cd "$SD_CPP_DIR"
         git fetch origin
         git checkout "$SD_CPP_VERSION"
+        git config submodule.examples/server/frontend.update none
         git submodule update --init --recursive --depth 1 --single-branch
     fi
 fi

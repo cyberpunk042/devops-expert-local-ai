@@ -172,15 +172,29 @@ def validate_profile(
     if isinstance(router, dict):
         thresholds = router.get("complexity_thresholds")
         if thresholds is not None:
-            if not isinstance(thresholds, list) or len(thresholds) != 2:
-                errors.append("router.complexity_thresholds must be a list of 2 floats")
+            # N thresholds → N+1 tier bands (E011-m001). N=2 keeps legacy 3-tier behavior;
+            # N=4 enables the 5-tier design via router.tier_map.
+            if not isinstance(thresholds, list) or len(thresholds) < 1:
+                errors.append("router.complexity_thresholds must be a non-empty list")
             elif not all(isinstance(t, (int, float)) for t in thresholds):
                 errors.append("router.complexity_thresholds values must be numbers")
-            elif thresholds[0] >= thresholds[1]:
-                errors.append(
-                    "router.complexity_thresholds[0] must be less than [1] "
-                    f"(got {thresholds[0]} >= {thresholds[1]})"
-                )
+            else:
+                for i in range(1, len(thresholds)):
+                    if thresholds[i - 1] >= thresholds[i]:
+                        errors.append(
+                            "router.complexity_thresholds must be strictly increasing "
+                            f"(got {thresholds[i - 1]} >= {thresholds[i]} at index {i})"
+                        )
+                        break
+
+        tier_map = router.get("tier_map")
+        if tier_map is not None and tier_map != {}:
+            if not isinstance(tier_map, dict):
+                errors.append("router.tier_map must be a dict of band_index → backend_name")
+            elif not all(isinstance(k, (int, str)) for k in tier_map):
+                errors.append("router.tier_map keys must be int or str")
+            elif not all(isinstance(v, str) for v in tier_map.values()):
+                errors.append("router.tier_map values must be strings (backend names)")
 
         failover = router.get("failover_chain")
         if failover is not None:

@@ -1,0 +1,30 @@
+# quality profile — maximize reasoning quality per dollar.
+#
+# Shifts tier boundaries vs default: more tasks escalate out of local, K2.6 widens
+# into the mid range (the cost-savings sweet spot), Opus reserved for the top ~8%.
+# Doubles K2.6's output budget so multi-tool-call sessions have room.
+#
+# E011-m001: demonstrates the 5-tier routing via tier_map (inherited from default).
+
+name: quality
+description: "Maximize reasoning quality per dollar — K2.6 by default, Opus only for top 10%"
+extends: default
+
+router:
+  complexity_thresholds: [0.20, 0.40, 0.65, 0.92]
+  failover_chain: [local, k2_6_local, k2_6_openrouter, openrouter, claude]
+  tier_map:
+    0: local
+    1: k2_6_local
+    2: k2_6_openrouter
+    3: openrouter
+    4: claude
+  force_cloud_modes: [edit, act]
+
+backends:
+  k2_6_openrouter:
+    max_tokens: 16384        # let K2.6 think long on quality-profile tasks
+
+budget:
+  max_cost_usd: 5.0          # higher than default — quality work costs more
+  max_duration_seconds: 600

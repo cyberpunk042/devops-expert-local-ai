@@ -76,15 +76,39 @@ class TestValidateProfile:
         errors = validate_profile(profile)
         assert errors == []
 
-    def test_router_thresholds_wrong_count(self):
+    def test_router_thresholds_single_is_valid(self):
+        """Single threshold = 2 tiers — valid post-E011-m001 (N thresholds → N+1 tiers)."""
         profile = _make_profile(router={"complexity_thresholds": [0.5]})
         errors = validate_profile(profile)
-        assert any("2 floats" in e for e in errors)
+        assert errors == []
+
+    def test_router_thresholds_four_is_valid(self):
+        """Four thresholds = 5 tiers — enables the K2.6 5-tier routing design."""
+        profile = _make_profile(router={"complexity_thresholds": [0.25, 0.45, 0.70, 0.90]})
+        errors = validate_profile(profile)
+        assert errors == []
+
+    def test_router_thresholds_empty_rejected(self):
+        profile = _make_profile(router={"complexity_thresholds": []})
+        errors = validate_profile(profile)
+        assert any("non-empty" in e for e in errors)
 
     def test_router_thresholds_not_ascending(self):
         profile = _make_profile(router={"complexity_thresholds": [0.8, 0.3]})
         errors = validate_profile(profile)
-        assert any("less than" in e for e in errors)
+        assert any("strictly increasing" in e for e in errors)
+
+    def test_router_tier_map_valid(self):
+        profile = _make_profile(router={
+            "tier_map": {0: "local", 1: "k2_6_openrouter", 2: "claude"}
+        })
+        errors = validate_profile(profile)
+        assert errors == []
+
+    def test_router_tier_map_non_string_value_rejected(self):
+        profile = _make_profile(router={"tier_map": {0: "local", 1: 42}})
+        errors = validate_profile(profile)
+        assert any("values must be strings" in e for e in errors)
 
     def test_router_failover_chain_valid(self):
         profile = _make_profile(router={"failover_chain": ["local", "claude"]})

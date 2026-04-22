@@ -69,7 +69,7 @@ optimize_model() {
   local yaml="$1"
   local name
   name=$(basename "$yaml" .yaml)
-  [ -f "$yaml" ] || return
+  [ -f "$yaml" ] || return 0
 
   local changed=0
   local is_llm=false

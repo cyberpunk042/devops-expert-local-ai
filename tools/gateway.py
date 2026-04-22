@@ -2,12 +2,12 @@
 # Forwards `python3 -m tools.gateway <args>` to the second brain's gateway.
 # The second brain runs the real gateway; --wiki-root tells it which project called.
 # Regenerate with: python3 <second-brain>/tools/setup.py --connect
-"""Gateway forwarder to the second brain (devops-solutions-research-wiki)."""
+"""Gateway forwarder to the second brain (devops-solutions-information-hub)."""
 
 import os, subprocess, sys
 
-_SECOND_BRAIN = '/home/jfortin/devops-solutions-research-wiki'
-_VENV_PYTHON = '/home/jfortin/devops-solutions-research-wiki/.venv/bin/python'
+_SECOND_BRAIN = '/home/jfortin/devops-solutions-information-hub'
+_VENV_PYTHON = '/home/jfortin/devops-solutions-information-hub/.venv/bin/python'
 
 sys.exit(subprocess.call(
     [_VENV_PYTHON, "-m", "tools.gateway",

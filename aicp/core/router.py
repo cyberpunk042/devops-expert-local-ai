@@ -154,15 +154,23 @@ def analyze_complexity(
     # Determine tier (thresholds configurable via profile/config)
     router_cfg = (config or {}).get("router", {})
     thresholds = router_cfg.get("complexity_thresholds", [0.3, 0.6])
-    low_cutoff = thresholds[0] if len(thresholds) > 0 else 0.3
-    high_cutoff = thresholds[1] if len(thresholds) > 1 else 0.6
+    tier_map = router_cfg.get("tier_map")
 
-    if score < low_cutoff:
-        tier = "local"
-    elif score < high_cutoff:
-        tier = "openrouter"
+    if tier_map:
+        # E011-m001: N thresholds → N+1 bands; band idx = count of thresholds exceeded.
+        # tier_map keys may be int (YAML) or str (JSON/env override) — accept both.
+        idx = sum(1 for t in thresholds if score >= t)
+        tier = tier_map.get(idx) or tier_map.get(str(idx)) or "local"
     else:
-        tier = "claude"
+        # Legacy 2-threshold / 3-tier path — unchanged for back-compat.
+        low_cutoff = thresholds[0] if len(thresholds) > 0 else 0.3
+        high_cutoff = thresholds[1] if len(thresholds) > 1 else 0.6
+        if score < low_cutoff:
+            tier = "local"
+        elif score < high_cutoff:
+            tier = "openrouter"
+        else:
+            tier = "claude"
 
     return ComplexityScore(score=round(score, 3), signals=signals, recommended_tier=tier)
 
@@ -290,6 +298,11 @@ def classify_task_with_reason(
     """
     config = config or {}
     router_cfg = config.get("router", {})
+    tier_map = router_cfg.get("tier_map")
+
+    # E011-m001: tier_map opts into 5-tier path; absence keeps legacy 3-tier below.
+    if tier_map:
+        return _classify_via_tier_map(prompt, mode, backends, router_cfg)
 
     local = backends.get("local")
     claude = backends.get("claude")
@@ -362,6 +375,77 @@ def classify_task_with_reason(
             continue  # fleet handled by controller
         if backends.get(name) and backends[name].is_available():
             return name, "fallback"
+    return "local", "no backends available"
+
+
+# ---------------------------------------------------------------------------
+# E011-m001: N-tier classification via router.tier_map
+# ---------------------------------------------------------------------------
+
+# Backend names that represent a local-first tier (not a cloud tier for force_cloud_modes).
+# "fleet" is cluster-level and handled by the controller, not the router.
+_LOCAL_TIER_NAMES = {"local", "fleet", "k2_6_local"}
+
+
+def _classify_via_tier_map(
+    prompt: str,
+    mode: Mode,
+    backends: dict[str, Backend],
+    router_cfg: dict[str, Any],
+) -> tuple[str, str]:
+    """N-tier classifier driven by router.tier_map + router.failover_chain.
+
+    Same high-level contract as classify_task_with_reason but generalized:
+      - fleet-op short-circuit → local
+      - force_cloud_modes → first available non-local tier in chain
+      - otherwise → tier from analyze_complexity, falling through failover_chain if unavailable
+    """
+    chain = router_cfg.get("failover_chain", ["local"])
+    force_cloud = router_cfg.get("force_cloud_modes", ["edit", "act"])
+    available = {n: bool(backends.get(n) and backends[n].is_available()) for n in chain}
+
+    if not any(available.values()):
+        return "local", "no backends available"
+
+    # Fleet ops always prefer local (zero-token, no-cost)
+    fleet_matches = _FLEET_OPS.findall(prompt)
+    if fleet_matches:
+        if available.get("local"):
+            return "local", f"fleet operation ({fleet_matches[0]})"
+        for name in chain:
+            if name in _LOCAL_TIER_NAMES:
+                continue
+            if available.get(name):
+                return name, f"fleet operation ({fleet_matches[0]}), local unavailable"
+        return "local", f"fleet operation ({fleet_matches[0]}) (local down)"
+
+    # Force-cloud: first available backend in chain that is not a local tier
+    if mode.value in force_cloud:
+        for name in chain:
+            if name in _LOCAL_TIER_NAMES:
+                continue
+            if available.get(name):
+                return name, f"{mode.value} mode (force_cloud_modes)"
+        if available.get("local"):
+            return "local", f"{mode.value} mode, no cloud backends available"
+
+    # Score-based tier selection. analyze_complexity honors tier_map when config carries it.
+    complexity = analyze_complexity(prompt, mode, {"router": router_cfg})
+    tier = complexity.recommended_tier
+
+    if available.get(tier):
+        return tier, f"complexity {complexity.summary}"
+
+    # Chosen tier unavailable — walk the failover_chain from that tier's index forward
+    try:
+        start = chain.index(tier)
+    except ValueError:
+        start = 0
+    for i in range(1, len(chain) + 1):
+        name = chain[(start + i) % len(chain)]
+        if available.get(name):
+            return name, f"complexity {complexity.summary}, {tier} unavailable"
+
     return "local", "no backends available"
 
 

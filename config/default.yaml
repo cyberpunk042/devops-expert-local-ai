@@ -45,10 +45,37 @@ backends:
     max_tokens: 8192          # K2.6 runs long agentic sessions
     timeout: 300              # generous for multi-tool-call sequences
     enabled: true
+  k2_6_local:
+    # Kimi K2.6 Q2 GGUF served by KTransformers — local offline frontier tier (E011-m003).
+    # Adapter lands in M003 once E008 (KTransformers install + 340GB Q2 weights + first-light benchmark)
+    # completes. OpenAI-compatible HTTP shape at base_url; reuses OpenRouterBackend class shape.
+    # Stays enabled: false until E008 delivers — flip operator-side once weights load and /health responds.
+    base_url: http://localhost:8091
+    model: kimi-k2.6-q2
+    max_tokens: 8192
+    timeout: 600              # local K2.6 Q2 on swap is slow; give it room
+    enabled: false
   claude:
     model: opus
     max_turns: 10
     timeout: 300
+router:
+  # E011-m001 — 5-tier routing via tier_map (opt-in; absence preserves legacy 3-tier logic).
+  # Score → band index = count of thresholds exceeded; band index → backend via tier_map.
+  #   0.00–0.25 local          (Qwen3-8B etc. on LocalAI)
+  #   0.25–0.45 k2_6_local     (KTransformers frontier when enabled, else skipped)
+  #   0.45–0.70 k2_6_openrouter (default agentic / coding — the cost-savings win)
+  #   0.70–0.90 openrouter     (Opus 4.7 / GPT-5.4 online fallback)
+  #   0.90–1.00 claude         (Anthropic direct — edge-case only)
+  complexity_thresholds: [0.25, 0.45, 0.70, 0.90]
+  failover_chain: [local, k2_6_local, k2_6_openrouter, openrouter, claude]
+  tier_map:
+    0: local
+    1: k2_6_local
+    2: k2_6_openrouter
+    3: openrouter
+    4: claude
+  force_cloud_modes: [edit, act]
 rag:
   enabled: true
   db_path: .aicp/rag.db
