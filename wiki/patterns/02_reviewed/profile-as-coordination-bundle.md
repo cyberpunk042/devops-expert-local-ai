@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 5
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.744 (evidence_density=1.0, maturity_gap=1.0, cross_source_convergence=0.80, relationship_hub=0.50). 4 documented profile instances (default/reliable/dual-gpu/benchmark) each coordinating ≥4 cross-cutting concerns. 600-line profile engine + 49 tests provide robust evidence. Foundational pattern that other AICP patterns derive from (e.g., per-backend-circuit-breaker uses profile-tunable thresholds)."
 derived_from:
   - "4-tier-router-with-profiles-over-hardcoded-routing"
 instances:

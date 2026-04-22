@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 5
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.754 (cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0). 4 documented instances (CLAUDE.md+AGENTS.md naming, force_cloud_modes routing dimension, guardrails server-side enforcement, Claude Code Plan Mode parallel). Pattern generalizes — Anthropic's Plan Mode is structurally identical to Think — confirming cross-tool applicability beyond AICP."
 derived_from:
   - "model-quality-failure-prevention"
   - "model-claude-code"
