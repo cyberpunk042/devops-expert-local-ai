@@ -59,6 +59,29 @@ backends:
     model: opus
     max_turns: 10
     timeout: 300
+circuit_breaker:
+  # E011-m004 — per-backend tuning. Global defaults apply to anything not in per_backend.
+  # Failure semantics differ per tier: local should fail fast (recover fast), K2.6 over
+  # network tolerates transient hiccups, Claude is last-resort so open late.
+  failure_threshold: 3
+  recovery_timeout: 30
+  half_open_max: 1
+  per_backend:
+    local:
+      failure_threshold: 2        # local recovers fast — fail fast, retry fast
+      recovery_timeout: 10
+    k2_6_local:
+      failure_threshold: 1        # TCP-level unavailability is binary; no point retrying
+      recovery_timeout: 15
+    k2_6_openrouter:
+      failure_threshold: 3        # transient network / OpenRouter hiccups are common
+      recovery_timeout: 30
+    openrouter:
+      failure_threshold: 3
+      recovery_timeout: 30
+    claude:
+      failure_threshold: 5        # Anthropic-direct is last resort — open reluctantly
+      recovery_timeout: 120
 router:
   # E011-m001 — 5-tier routing via tier_map (opt-in; absence preserves legacy 3-tier logic).
   # Score → band index = count of thresholds exceeded; band index → backend via tier_map.

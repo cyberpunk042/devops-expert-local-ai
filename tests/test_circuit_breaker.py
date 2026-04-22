@@ -184,6 +184,54 @@ class TestBuildBreakers:
         assert breakers["local"].failure_threshold == 3
         assert breakers["local"].recovery_timeout == 30.0
 
+    def test_per_backend_overrides_defaults(self):
+        """E011-m004: per_backend[name] values win over global circuit_breaker defaults."""
+        config = {
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "recovery_timeout": 30,
+                "per_backend": {
+                    "k2_6_local": {"failure_threshold": 1, "recovery_timeout": 15},
+                    "claude": {"failure_threshold": 5, "recovery_timeout": 120},
+                },
+            }
+        }
+        breakers = build_breakers(
+            ["local", "k2_6_local", "k2_6_openrouter", "claude"], config,
+        )
+        # Overridden backends get their per_backend values
+        assert breakers["k2_6_local"].failure_threshold == 1
+        assert breakers["k2_6_local"].recovery_timeout == 15
+        assert breakers["claude"].failure_threshold == 5
+        assert breakers["claude"].recovery_timeout == 120
+        # Backends without a per_backend entry use global defaults
+        assert breakers["local"].failure_threshold == 3
+        assert breakers["k2_6_openrouter"].failure_threshold == 3
+
+    def test_per_backend_partial_override_merges(self):
+        """Partial override (only one key) leaves other fields at global defaults."""
+        config = {
+            "circuit_breaker": {
+                "failure_threshold": 4,
+                "recovery_timeout": 45,
+                "per_backend": {"local": {"failure_threshold": 2}},
+            }
+        }
+        breakers = build_breakers(["local"], config)
+        assert breakers["local"].failure_threshold == 2    # overridden
+        assert breakers["local"].recovery_timeout == 45    # inherited from global
+
+    def test_per_backend_none_is_tolerated(self):
+        """Explicit per_backend: null (YAML) must not crash."""
+        config = {"circuit_breaker": {"per_backend": None}}
+        breakers = build_breakers(["local"], config)
+        assert breakers["local"].failure_threshold == 3    # uses defaults
+
+    def test_per_backend_empty_dict_is_tolerated(self):
+        config = {"circuit_breaker": {"per_backend": {}}}
+        breakers = build_breakers(["local"], config)
+        assert breakers["local"].failure_threshold == 3
+
 
 # ---------------------------------------------------------------------------
 # Controller integration
@@ -229,3 +277,53 @@ class TestControllerIntegration:
         )
         assert "local" in ctrl._breakers
         assert "claude" in ctrl._breakers
+
+    def test_5_tier_failover_when_k2_6_openrouter_opens(self, tmp_path):
+        """E011-m004: k2_6_openrouter breaker OPEN → router cascades to openrouter tier.
+
+        Primes k2_6_openrouter with failures until its breaker opens, then a subsequent
+        call should skip it entirely and land on the next available tier (openrouter).
+        """
+        from aicp.core.controller import Controller, Task
+        from aicp.core.modes import Mode
+
+        k2_6 = MagicMock()
+        k2_6.execute.side_effect = RuntimeError("OpenRouter 500")
+        k2_6.last_usage = {}
+
+        openrouter = MagicMock()
+        openrouter.execute.return_value = "opus fallback result"
+        openrouter.last_usage = {}
+
+        claude = MagicMock()
+        claude.execute.return_value = "claude edge-case result"
+        claude.last_usage = {}
+
+        ctrl = Controller(
+            backends={"k2_6_openrouter": k2_6, "openrouter": openrouter, "claude": claude},
+            config={
+                "cluster": {"auto_route": True, "config_file": "/nonexistent"},
+                "circuit_breaker": {
+                    "per_backend": {"k2_6_openrouter": {"failure_threshold": 2}},
+                },
+                "router": {
+                    "failover_chain": [
+                        "local", "k2_6_local", "k2_6_openrouter", "openrouter", "claude",
+                    ],
+                },
+            },
+        )
+
+        # Drive enough calls to open the k2_6_openrouter breaker (threshold=2) and
+        # verify the subsequent one cascades to openrouter. Unique prompts dodge the
+        # response cache so each run hits the backend freshly.
+        for i in range(3):
+            task = Task(
+                prompt=f"hello #{i}", mode=Mode.THINK, project_path=tmp_path,
+                backend_name="k2_6_openrouter",
+            )
+            result = ctrl.run(task)
+
+        assert ctrl._breakers["k2_6_openrouter"].state == State.OPEN
+        assert result == "opus fallback result"
+        assert "failover:openrouter" in ctrl.last_route

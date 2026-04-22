@@ -186,21 +186,24 @@ def build_breakers(
 ) -> Dict[str, CircuitBreaker]:
     """Create a circuit breaker for each backend from config.
 
-    Reads config["circuit_breaker"] for thresholds.
+    Reads config["circuit_breaker"]:
+      - Global defaults: failure_threshold, recovery_timeout, half_open_max
+      - Per-backend overrides (E011-m004): config["circuit_breaker"]["per_backend"][name]
+        deep-merges over defaults. Unknown / missing backends use defaults.
     """
     config = config or {}
     cb_cfg = config.get("circuit_breaker", {})
 
-    threshold = cb_cfg.get("failure_threshold", 3)
-    timeout = cb_cfg.get("recovery_timeout", 30.0)
-    max_probes = cb_cfg.get("half_open_max", 1)
-
-    return {
-        name: CircuitBreaker(
-            name=name,
-            failure_threshold=threshold,
-            recovery_timeout=timeout,
-            half_open_max=max_probes,
-        )
-        for name in backend_names
+    defaults = {
+        "failure_threshold": cb_cfg.get("failure_threshold", 3),
+        "recovery_timeout": cb_cfg.get("recovery_timeout", 30.0),
+        "half_open_max": cb_cfg.get("half_open_max", 1),
     }
+    per_backend = cb_cfg.get("per_backend") or {}
+
+    breakers: dict[str, CircuitBreaker] = {}
+    for name in backend_names:
+        overrides = per_backend.get(name, {}) if isinstance(per_backend, dict) else {}
+        params = {**defaults, **overrides}
+        breakers[name] = CircuitBreaker(name=name, **params)
+    return breakers
