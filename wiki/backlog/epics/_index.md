@@ -16,7 +16,27 @@ Multi-week initiatives. Each epic belongs to a milestone and contains modules an
 
 ## Active
 
-(None yet — epics will be created as adoption work progresses.)
+| Epic | Milestone | Status | Source |
+|------|-----------|--------|--------|
+| **E011 — Routing Integration (K2.6 + Local Stack)** | Post-Anthropic Self-Autonomous Stack | **P0 active** (brain-assigned 2026-04-22, target 2026-04-27) | Brain authoritative at `~/devops-solutions-research-wiki/wiki/backlog/epics/pre-milestone/E011-routing-integration-aicp-tiers.md` — 5 modules, 15-20 tasks |
+
+E011 modules (detail in brain):
+
+| Module | Delivers |
+|--------|----------|
+| E011-m001 | AICP config: 7-tier stack with K2.6-cheap-online primary agentic |
+| E011-m002 | K2.6 OpenRouter backend adapter (`aicp/backends/`) |
+| E011-m003 | K2.6 local backend adapter (KTransformers) |
+| E011-m004 | Per-backend circuit breakers + fallback chain doc |
+| E011-m005 | Routing-split metric + weekly review ritual |
+
+Related brain epics (NOT AICP-owned but AICP depends on):
+
+| Epic | Owner | Why AICP cares |
+|------|-------|----------------|
+| E007 — OpenRouter deadline de-risk | brain/operator | E011-m002 requires OpenRouter K2.6 route working |
+| E008 — Local K2.6 offline frontier tier | brain/operator | E011-m003 requires KTransformers + Q2 GGUF + benchmark |
+| E010 — Storage and hardware enablement | operator | 64GB RAM + /dev/sdd mount required for E011-m003 |
 
 ## Planned
 

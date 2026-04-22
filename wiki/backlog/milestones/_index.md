@@ -16,11 +16,12 @@ Multi-month strategic goals. AICP's milestones map to the LocalAI Independence s
 
 ## Active
 
-| Milestone | Status | Hardware | Notes |
-|-----------|--------|----------|-------|
-| Stage 3 — Progressive Offload | active (hardware unlocked 2026-04-17) | 19GB VRAM | Heartbeats + simple reviews + status checks moving to local |
-| Stage 4 — Reliability and Failover | partial | — | Circuit breakers + DLQ + reliable profile shipped; cluster peering pending |
-| Stage 5 — Near-Independent Operation | future | — | Target: 80%+ Claude token reduction |
+| Milestone | Status | Hardware | Deadline | Notes |
+|-----------|--------|----------|----------|-------|
+| **Post-Anthropic Self-Autonomous Stack** | **P0 critical-path** (brain-assigned 2026-04-22) | + 64GB RAM + RAID 0 NVMe (incoming ~1 day) | **2026-04-27** | K2.6-OpenRouter as primary agentic tier; Claude/Anthropic demoted; 6 brain epics; AICP owns E011. Authoritative milestone at `~/devops-solutions-research-wiki/wiki/backlog/milestones/post-anthropic-self-autonomous-stack.md` |
+| Stage 3 — Progressive Offload | active (hardware unlocked 2026-04-17) | 19GB VRAM | — | Heartbeats + simple reviews + status checks moving to local |
+| Stage 4 — Reliability and Failover | partial | — | — | Circuit breakers + DLQ + reliable profile shipped; cluster peering pending |
+| Stage 5 — Near-Independent Operation | future | — | — | Target: 80%+ Claude token reduction (subsumed by Post-Anthropic milestone above for the critical-path) |
 
 ## Completed
 

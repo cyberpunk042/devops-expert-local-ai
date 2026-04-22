@@ -29,13 +29,29 @@ This is one of four projects in the fleet ecosystem:
 
 ## The Mission
 
-**LocalAI independence.** Progressive offload from Claude to LocalAI. 5 stages:
+**Post-Anthropic self-autonomous AI stack** by 2026-04-27 (P0 milestone, brain-assigned 2026-04-22 — see `wiki/log/2026-04-22-k2-6-directive-and-post-anthropic-pivot.md`). The original LocalAI-independence mission persists as the long arc; the new direction adds Kimi K2.6 (Moonshot, MIT-licensed, 1T/32B-active MoE, agentic frontier) as the primary cloud tier via OpenRouter (~$0.80/$3.50 per M tokens, ~6-7× cheaper than Opus) and as a local frontier tier via KTransformers + 64GB RAM + RAID 0 NVMe swap.
+
+**5-day strategic shift** (2026-04-22 → 2026-04-27):
+
+| Tier | Before | After |
+|------|--------|-------|
+| Primary cloud agentic | Claude Opus 4.7 (Anthropic API) | **Kimi K2.6 (OpenRouter)** |
+| Anthropic role | Default escalation target | Hard-gated last-resort fallback only |
+| Local frontier | Qwen3-30B-A3B (dual-GPU) | + **K2.6 Q2 via KTransformers** (340GB GGUF on NVMe swap) |
+| Router tiers | 4 (local → fleet → openrouter → claude) | **7** (adds K2.6-OpenRouter, K2.6-local; demotes Claude) |
+| Hardware ceiling | 19GB VRAM | + **64GB RAM + RAID 0 NVMe** |
+
+AICP owns brain epic **E011 — Routing Integration** (5 modules, 15-20 tasks). Authoritative scope at `~/devops-solutions-research-wiki/wiki/backlog/epics/pre-milestone/E011-routing-integration-aicp-tiers.md`.
+
+**Original LocalAI-independence stages remain the long arc**:
 
 1. **Make LocalAI functional** — done (LocalAI v4.1.3 on Docker, 9 models loaded, OpenAI-compatible API on :8090)
 2. **Route simple operations to LocalAI** — done (4-tier router with circuit breakers, DLQ, warmup, 9 profiles)
-3. **Progressive offload** ← **CURRENT** — hardware unlocked 2026-04-17 (19GB VRAM, dual-gpu profile runnable). Open question: empirical routing split with the new capacity. Heartbeats, simple reviews, status checks moving to local.
-4. **Reliability and failover** — graceful degradation, cluster peering (partial: circuit breakers + DLQ + reliable profile shipped; cluster peering pending)
-5. **Near-independent operation** — 80%+ Claude token reduction (target)
+3. **Progressive offload** — hardware unlocked 2026-04-17 (19GB VRAM, dual-gpu profile runnable). Now sits ALONGSIDE the K2.6 tier work.
+4. **Reliability and failover** — partial (circuit breakers + DLQ + reliable profile shipped; cluster peering pending)
+5. **Near-independent operation** — subsumed by Post-Anthropic milestone for the critical-path
+
+> "I dont want to have to deal with Anthropic and Claude and Opus in the future......" (operator, 2026-04-22)
 
 > "Its important that the main first mission is to make localAI functional and then make it more and more reliable to offload as much as possible the work from claude till one day maybe even try to actually run independently as much as possible."
 
