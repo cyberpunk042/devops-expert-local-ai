@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 5
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.779 (cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0, relationship_hub=0.38). 4 documented instances (LocalAI runtime, watchdog, default profile parallelism, dual-gpu profile). The constraint survives the 8GB→19GB hardware upgrade — confirming the pattern is about application coherence, not raw VRAM. Bedrock pattern for AICP's resource model."
 derived_from:
   - "model-local-ai"
   - "localai-over-ollama-vllm-for-multi-model-orchestration"

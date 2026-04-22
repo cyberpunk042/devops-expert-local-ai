@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 5
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Evolve score 0.828 (cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0, relationship_hub=0.62). 3 documented instances (controller failure path, CLI+MCP retry surfaces, reliable profile override), 5 alternatives, 6 evidence items. Pairs with circuit-breaker pattern as the third layer of AICP's reliability stack."
 derived_from:
   - "model-quality"
   - "per-backend-circuit-breaker-with-failover-chain"

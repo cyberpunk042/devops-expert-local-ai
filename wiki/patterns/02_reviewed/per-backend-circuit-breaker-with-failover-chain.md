@@ -5,7 +5,10 @@ domain: backend-ai-platform-python
 layer: 5
 status: synthesized
 confidence: high
-maturity: seed
+maturity: growing
+promoted_from: "01_drafts"
+promoted_at: "2026-04-22"
+promotion_reason: "Top evolve score 0.878 (cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0, relationship_hub=0.88). 3 documented instances with file:line refs, alternatives + rejection reasons, ≥6 evidence items. Meets growing-tier bar per Knowledge Evolution Standards."
 derived_from:
   - "model-quality"
   - "4-tier-router-with-profiles-over-hardcoded-routing"
