@@ -1,11 +1,14 @@
 ---
-title: "AICP Routing Review Ritual (weekly)"
+title: "AICP Routing Review Ritual"
 type: pattern
 domain: backend-ai-platform-python
 layer: 5
 status: draft
 confidence: medium
 maturity: seed
+promoted_from: "00_inbox"
+promoted_at: "2026-04-22"
+promotion_reason: "evolve-score 0.700 — top-tier seed page. cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0. Codifies the weekly routing-split review for E011-m005. Implemented by aicp/cli/main.py --routing-report + aicp/core/metrics.py aggregate_window, live-verified with real K2.6 traffic at session end."
 derived_from:
   - "aicp-5-tier-fallback-chain"
   - "per-backend-circuit-breaker-with-failover-chain"
@@ -30,6 +33,10 @@ tags: [pattern, aicp, routing, ritual, weekly, review, observability, e011]
 ---
 
 # AICP Routing Review Ritual
+
+## Summary
+
+Weekly operator practice for keeping E011's 5-tier routing calibrated: catches tier drift (scorer miscalibration, budget overruns, reliability events) before they accumulate into a real incident. Anchored on `aicp --routing-report 7d` (the time-windowed per-backend view shipped in E011-m005) plus Prometheus breaker-trip counters. Defines cadence (weekly Monday), inputs (3 commands), 5-item checklist, red-flag threshold table per tier, what to tune (`router.complexity_thresholds`, `circuit_breaker.per_backend.*`, `backends.*.timeout`, profile selection), and a 3-strike escalation rule. Solo-operator scope; multi-operator coordination out-of-scope.
 
 ## Purpose
 
@@ -127,3 +134,10 @@ The first review log after M005 ships is the template for all subsequent ones.
 - This ritual is NOT a replacement for real-time alerting — it's the periodic sanity check. Urgent alerts come from `config/alerts.yaml` (Prometheus rules), not the review.
 - This ritual does NOT re-benchmark models — latency/quality regressions caught here escalate into dedicated benchmark tasks (see `quality-performance` skill).
 - Solo operator scope — multi-operator ritual coordination is out of scope until fleet expands.
+
+## Relationships
+
+- EXTENDS: [aicp-5-tier-fallback-chain](aicp-5-tier-fallback-chain.md)
+- DERIVES_FROM: [per-backend-circuit-breaker-with-failover-chain](../02_reviewed/per-backend-circuit-breaker-with-failover-chain.md)
+- IMPLEMENTED_BY: aicp/cli/main.py `_run_routing_report` + aicp/core/metrics.py `aggregate_window`
+- SPECIFIED_BY: wiki/backlog/modules/e011-m005-routing-metric-and-review-ritual.md (brain spec)

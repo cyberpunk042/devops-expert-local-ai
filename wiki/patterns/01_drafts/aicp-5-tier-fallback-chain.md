@@ -1,11 +1,14 @@
 ---
-title: "AICP 5-Tier Fallback Chain (E011-m004 specialization)"
+title: "AICP 5-Tier Fallback Chain"
 type: pattern
 domain: backend-ai-platform-python
 layer: 5
 status: draft
 confidence: medium
 maturity: seed
+promoted_from: "00_inbox"
+promoted_at: "2026-04-22"
+promotion_reason: "evolve-score 0.725 — top seed-tier pattern. cross_source_convergence=1.0, evidence_density=1.0, maturity_gap=1.0. Specializes the growing-tier per-backend-circuit-breaker pattern for E011-m004's 5-tier routing. Live-verified via baf7e09 snapshot wiring + 25 tests in test_circuit_breaker.py."
 derived_from:
   - "per-backend-circuit-breaker-with-failover-chain"
   - "4-tier-router-with-profiles-over-hardcoded-routing"
@@ -33,6 +36,10 @@ tags: [pattern, aicp, fallback, failover, reliability, circuit-breaker, 5-tier, 
 ---
 
 # AICP 5-Tier Fallback Chain
+
+## Summary
+
+A tier-specific specialization of the growing-tier [per-backend-circuit-breaker-with-failover-chain](../02_reviewed/per-backend-circuit-breaker-with-failover-chain.md) pattern for E011's 5-tier routing design (local → k2_6_local → k2_6_openrouter → openrouter → claude). Documents per-tier breaker thresholds, trigger conditions, HALF_OPEN recovery semantics, and an operator playbook keyed to each tier. The parent pattern explains the *mechanism*; this page explains the *tier-specific* failure semantics: why `local` opens at 2/10s (fast recover), `k2_6_local` at 1/15s (TCP-binary), `k2_6_openrouter` at 3/30s (network transients), `claude` at 5/120s (reluctant last-resort).
 
 ## Why a specialization
 
@@ -122,3 +129,10 @@ Implication: if a backend is genuinely flapping (succeeds intermittently), it wi
 - Does NOT implement weighted / probabilistic routing — strict priority order per `failover_chain`
 - Does NOT retry the same tier on transient failure — that's the individual backend's responsibility (e.g., httpx retry in `aicp/backends/openrouter.py`)
 - Does NOT preserve request-level idempotency across failover — a task that failed halfway through on k2_6_openrouter may produce a different result on openrouter
+
+## Relationships
+
+- SPECIALIZES: [per-backend-circuit-breaker-with-failover-chain](../02_reviewed/per-backend-circuit-breaker-with-failover-chain.md)
+- DERIVES_FROM: [4-tier-router-with-profiles-over-hardcoded-routing](../../decisions/02_reviewed/4-tier-router-with-profiles-over-hardcoded-routing.md)
+- REFERENCED_BY: [aicp-routing-review-ritual](aicp-routing-review-ritual.md)
+- IMPLEMENTED_BY: aicp/core/circuit_breaker.py + aicp/core/controller.py (failover loop lines 446-483)

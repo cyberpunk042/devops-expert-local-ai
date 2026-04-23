@@ -21,8 +21,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 logger = logging.getLogger("aicp.circuit_breaker")
 
@@ -35,7 +36,7 @@ class State(Enum):
     HALF_OPEN = "half_open"
 
 
-class CircuitBreakerOpen(Exception):
+class CircuitBreakerOpen(Exception):  # noqa: N818 — name reads naturally; rename would cascade to controller + tests
     """Raised when the circuit breaker is open and the call is rejected."""
 
     def __init__(self, backend: str, since: float) -> None:
@@ -71,8 +72,8 @@ class CircuitBreaker:
         self._lock = threading.Lock()
 
         # Metrics callbacks (set by controller/prometheus)
-        self._on_state_change: Optional[Callable[[str, str], None]] = None
-        self._on_trip: Optional[Callable[[str], None]] = None
+        self._on_state_change: Callable[[str, str], None] | None = None
+        self._on_trip: Callable[[str], None] | None = None
 
     @property
     def state(self) -> State:
@@ -108,7 +109,7 @@ class CircuitBreaker:
             result = fn()
             self._record_success()
             return result
-        except Exception as e:
+        except Exception:
             self._record_failure()
             raise
 
@@ -167,7 +168,7 @@ class CircuitBreaker:
             self._half_open_active = 0
             self._transition(State.CLOSED)
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Return current breaker status for diagnostics."""
         state = self.state  # triggers auto-transition
         return {
@@ -182,8 +183,8 @@ class CircuitBreaker:
 
 def build_breakers(
     backend_names: list[str],
-    config: Dict[str, Any] = None,
-) -> Dict[str, CircuitBreaker]:
+    config: dict[str, Any] = None,
+) -> dict[str, CircuitBreaker]:
     """Create a circuit breaker for each backend from config.
 
     Reads config["circuit_breaker"]:

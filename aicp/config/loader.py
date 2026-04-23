@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
-
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "default.yaml"
 USER_CONFIG_PATH = Path(os.environ.get("AICP_HOME", Path.home() / ".aicp")) / "config.yaml"
@@ -23,7 +22,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_DOTENV_PATH = PROJECT_ROOT / ".env"
 
 
-def load_dotenv(path: Optional[Path] = None) -> int:
+def load_dotenv(path: Path | None = None) -> int:
     """Populate os.environ from a KEY=VALUE .env file at the AICP project root.
 
     Shell `source .env` does NOT export these because the repo's .env file uses
@@ -82,7 +81,7 @@ _REQUIRED_KEYS = [
 ]
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base, returning a new dict."""
     result = dict(base)
     for key, val in override.items():
@@ -95,9 +94,9 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
 
 def load_config(
     path: Path = DEFAULT_CONFIG_PATH,
-    project_path: Optional[Path] = None,
-    profile: Optional[str] = None,
-) -> Dict[str, Any]:
+    project_path: Path | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
     """Load configuration, merging override layers on top of defaults.
 
     Load order (each layer overrides the previous):
@@ -157,7 +156,7 @@ def load_config(
     return config
 
 
-def validate_config(config: Dict[str, Any]) -> List[str]:
+def validate_config(config: dict[str, Any]) -> list[str]:
     """Validate config structure. Returns list of error strings (empty = valid)."""
     errors = []
 
@@ -199,7 +198,7 @@ def validate_config(config: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def get_backend_config(config: Dict[str, Any], backend_name: str) -> Dict[str, Any]:
+def get_backend_config(config: dict[str, Any], backend_name: str) -> dict[str, Any]:
     """Extract backend-specific configuration."""
     backends = config.get("backends", {})
     if backend_name not in backends:
@@ -207,7 +206,7 @@ def get_backend_config(config: Dict[str, Any], backend_name: str) -> Dict[str, A
     return backends[backend_name]
 
 
-def get_rag_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def get_rag_config(config: dict[str, Any]) -> dict[str, Any]:
     """Extract RAG configuration with defaults."""
     defaults = {
         "enabled": False,

@@ -6,7 +6,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from aicp.core.history import list_tasks
 
@@ -41,7 +41,7 @@ def _read_breaker_trips() -> dict[str, int]:
         return {}
 
 
-def aggregate(count: int = 1000) -> Dict[str, Any]:
+def aggregate(count: int = 1000) -> dict[str, Any]:
     """Aggregate metrics from recent task history."""
     records = list_tasks(count)
     if not records:
@@ -127,7 +127,7 @@ def aggregate(count: int = 1000) -> Dict[str, Any]:
     }
 
 
-def offload_report(count: int = 1000) -> Dict[str, Any]:
+def offload_report(count: int = 1000) -> dict[str, Any]:
     """Compute LocalAI offload metrics — how much work avoids Claude.
 
     Returns a dict with:
@@ -189,7 +189,7 @@ def offload_report(count: int = 1000) -> Dict[str, Any]:
     }
 
 
-def _empty() -> Dict[str, Any]:
+def _empty() -> dict[str, Any]:
     return {
         "total_tasks": 0, "today": 0, "this_week": 0,
         "errors": 0, "error_rate": 0, "avg_duration": 0,

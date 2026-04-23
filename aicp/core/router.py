@@ -21,11 +21,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from aicp.backends.base import Backend
 from aicp.core.modes import Mode
-
 
 # Fleet / infrastructure operations — always LocalAI, zero Claude tokens
 _FLEET_OPS = re.compile(
@@ -62,7 +61,7 @@ class ComplexityScore:
     """Weighted complexity analysis of a prompt."""
 
     score: float                   # 0.0 (trivial) to 1.0 (very complex)
-    signals: Dict[str, float] = field(default_factory=dict)  # signal → weight
+    signals: dict[str, float] = field(default_factory=dict)  # signal → weight
     recommended_tier: str = ""     # local, openrouter, claude
 
     @property
@@ -75,7 +74,7 @@ class ComplexityScore:
 def analyze_complexity(
     prompt: str,
     mode: Mode,
-    config: Dict[str, Any] = None,
+    config: dict[str, Any] = None,
 ) -> ComplexityScore:
     """Analyze prompt complexity and return a weighted score.
 
@@ -92,7 +91,7 @@ def analyze_complexity(
     Tier thresholds are configurable via config["router"]["complexity_thresholds"]
     (default: [0.3, 0.6]).
     """
-    signals: Dict[str, float] = {}
+    signals: dict[str, float] = {}
 
     # Mode signal
     if mode == Mode.ACT:
@@ -244,7 +243,7 @@ def score_response_quality(response: str, prompt: str) -> float:
 # ---------------------------------------------------------------------------
 
 # Approximate costs per 1M tokens (input, output) — updated 2026-04
-_BACKEND_COSTS: Dict[str, Tuple[float, float]] = {
+_BACKEND_COSTS: dict[str, tuple[float, float]] = {
     "local": (0.0, 0.0),           # free
     "openrouter": (0.0, 0.0),      # free tier default
     "openrouter:paid": (0.5, 1.5), # generic paid estimate
@@ -269,8 +268,8 @@ def estimate_cost(
 def classify_task(
     prompt: str,
     mode: Mode,
-    backends: Dict[str, Backend],
-    config: Dict[str, Any] = None,
+    backends: dict[str, Backend],
+    config: dict[str, Any] = None,
 ) -> str:
     """Classify a task and return the recommended backend name.
 
@@ -283,9 +282,9 @@ def classify_task(
 def classify_task_with_reason(
     prompt: str,
     mode: Mode,
-    backends: Dict[str, Backend],
-    config: Dict[str, Any] = None,
-) -> Tuple[str, str]:
+    backends: dict[str, Backend],
+    config: dict[str, Any] = None,
+) -> tuple[str, str]:
     """Classify a task and return (backend_name, reason).
 
     Uses analyze_complexity() to score the prompt, then maps the score to a
@@ -321,7 +320,7 @@ def classify_task_with_reason(
     fleet_matches = _FLEET_OPS.findall(prompt)
     if fleet_matches:
         if local_available:
-            return "local", "fleet operation ({})".format(fleet_matches[0])
+            return "local", f"fleet operation ({fleet_matches[0]})"
         if or_available:
             return "openrouter", "fleet op, local unavailable"
         return "local", "fleet operation (local down)"
@@ -483,7 +482,7 @@ def categorize_operation(prompt: str) -> str:
     return "default"
 
 
-def intercept_operation(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
+def intercept_operation(prompt: str, config: dict[str, Any] = None) -> str | None:
     """Try to handle an operation without invoking an LLM.
 
     Returns a response string if the operation was handled, None otherwise.
@@ -505,7 +504,7 @@ def intercept_operation(prompt: str, config: Dict[str, Any] = None) -> Optional[
     return None
 
 
-def classify_test_output(output: str) -> Optional[str]:
+def classify_test_output(output: str) -> str | None:
     """Classify test output as pass/fail without LLM inference.
 
     Returns 'pass', 'fail', or None if the output doesn't look like test results.
@@ -534,7 +533,7 @@ def classify_test_output(output: str) -> Optional[str]:
     return None
 
 
-def recommend_model(prompt: str, config: Dict[str, Any] = None) -> Optional[str]:
+def recommend_model(prompt: str, config: dict[str, Any] = None) -> str | None:
     """Suggest the best LocalAI model for a prompt.
 
     Returns a model name (e.g. 'qwen3-4b', 'qwen3-8b', 'qwen3-8b-fast') or

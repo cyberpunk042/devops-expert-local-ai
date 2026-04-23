@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -30,7 +30,7 @@ PROFILES_DIR = Path(__file__).parent.parent.parent / "config" / "profiles"
 _REQUIRED_KEYS = {"name", "description"}
 
 # Optional sections a profile may override (validated for correct types)
-_SECTION_TYPES: Dict[str, type] = {
+_SECTION_TYPES: dict[str, type] = {
     "backends": dict,
     "router": dict,
     "mode_profiles": dict,
@@ -53,7 +53,7 @@ _SECTION_TYPES: Dict[str, type] = {
 }
 
 
-def list_profiles(profiles_dir: Path = PROFILES_DIR) -> List[Dict[str, str]]:
+def list_profiles(profiles_dir: Path = PROFILES_DIR) -> list[dict[str, str]]:
     """List all available profiles with name and description.
 
     Returns a list of dicts: [{"name": ..., "description": ..., "path": ...}]
@@ -80,7 +80,7 @@ def list_profiles(profiles_dir: Path = PROFILES_DIR) -> List[Dict[str, str]]:
 def load_profile(
     name: str,
     profiles_dir: Path = PROFILES_DIR,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load a profile by name. Returns the parsed YAML dict.
 
     Raises FileNotFoundError if the profile doesn't exist.
@@ -108,9 +108,9 @@ def load_profile(
 
 
 def validate_profile(
-    data: Dict[str, Any],
-    available_models: Optional[List[str]] = None,
-) -> List[str]:
+    data: dict[str, Any],
+    available_models: list[str] | None = None,
+) -> list[str]:
     """Validate a profile dict. Returns list of error strings (empty = valid).
 
     Args:
@@ -118,7 +118,7 @@ def validate_profile(
         available_models: If provided, validate that backend model references
             exist in this list. Pass None to skip model validation.
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Required keys
     for key in _REQUIRED_KEYS:
@@ -151,7 +151,7 @@ def validate_profile(
 
     # Model reference validation (when available_models provided)
     if available_models is not None:
-        _MODEL_KEYS = (
+        model_keys = (
             "model", "code_model", "vision_model", "embedding_model",
             "reranker_model", "image_model", "whisper_model", "tts_model",
         )
@@ -159,9 +159,13 @@ def validate_profile(
         if isinstance(backends_cfg, dict):
             local_cfg = backends_cfg.get("local", {})
             if isinstance(local_cfg, dict):
-                for key in _MODEL_KEYS:
+                for key in model_keys:
                     model_ref = local_cfg.get(key)
-                    if model_ref and isinstance(model_ref, str) and model_ref not in available_models:
+                    if (
+                        model_ref
+                        and isinstance(model_ref, str)
+                        and model_ref not in available_models
+                    ):
                         errors.append(
                             f"backends.local.{key} references unknown model '{model_ref}' "
                             f"(available: {', '.join(sorted(available_models))})"
@@ -263,7 +267,7 @@ def validate_profile(
     return errors
 
 
-def list_available_models(models_dir: Optional[Path] = None) -> List[str]:
+def list_available_models(models_dir: Path | None = None) -> list[str]:
     """List model names from config/models/*.yaml files.
 
     Args:
@@ -280,7 +284,7 @@ def list_available_models(models_dir: Optional[Path] = None) -> List[str]:
     return [p.stem for p in models_dir.glob("*.yaml")]
 
 
-def profile_to_config_overlay(profile: Dict[str, Any]) -> Dict[str, Any]:
+def profile_to_config_overlay(profile: dict[str, Any]) -> dict[str, Any]:
     """Extract the config-overlay portion of a profile.
 
     Strips profile-only metadata (name, description, extends) and returns
@@ -293,7 +297,7 @@ def profile_to_config_overlay(profile: Dict[str, Any]) -> Dict[str, Any]:
 def resolve_profile(
     name: str,
     profiles_dir: Path = PROFILES_DIR,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load a profile and resolve its 'extends' chain.
 
     If profile A extends profile B, B's overlay is loaded first, then A's
@@ -301,10 +305,10 @@ def resolve_profile(
     """
     from aicp.config.loader import _deep_merge
 
-    seen: List[str] = []
-    overlays: List[Dict[str, Any]] = []
+    seen: list[str] = []
+    overlays: list[dict[str, Any]] = []
 
-    current_name: Optional[str] = name
+    current_name: str | None = name
     while current_name:
         if current_name in seen:
             raise ValueError(
@@ -318,14 +322,14 @@ def resolve_profile(
 
     # Merge from base to derived (last loaded = lowest priority)
     overlays.reverse()
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for overlay in overlays:
         result = _deep_merge(result, overlay)
 
     return result
 
 
-def get_active_profile() -> Optional[str]:
+def get_active_profile() -> str | None:
     """Read the currently active profile name from .env or environment.
 
     Checks AICP_PROFILE environment variable first, then .env file.
@@ -356,7 +360,7 @@ def diff_profiles(
     name_a: str,
     name_b: str,
     profiles_dir: Path = PROFILES_DIR,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Compare two profiles and return their differences.
 
     Returns a dict of {key: {"a": value_in_a, "b": value_in_b}} for keys
@@ -366,7 +370,7 @@ def diff_profiles(
     overlay_b = resolve_profile(name_b, profiles_dir)
 
     all_keys = set(overlay_a) | set(overlay_b)
-    diffs: Dict[str, Dict[str, Any]] = {}
+    diffs: dict[str, dict[str, Any]] = {}
 
     for key in sorted(all_keys):
         val_a = overlay_a.get(key)
