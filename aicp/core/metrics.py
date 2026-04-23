@@ -163,3 +163,116 @@ def _empty() -> Dict[str, Any]:
         "total_prompt_tokens": 0, "total_completion_tokens": 0,
         "total_tokens": 0, "total_cost_usd": 0, "by_backend": {}, "by_route": {},
     }
+
+
+def _parse_window(window: str) -> timedelta:
+    """Parse a human window string into a timedelta.
+
+    Accepts: "Nd" (days), "Nh" (hours), "Nm" (minutes), or a bare int (days).
+    Raises ValueError on unparseable input.
+    """
+    if not window:
+        raise ValueError("window must be non-empty")
+    s = window.strip().lower()
+    if s[-1].isdigit():  # bare int → days
+        return timedelta(days=int(s))
+    unit = s[-1]
+    try:
+        n = int(s[:-1])
+    except ValueError as exc:
+        raise ValueError(f"unparseable window '{window}'") from exc
+    if unit == "d":
+        return timedelta(days=n)
+    if unit == "h":
+        return timedelta(hours=n)
+    if unit == "m":
+        return timedelta(minutes=n)
+    raise ValueError(f"unknown window unit '{unit}' (expected d/h/m)")
+
+
+def aggregate_window(window: str = "7d", max_records: int = 10000) -> dict[str, Any]:
+    """Aggregate metrics over a time window (E011-m005).
+
+    Same result shape as aggregate(count=N) but bounded by wall-clock time rather
+    than record count. Intended for the weekly routing-review ritual.
+
+    Args:
+        window: human-readable duration, e.g. "7d", "24h", "30m". See _parse_window.
+        max_records: upper bound on history records scanned (avoids unbounded IO).
+    """
+    delta = _parse_window(window)
+    records = list_tasks(max_records)
+    if not records:
+        return {**_empty(), "window": window, "window_seconds": int(delta.total_seconds())}
+
+    cutoff = datetime.utcnow() - delta
+
+    by_backend: dict[str, dict[str, Any]] = {}
+    by_route: dict[str, int] = {}
+    total = 0
+    errors = 0
+    total_duration = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_cost = 0.0
+
+    for r in records:
+        ts_str = r.get("timestamp", "")
+        try:
+            ts = datetime.fromisoformat(ts_str.rstrip("Z"))
+        except (ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+
+        total += 1
+        if r.get("error"):
+            errors += 1
+
+        duration = r.get("duration_seconds", 0) or 0
+        pt = r.get("prompt_tokens") or 0
+        ct = r.get("completion_tokens") or 0
+        cost = r.get("estimated_cost_usd") or 0
+        total_duration += duration
+        total_prompt_tokens += pt
+        total_completion_tokens += ct
+        total_cost += cost
+
+        route = r.get("route", "local")
+        by_route[route] = by_route.get(route, 0) + 1
+
+        backend = r.get("backend", "unknown")
+        if backend not in by_backend:
+            by_backend[backend] = {
+                "tasks": 0, "errors": 0, "total_duration": 0.0,
+                "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0,
+            }
+        b = by_backend[backend]
+        b["tasks"] += 1
+        if r.get("error"):
+            b["errors"] += 1
+        b["total_duration"] += duration
+        b["prompt_tokens"] += pt
+        b["completion_tokens"] += ct
+        b["cost"] += cost
+
+    for b in by_backend.values():
+        b["avg_duration"] = round(b["total_duration"] / b["tasks"], 2) if b["tasks"] else 0
+        b["error_rate"] = round(b["errors"] / b["tasks"] * 100, 1) if b["tasks"] else 0
+        b["share_pct"] = round(b["tasks"] / total * 100, 1) if total else 0
+        b["tokens"] = b["prompt_tokens"] + b["completion_tokens"]
+
+    return {
+        "window": window,
+        "window_seconds": int(delta.total_seconds()),
+        "total_tasks": total,
+        "errors": errors,
+        "error_rate": round(errors / total * 100, 1) if total else 0,
+        "avg_duration": round(total_duration / total, 2) if total else 0,
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "total_tokens": total_prompt_tokens + total_completion_tokens,
+        "total_cost_usd": round(total_cost, 4),
+        "by_backend": by_backend,
+        "by_route": by_route,
+    }

@@ -1,7 +1,12 @@
 """Tests for metrics aggregation."""
 
+import json
+from datetime import datetime, timedelta
+
+import pytest
+
 from aicp.core.history import save_task
-from aicp.core.metrics import aggregate, offload_report
+from aicp.core.metrics import _parse_window, aggregate, aggregate_window, offload_report
 
 
 def test_aggregate_empty(tmp_path, monkeypatch):
@@ -110,3 +115,115 @@ def test_offload_below_goal(tmp_path, monkeypatch):
     r = offload_report()
     assert r["offload_pct"] == 30.0
     assert r["goal_met"] is False
+
+
+# ---------------------------------------------------------------------------
+# E011-m005: aggregate_window + window parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseWindow:
+    def test_days(self):
+        assert _parse_window("7d") == timedelta(days=7)
+        assert _parse_window("30d") == timedelta(days=30)
+
+    def test_hours(self):
+        assert _parse_window("24h") == timedelta(hours=24)
+        assert _parse_window("1h") == timedelta(hours=1)
+
+    def test_minutes(self):
+        assert _parse_window("30m") == timedelta(minutes=30)
+
+    def test_bare_int_is_days(self):
+        assert _parse_window("7") == timedelta(days=7)
+
+    def test_case_insensitive(self):
+        assert _parse_window("7D") == timedelta(days=7)
+        assert _parse_window("24H") == timedelta(hours=24)
+
+    def test_empty_rejected(self):
+        with pytest.raises(ValueError):
+            _parse_window("")
+
+    def test_unknown_unit_rejected(self):
+        with pytest.raises(ValueError, match="unknown window unit"):
+            _parse_window("5y")
+
+    def test_non_numeric_rejected(self):
+        with pytest.raises(ValueError, match="unparseable"):
+            _parse_window("bogus")
+
+
+class TestAggregateWindow:
+    def test_empty_history(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        data = aggregate_window("7d")
+        assert data["total_tasks"] == 0
+        assert data["window"] == "7d"
+        assert data["by_backend"] == {}
+
+    def test_k2_6_backends_captured(self, tmp_path, monkeypatch):
+        """Dynamic backend discovery — K2.6 tiers appear in by_backend without code changes."""
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        for backend, cost in [("local", 0), ("k2_6_openrouter", 0.001), ("claude", 0.05)]:
+            save_task(
+                prompt=f"p-{backend}", mode="think", backend=backend, project="/tmp",
+                response="r", duration_seconds=1.0, prompt_tokens=100, completion_tokens=50,
+                estimated_cost_usd=cost,
+            )
+
+        data = aggregate_window("7d")
+        assert set(data["by_backend"].keys()) == {"local", "k2_6_openrouter", "claude"}
+        # Each backend got 1/3 of traffic
+        for b in data["by_backend"].values():
+            assert b["share_pct"] == pytest.approx(33.3, abs=0.2)
+            assert b["tokens"] == 150
+
+    def test_window_filters_old_records(self, tmp_path, monkeypatch):
+        """Records outside the window are excluded."""
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+
+        # Recent record (in-window)
+        save_task(
+            prompt="recent", mode="think", backend="k2_6_openrouter", project="/tmp",
+            response="r", duration_seconds=1.0,
+        )
+
+        # Fabricate an old record (outside window): write the JSON directly with old timestamp
+        old_ts = (datetime.utcnow() - timedelta(days=30)).isoformat() + "Z"
+        old_path = tmp_path / "19990101_000000_000000_claude_think.json"
+        old_path.write_text(json.dumps({
+            "id": "19990101_000000_000000_claude_think",
+            "timestamp": old_ts,
+            "backend": "claude",
+            "mode": "think",
+            "prompt": "old",
+            "response": "r",
+            "duration_seconds": 1.0,
+        }))
+
+        # 1h window excludes both old + maybe even the 'recent' if test runs slow — use 7d
+        data = aggregate_window("7d")
+        assert "k2_6_openrouter" in data["by_backend"]
+        assert "claude" not in data["by_backend"]    # 30 days ago, outside 7d window
+        assert data["total_tasks"] == 1
+
+    def test_share_pct_and_tokens_computed(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        for _ in range(3):
+            save_task("p", "think", "local", "/tmp", "r", 1.0,
+                      prompt_tokens=10, completion_tokens=5)
+        save_task("p", "think", "k2_6_openrouter", "/tmp", "r", 2.0,
+                  prompt_tokens=100, completion_tokens=50, estimated_cost_usd=0.0003)
+
+        data = aggregate_window("1d")
+        assert data["total_tasks"] == 4
+        assert data["by_backend"]["local"]["share_pct"] == 75.0
+        assert data["by_backend"]["k2_6_openrouter"]["share_pct"] == 25.0
+        assert data["by_backend"]["k2_6_openrouter"]["tokens"] == 150
+        assert data["by_backend"]["k2_6_openrouter"]["cost"] == pytest.approx(0.0003)
+
+    def test_bad_window_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        with pytest.raises(ValueError):
+            aggregate_window("not-a-window")

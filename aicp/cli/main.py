@@ -135,6 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show aggregated task metrics (tokens, cost, latency)",
     )
     parser.add_argument(
+        "--routing-report",
+        nargs="?",
+        const="7d",
+        metavar="WINDOW",
+        help="E011-m005: per-backend routing split over a window (e.g. 7d, 24h, 30d). Pair with --json for automation.",
+    )
+    parser.add_argument(
         "--dashboard",
         action="store_true",
         help="Live dashboard: GPU status, LocalAI, metrics (Ctrl+C to exit)",
@@ -1743,6 +1750,71 @@ def _run_stats() -> int:
     return 0
 
 
+def _run_routing_report(window: str, as_json: bool) -> int:
+    """E011-m005: per-backend routing split over a time window.
+
+    table:  rich table sorted by request count desc
+    json:   the raw aggregate_window payload (for automation / ritual tooling)
+    """
+    import json as _json
+
+    from aicp.core.metrics import aggregate_window
+
+    try:
+        data = aggregate_window(window)
+    except ValueError as exc:
+        console.print(f"[red]Bad window:[/] {exc}")
+        return 2
+
+    if as_json:
+        print(_json.dumps(data, indent=2, default=str))
+        return 0
+
+    from rich.table import Table
+
+    console.print(
+        f"[bold]Routing report — last {data['window']}[/] "
+        f"({data['total_tasks']} tasks, {data['errors']} errors, "
+        f"${data['total_cost_usd']:.4f} estimated cost)"
+    )
+
+    by_backend = data["by_backend"]
+    if not by_backend:
+        console.print("[dim]No traffic in window.[/]")
+        _print_next("`aicp \"<prompt>\"` to generate traffic, then rerun `aicp --routing-report`")
+        return 0
+
+    table = Table(show_header=True, expand=False)
+    table.add_column("Backend", style="bold")
+    table.add_column("Requests", justify="right")
+    table.add_column("Share", justify="right")
+    table.add_column("Tokens", justify="right")
+    table.add_column("Cost (USD)", justify="right")
+    table.add_column("Avg latency", justify="right")
+    table.add_column("Errors", justify="right")
+
+    ordered = sorted(by_backend.items(), key=lambda kv: -kv[1]["tasks"])
+    for name, b in ordered:
+        color = "cyan" if name == "local" else ("yellow" if "k2_6" in name else "magenta")
+        table.add_row(
+            f"[{color}]{name}[/]",
+            str(b["tasks"]),
+            f"{b['share_pct']:.1f}%",
+            f"{b['tokens']:,}",
+            f"${b['cost']:.4f}",
+            f"{b['avg_duration']:.1f}s",
+            f"{b['errors']} ({b['error_rate']:.0f}%)",
+        )
+    console.print(table)
+
+    _print_next(
+        "`aicp --routing-report <W> --json` for automation, "
+        "or see `wiki/patterns/00_inbox/aicp-routing-review-ritual.md` for the weekly ritual checklist"
+    )
+    return 0
+
+
+
 def _run_auto_config() -> int:
     """Auto-detect GPUs and generate optimal model configs."""
     from aicp.core.gpu import detect_gpus, calculate_optimal_config, estimate_model_vram_mb
@@ -2559,6 +2631,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --stats mode (no config needed)
     if args.stats:
         return _run_stats()
+
+    # --routing-report mode (no config needed; E011-m005)
+    if args.routing_report is not None:
+        return _run_routing_report(args.routing_report, getattr(args, "json", False))
 
     # --history mode (no config needed)
     if args.history is not None:
