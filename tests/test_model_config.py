@@ -270,7 +270,8 @@ class TestMcpModelConfig:
             result = aicp_model_config()
 
         parsed = json.loads(result)
-        assert parsed["context_size"] == 4096
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["config"]["context_size"] == 4096
         mock_backend.model_config.assert_called_once_with(None)
 
     def test_read_named_model(self):

@@ -265,7 +265,8 @@ class TestMcpLoraList:
             result = aicp_lora_list()
 
         parsed = json.loads(result)
-        assert len(parsed) == 1
+        assert "deprecated" in parsed["warning"].lower()
+        assert len(parsed["lora_models"]) == 1
 
 
 # ── Interactive Slash Commands ─────────────────────────────────────────────

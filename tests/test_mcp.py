@@ -234,8 +234,10 @@ class TestAicpModels:
             with patch("httpx.get", return_value=mock_resp):
                 result = aicp_models()
         parsed = json.loads(result)
-        assert len(parsed) == 2
-        assert parsed[0]["id"] == "hermes"
+        assert "deprecated" in parsed["warning"].lower()
+        models = parsed["models"]
+        assert len(models) == 2
+        assert models[0]["id"] == "hermes"
 
     def test_models_handles_error(self):
         from aicp.mcp.server import aicp_models

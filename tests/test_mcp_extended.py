@@ -28,7 +28,8 @@ class TestMCPExtendedTools:
         from aicp.mcp.server import aicp_profile
         result = aicp_profile(action="list")
         data = json.loads(result)
-        assert isinstance(data, list)
+        assert "deprecated" in data["warning"].lower()
+        assert isinstance(data["profiles"], list)
 
     def test_aicp_profile_active(self):
         from aicp.mcp.server import aicp_profile
@@ -45,7 +46,8 @@ class TestMCPExtendedTools:
         from aicp.mcp.server import aicp_task_status
         result = aicp_task_status()
         data = json.loads(result)
-        assert isinstance(data, list)
+        assert "deprecated" in data["warning"].lower()
+        assert isinstance(data["tasks"], list)
 
     def test_aicp_task_status_nonexistent(self):
         from aicp.mcp.server import aicp_task_status

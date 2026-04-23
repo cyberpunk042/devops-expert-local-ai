@@ -283,7 +283,8 @@ class TestMcpHealthTools:
             result = aicp_backends_list()
 
         parsed = json.loads(result)
-        assert len(parsed) == 1
+        assert "deprecated" in parsed["warning"].lower()
+        assert len(parsed["backends"]) == 1
 
     def test_aicp_server_config(self):
         from aicp.mcp.server import aicp_server_config
@@ -298,8 +299,9 @@ class TestMcpHealthTools:
             result = aicp_server_config()
 
         parsed = json.loads(result)
-        assert parsed["healthy"] is True
-        assert "tokenize" in parsed["features"]
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["config"]["healthy"] is True
+        assert "tokenize" in parsed["config"]["features"]
 
     def test_aicp_model_delete(self):
         from aicp.mcp.server import aicp_model_delete
@@ -310,7 +312,10 @@ class TestMcpHealthTools:
         with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
             result = aicp_model_delete("old-model")
 
-        assert "Deleted" in result
+        parsed = json.loads(result)
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["deleted"] is True
+        assert parsed["model"] == "old-model"
 
 
 # ── Interactive Slash Commands ───────────────────────────────────────────────

@@ -262,8 +262,10 @@ class TestMcpModelTools:
             result = aicp_model_gallery(search="phi")
 
         parsed = json.loads(result)
-        assert len(parsed) == 1
-        assert parsed[0]["name"] == "phi-2"
+        assert "deprecated" in parsed["warning"].lower()
+        available = parsed["available"]
+        assert len(available) == 1
+        assert available[0]["name"] == "phi-2"
 
     def test_aicp_model_gallery_no_filter(self):
         from aicp.mcp.server import aicp_model_gallery
@@ -277,7 +279,8 @@ class TestMcpModelTools:
             result = aicp_model_gallery()
 
         parsed = json.loads(result)
-        assert len(parsed) == 1
+        assert "deprecated" in parsed["warning"].lower()
+        assert len(parsed["available"]) == 1
 
     def test_aicp_model_install(self):
         from aicp.mcp.server import aicp_model_install
@@ -327,7 +330,10 @@ class TestMcpModelTools:
         with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
             result = aicp_model_unload("hermes")
 
-        assert "Unloaded" in result
+        parsed = json.loads(result)
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["unloaded"] is True
+        assert parsed["model"] == "hermes"
 
     def test_aicp_model_unload_failure(self):
         from aicp.mcp.server import aicp_model_unload
@@ -338,4 +344,7 @@ class TestMcpModelTools:
         with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
             result = aicp_model_unload("hermes")
 
-        assert "Failed" in result
+        parsed = json.loads(result)
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["unloaded"] is False
+        assert parsed["model"] == "hermes"

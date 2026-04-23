@@ -253,7 +253,8 @@ class TestMcpModelsLoaded:
             result = aicp_models_loaded()
 
         parsed = json.loads(result)
-        assert parsed == ["hermes", "codellama"]
+        assert "deprecated" in parsed["warning"].lower()
+        assert parsed["loaded_models"] == ["hermes", "codellama"]
 
 
 # ── Interactive /warmup and /loaded ────────────────────────────────────────
