@@ -7,10 +7,13 @@
 ## TL;DR
 
 - **5-day P0 milestone** (post-Anthropic stack, 2026-04-22 → 2026-04-27): AICP-owned E011 modules are **done** except M003 (blocked on E008 operator/brain work).
-- **4 conventional commits** this session: c949956 (M001), d8d61e8 (M004), 3f2e269 (M005 initial), baf7e09 (M005 breaker-opens column + snapshot persistence).
+- **9 conventional commits** this session: c949956 (M001), d8d61e8 (M004), 3f2e269 (M005 initial), baf7e09 (M005 breaker-opens + snapshot persistence), aa079d7 (session handoff), 6d3167c (.env loader — real bug), 52fe49c (DRY cleanup: default profile aligned with E011), 39db0c5 (13 MCP test failures fixed), 92a5ced (types + wiki promotion).
 - **Live K2.6 verified end-to-end** via OpenRouter; circuit breakers + snapshot persistence confirmed writing real data to `~/.aicp/metrics_snapshot.json`.
-- **Zero regressions**: full pytest 1774 pass / 13 fail (all 13 pre-existing MCP-drift, unchanged from session start). +21 new passing tests added.
-- **One real bug discovered + documented for follow-up**: `.env` file uses non-exported assignments; `source .env && aicp ...` silently fails to propagate keys. Workaround and proper fix both described below.
+- **Full pytest suite is now CLEAN**: 1795 pass / **0 fail** / 9 skipped. Session-start baseline was 1753 / 13 / 9 — delta **+42 passing, -13 failing, 0 regressions**.
+- **.env loader bug** discovered during live smoke test and **fixed** in commit 6d3167c (the handoff's literal recipe `source .env && aicp ...` now works; also works without `source .env` since `load_dotenv()` runs at CLI entry).
+- **DRY cleanup** on default profile: `config/profiles/default.yaml` was silently masking E011 routing. Aligned with `config/default.yaml` in 52fe49c.
+- **Two new wiki pattern pages promoted** `00_inbox` → `01_drafts` via evolve-score (0.725 + 0.700, top seed-tier scores).
+- **Ruff modernization**: 5 core-path files now fully clean (80 auto-fixes + 2 manual) in 92a5ced. `cli/main.py` debt (~200 issues) flagged as a dedicated follow-up.
 
 ## E011 epic status (post-session)
 
@@ -19,8 +22,8 @@
 | M001 Tier definitions + 5-tier routing | ✅ done | [aicp/core/router.py](../aicp/core/router.py), [config/default.yaml](../config/default.yaml), [config/profiles/quality.yaml](../config/profiles/quality.yaml) |
 | M002 K2.6 OpenRouter backend | ✅ done (pre-session, dcf3d56) | [aicp/backends/openrouter.py](../aicp/backends/openrouter.py), [tests/test_k2_6_backend.py](../tests/test_k2_6_backend.py) |
 | M003 K2.6 local (KTransformers) | ⏸ blocked on E008 | Config stanza prospective in [config/default.yaml](../config/default.yaml) (`backends.k2_6_local` with `enabled: false`) |
-| M004 Per-backend circuit breakers | ✅ done | [aicp/core/circuit_breaker.py](../aicp/core/circuit_breaker.py), [config/default.yaml](../config/default.yaml) `circuit_breaker:`, [wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md](../wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md) |
-| M005 Routing metric + ritual | ✅ done | [aicp/core/metrics.py](../aicp/core/metrics.py) (`aggregate_window`), [aicp/cli/main.py](../aicp/cli/main.py) (`--routing-report`), [wiki/patterns/00_inbox/aicp-routing-review-ritual.md](../wiki/patterns/00_inbox/aicp-routing-review-ritual.md) |
+| M004 Per-backend circuit breakers | ✅ done | [aicp/core/circuit_breaker.py](../aicp/core/circuit_breaker.py), [config/default.yaml](../config/default.yaml) `circuit_breaker:`, [wiki/patterns/01_drafts/aicp-5-tier-fallback-chain.md](../wiki/patterns/01_drafts/aicp-5-tier-fallback-chain.md) |
+| M005 Routing metric + ritual | ✅ done | [aicp/core/metrics.py](../aicp/core/metrics.py) (`aggregate_window`), [aicp/cli/main.py](../aicp/cli/main.py) (`--routing-report`), [wiki/patterns/01_drafts/aicp-routing-review-ritual.md](../wiki/patterns/01_drafts/aicp-routing-review-ritual.md) |
 
 ## What actually shipped today (detail)
 
@@ -38,13 +41,13 @@
 - [aicp/core/circuit_breaker.py](../aicp/core/circuit_breaker.py): `build_breakers()` reads `config.circuit_breaker.per_backend[name]` and deep-merges over global defaults.
 - [config/default.yaml](../config/default.yaml): `circuit_breaker:` block — local 2/10s, k2_6_local 1/15s, k2_6_openrouter 3/30s, openrouter 3/30s, claude 5/120s (Anthropic reluctant-open per doctrine).
 - Tests: +5 per-backend unit tests + 1 controller-level integration test (3× failure on k2_6_openrouter → breaker OPEN → failover to openrouter tier).
-- [wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md](../wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md): new pattern page specializing the growing-tier circuit-breaker pattern — ASCII cascade diagram, per-tier threshold rationale, OPEN-semantics-per-tier explainer, operator playbook.
+- [wiki/patterns/01_drafts/aicp-5-tier-fallback-chain.md](../wiki/patterns/01_drafts/aicp-5-tier-fallback-chain.md): new pattern page specializing the growing-tier circuit-breaker pattern — ASCII cascade diagram, per-tier threshold rationale, OPEN-semantics-per-tier explainer, operator playbook.
 
 ### Commit 3 — 3f2e269 M005 routing-report CLI + ritual doc
 
 - [aicp/core/metrics.py](../aicp/core/metrics.py): `aggregate_window(window)` + `_parse_window()` (supports `Nd`/`Nh`/`Nm` + bare int). Dynamically discovers backend names from history — K2.6 tiers flow through with no hardcoded list.
 - [aicp/cli/main.py](../aicp/cli/main.py): `--routing-report [WINDOW]` flag + `_run_routing_report()` handler. Rich table (sorted by request count, color-coded per tier) or `--json` for automation.
-- [wiki/patterns/00_inbox/aicp-routing-review-ritual.md](../wiki/patterns/00_inbox/aicp-routing-review-ritual.md): weekly ritual doc — cadence, inputs, 5-item checklist, red-flag threshold table, tuning knobs, escalation.
+- [wiki/patterns/01_drafts/aicp-routing-review-ritual.md](../wiki/patterns/01_drafts/aicp-routing-review-ritual.md): weekly ritual doc — cadence, inputs, 5-item checklist, red-flag threshold table, tuning knobs, escalation.
 
 ### Commit 4 — baf7e09 M005 breaker-opens column + snapshot persistence
 
@@ -109,11 +112,11 @@ The handoff's literal recipe (`source .env && aicp ...`) now works as documented
 ### If E008 still blocked
 Next-priority candidates in rough order:
 
-1. **Promote M004/M005 wiki pages** `00_inbox` → `01_drafts` via `python3 -m tools.evolve --score` — pattern page promotion per AICP convention
-2. **Fix the 13 pre-existing MCP test failures** — most are legacy `hermes` model-name drift or list-vs-dict shape changes. Covered by `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`.
-3. **MCP deprecated tool removal** — 21 tools per the audit. Release-paced; fine to execute now.
-4. **DRY cleanup: `config/default.yaml` vs `config/profiles/default.yaml`** — both now carry router config, but only the profiles one is read via `--profile`. The profile version still has the pre-E011 `[local, fleet, openrouter, claude]` failover chain — worth reconciling.
-5. **Ruff style debt** (~200 Dict/Tuple/Optional across router.py, profiles.py, metrics.py, cli/main.py, circuit_breaker.py) — single modernization pass
+1. **MCP deprecated tool removal** — 21 tools per the audit (`wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`). Release-paced; fine to execute now. **Recommend as its own fresh session** — deletes 13 tests updated this session (commit 39db0c5 locked in the deprecation-warning contract as a separate value), requires CLAUDE.md update (currently claims "64 tools — audit pending"), and needs per-tool verification that each CLI replacement works.
+2. **Ruff style debt in cli/main.py** (~200 issues across 3566 lines). Session 92a5ced cleaned the 5 core-path files (router.py, profiles.py, circuit_breaker.py, metrics.py, loader.py) but left cli/main.py as a dedicated follow-up.
+3. **Promote M004/M005 wiki pages further** `01_drafts` → `02_reviewed` once they accumulate more cross-references / evidence. Current scores (0.725 + 0.700) already at the growing-tier threshold; promotion depends on operator-authored links and use-in-anger evidence.
+4. **Promote other seed-tier pages** — evolve-score top 10 shows several pages near threshold (e.g. `aicp-mcp-tool-surface-audit-2026-04-19` at 0.428).
+5. **Flag for brain contribution** — two pattern pages authored this session (aicp-5-tier-fallback-chain, aicp-routing-review-ritual) are AICP-specific but could be generalized upstream once validated. Await operator greenlight before `tools.gateway contribute`.
 
 ### Always-check-first commands
 
@@ -144,22 +147,27 @@ aicp --routing-report 7d                              # new: E011-m005 routing s
 
 | Metric | Session start | Session end | Delta |
 |--------|---------------|-------------|-------|
-| Passed | 1753 | 1782 | +29 |
-| Failed (pre-existing) | 13 | 13 | 0 |
+| Passed | 1753 | **1795** | **+42** |
+| Failed (pre-existing) | 13 | **0** | **-13** |
 | Skipped | 9 | 9 | 0 |
-| Wiki-lint passing | 23/23 | 23/23 | 0 |
+| Wiki-lint passing | 23/23 | **25/25** | +2 (new pattern pages) |
 | Brain compliance tier | 4/4 STRUCTURAL | 4/4 STRUCTURAL | — |
+| Ruff clean (core-path files) | partial | **5/5 clean** | router + profiles + circuit_breaker + metrics + loader |
 
 ## Files changed this session (canonical list)
 
 Tracked:
-- `aicp/core/router.py`, `aicp/core/profiles.py`, `aicp/core/circuit_breaker.py`, `aicp/core/metrics.py`
-- `aicp/config/loader.py` (new `load_dotenv()` helper — 5th commit)
-- `aicp/cli/main.py`
-- `config/default.yaml`, `config/profiles/fast.yaml`, `config/profiles/quality.yaml` (new)
-- `tests/test_router.py`, `tests/test_profiles.py`, `tests/test_circuit_breaker.py`, `tests/test_metrics.py`, `tests/test_config.py`
-- `wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md` (new)
-- `wiki/patterns/00_inbox/aicp-routing-review-ritual.md` (new)
+- `aicp/core/router.py`, `aicp/core/profiles.py`, `aicp/core/circuit_breaker.py`, `aicp/core/metrics.py` (E011 + ruff modernized in 92a5ced)
+- `aicp/config/loader.py` (new `load_dotenv()` in 6d3167c; ruff modernized in 92a5ced)
+- `aicp/cli/main.py` (new `--routing-report`, `load_dotenv()` call in main(), config-driven `_run_check` render; ruff debt deferred)
+- `config/default.yaml` (new `router:`, `circuit_breaker:`, `k2_6_*` stanzas)
+- `config/profiles/default.yaml` (DRY-aligned with E011 in 52fe49c)
+- `config/profiles/fast.yaml` (`tier_map: null` opt-out)
+- `config/profiles/quality.yaml` (new, 5-tier exemplar)
+- 13 MCP test files fixed in 39db0c5: `tests/test_health_backends.py`, `tests/test_image_embed_lora.py`, `tests/test_mcp.py`, `tests/test_mcp_extended.py`, `tests/test_model_config.py`, `tests/test_model_management.py`, `tests/test_model_warmup.py`
+- New tests: `tests/test_router.py` (+8), `tests/test_profiles.py` (+5), `tests/test_circuit_breaker.py` (+6), `tests/test_metrics.py` (+17), `tests/test_config.py` (+8)
+- `wiki/patterns/01_drafts/aicp-5-tier-fallback-chain.md` (new, promoted 00_inbox→01_drafts)
+- `wiki/patterns/01_drafts/aicp-routing-review-ritual.md` (new, promoted 00_inbox→01_drafts)
 - `scripts/optimize-models.sh`, `scripts/build-libgosd.sh` (setup unblockers)
 - `docs/SESSION-2026-04-22-END.md` (this file)
 
