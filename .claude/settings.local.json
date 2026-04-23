@@ -138,5 +138,9 @@
       "Bash(/usr/bin/python3 -m pytest tests/ --collect-only -q)",
       "Bash(.venv/bin/python -m pytest tests/test_integration.py -v --tb=short)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "research-wiki"
+  ],
+  "enableAllProjectMcpServers": true
 }

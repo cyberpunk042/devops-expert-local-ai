@@ -35,9 +35,9 @@ Thumbs.db
 # LocalAI models — runtime directory, entirely gitignored.
 # Source of truth for model configs: config/models/*.yaml
 # Binaries downloaded by: make setup / make model-qwen3 / make model-download
-/models/
+/models
 !config/models/
-/backends/
+/backends
 # AICP runtime (agent PID, RAG database, DLQ, history)
 .aicp/
 

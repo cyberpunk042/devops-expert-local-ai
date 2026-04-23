@@ -37,7 +37,7 @@ set -euo pipefail
 MODEL_DIR="${1:-/home/jfortin/kimi-k2-6-moonshot}"
 PORT="${2:-8091}"
 
-VENV="/home/jfortin/ktransformers-env"
+VENV="/mnt/dev-envs/ktransformers-env"
 SHIM="${VENV}/numa_shim.so"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHIM_SRC="${REPO_DIR}/scripts/numa_shim.c"
