@@ -59,24 +59,64 @@ Today's session ran 2026-04-22 late-day through 2026-04-23 morning. Before the d
 
 
 
-## Current state
+## 2026-04-23 afternoon update — storage architecture cleaned up
 
-### Disk (updated 2026-04-23 post-remount)
-- `/dev/sdc` mounted at `/`: 1007GB total, 52GB used, 904GB free — **WSL root, never holds model data**
-- `/dev/sdf` mounted at `/mnt/models`: 541GB ext4, UUID `0011b353-25b2-4414-842b-e88506a1970b`, user-writable, fresh — **T0 NVMe-backed active weights tier, recreated via `D:\vdisks\models.vhdx`**
-- `/etc/fstab` updated with the new UUID; stale `564e3456…` entry removed
-- `/dev/sda`, `/dev/sdd` (256GB unmounted), `/dev/sde`: pre-existing VDisks of unknown origin — to inspect or clean up
-- Windows host: WSL VHDX still bloated from the 374GB disaster download — `Optimize-VHD` still pending on the Windows side
-- **Authoritative reference**: see `docs/STORAGE.md` for tier taxonomy, placement rules, VHDX creation procedure, persistence setup (Task Scheduler), and migration plan for the future Z790 platform
+After the handoff's first half was written, the session continued with a full storage-tier overhaul. All storage rules formalized, all bloat resolved. See [`docs/STORAGE.md`](./STORAGE.md) for the authoritative reference.
 
-### Installed (kept intact)
-- `/home/jfortin/ktransformers-env/`: Python 3.11.15 venv, 11GB. Contains:
-  - `kt-kernel==0.5.3` (pip wheel)
-  - `sglang-kt==0.0.0.dev0` (installed editable from source at `/home/jfortin/ktransformers-src/third_party/sglang/python`)
-  - `nvidia-cudnn-cu12==9.16.0.29` (required by sglang 2.9.1 strict check)
-  - `numa_shim.so` (compiled LD_PRELOAD shim for WSL NUMA workaround)
-- `/home/jfortin/ktransformers-src/`: kvcache-ai/ktransformers monorepo clone (recursive), 1.2GB. Includes the sglang fork at `third_party/sglang`.
-- `kt doctor`: all checks pass.
+### Disks — ground truth (verified via `Get-PhysicalDisk`)
+
+| Win | Physical | Size | WSL path | Role |
+|---|---|---|---|---|
+| C: | Intel RAID 0 SATA SSD | 465G | `/mnt/c` | Windows system — OFF-LIMITS |
+| **D:** | **WD_BLACK SN770 NVMe** | 932G | `/mnt/d` + hosts `D:\vdisks\models.vhdx` | T0 NVMe host |
+| F: | SABRENT USB | 3.7T | `/mnt/f` | T2 personal archive |
+| **H:** | **Intel RAID 0 of 2× SATA SSDs (local, NOT network)** | 1.9T | `/mnt/h` + hosts `H:\vdisks\dev-envs.vhdx` | T1 SATA RAID — dev VHDXs, cold weights |
+| S: | PCIE SSD (USB adapter) | 233G | `/mnt/s` | Docker reserved — OFF-LIMITS |
+
+The "NAS SSD" label the operator uses for H: is colloquial — it's a local Intel RAID 0 of SATA SSDs, directly attached to the motherboard.
+
+### Mounts
+
+| Block device | Mount | UUID | Notes |
+|---|---|---|---|
+| `/dev/sdc` | `/` | `ed9fcb8b…` | WSL root VDisk. **Sparse**. Reclaimed from 428GB → 55GB allocated via `fstrim -v /`. Never holds model data. |
+| `/dev/sdf` | `/mnt/models` | `0011b353-25b2-4414-842b-e88506a1970b` | 541GB ext4, T0 on `D:\vdisks\models.vhdx`. User-writable. Non-sparse. |
+| `/dev/sdg` | `/mnt/dev-envs` | (in fstab) | 49GB ext4, T1 on `H:\vdisks\dev-envs.vhdx`. User-writable. Non-sparse. |
+| `/dev/sdb` | [SWAP] | `e51bef1e…` | 16GB swap |
+| `/dev/sda`, `/dev/sdd`, `/dev/sde` | — | varies | Pre-existing VDisks of unknown origin, unmounted. Inspect or clean up later. |
+
+### Relocations done this session
+
+| What | From | To |
+|---|---|---|
+| `ktransformers-env` (Python venv with kt-kernel + sglang-kt editable + cudnn 9.16.0.29 + numa_shim.so) | `/home/jfortin/ktransformers-env` (WSL root) | `/mnt/dev-envs/ktransformers-env` (T1 VHDX on H:) |
+| `ktransformers-src` (kvcache-ai monorepo clone with sglang fork) | `/home/jfortin/ktransformers-src` (WSL root) | `/mnt/dev-envs/ktransformers-src` (T1 VHDX on H:) |
+| LocalAI `models/` (GGUFs, SD, clip, whisper, TTS — 15GB) | `<repo>/models` (WSL root) | `/mnt/models/localai/models/` (T0) — symlinked from repo root |
+| LocalAI `backends/` (CUDA llama-cpp, whisper, piper, SD — 5.7GB) | `<repo>/backends` (WSL root) | `/mnt/models/localai/backends/` (T0) — symlinked from repo root |
+
+`scripts/kt-serve.sh` `VENV=` updated to point at `/mnt/dev-envs/ktransformers-env`. `kt doctor` passes with the new paths. Both gitignored symlinks resolve transparently for docker bind mounts + BuildKit context.
+
+### Disk state after cleanup
+
+```
+/dev/sdc (WSL root):  1007GB total,  13GB used     (was 51GB)
+/dev/sdf (/mnt/models): 541GB total, 21GB used     (LocalAI 20.7GB + overhead)
+/dev/sdg (/mnt/dev-envs): 49GB total, 12GB used    (kt venv + src)
+D: drive free:       815GB (was 672GB — reclaimed ~143GB via sparse fstrim)
+ubuntu-24.04 VHDX actual allocation: 55GB (was ~428GB)
+```
+
+### What was lost (retained in record)
+
+- `/mnt/models` 1TB VHDX: deleted 2026-04-23 morning in emergency to reclaim space. Replaced with new 550GB dynamic VHDX (current `/dev/sdf`).
+- 318GB Unsloth K2.6 Q2_K_XL GGUF weights: gone with the deleted VDisk.
+- 374GB partial Moonshot safetensors download: deleted, the bloat it caused in the sparse VHDX was reclaimed by fstrim later the same day.
+
+### Installed (kept intact, at new paths)
+
+- `/mnt/dev-envs/ktransformers-env/`: 9.9GB Python 3.11.15 venv with `kt-kernel==0.5.3`, `sglang-kt==0.0.0.dev0` (editable), `nvidia-cudnn-cu12==9.16.0.29`, `numa_shim.so`.
+- `/mnt/dev-envs/ktransformers-src/`: 1.2GB kvcache-ai/ktransformers monorepo clone (recursive). Includes the sglang fork at `third_party/sglang`.
+- `kt doctor`: all checks pass. Both GPUs detected, AVX512 confirmed, NUMA 1-node (shim working), CUDA 13.2.
 
 ### AICP repo
 - 6 commits ahead of `origin/main`, unpushed.
@@ -105,39 +145,51 @@ Today's session ran 2026-04-22 late-day through 2026-04-23 morning. Before the d
 
 ## What the next session must do
 
-### 1. Compact the Windows-side VHDX
-From Windows PowerShell as Admin, with WSL shut down:
-```
-wsl --shutdown
-Optimize-VHD -Path "<path-to-WSL-VHDX>" -Mode Full
-```
-Find the VHDX path in `%LOCALAPPDATA%\Packages\CanonicalGroupLimited.Ubuntu-24.04...\LocalState\ext4.vhdx` or similar.
+Storage is now clean — Phase 1 through Phase 4 of the morning's plan are all resolved. Remaining blockers concern the K2.6 weights, not storage.
 
-### 2. Recreate `/mnt/models` VDisk
-Per the operator's prior setup (E010 storage tiering). Dedicated volume, large enough for chosen weights. **This is operator-only work — model must not touch this step.**
+### 1. Set up Task Scheduler for VHDX persistence (operator, ~5 min one-time)
 
-### 3. Pick a weights path — operator decision
+`wsl --mount --vhd` is one-shot by default. To survive `wsl --shutdown`, create two Task Scheduler entries at user logon — one per auxiliary VHDX:
+
+- Trigger: *At log on of Jean*
+- Action: `powershell.exe -NoProfile -WindowStyle Hidden -Command "wsl --mount --vhd 'D:\vdisks\models.vhdx' --bare"`
+- Repeat for `H:\vdisks\dev-envs.vhdx`
+
+Without this, `/mnt/models` and `/mnt/dev-envs` will be missing after any WSL restart. The fstab entries only mount IF the block device is already attached.
+
+### 2. Pick a K2.6 weights path — operator decision
+
 - **Unsloth Q2_K_XL GGUF (318GB)**: dead-end with sglang, but llama.cpp serves it directly. Trade-off: lose kt-kernel MoE offloading, get a working server.
 - **Moonshot K2.6 safetensors (554GB)**: tutorial-sanctioned path. Works with sglang+kt-kernel.
-- **Neither**: keep OpenRouter K2.6 (already working) as the K2.6 path, skip local.
+- **Neither**: keep OpenRouter K2.6 (already working) as the K2.6 path, skip local for now.
 
-### 4. Download chosen weights to `/mnt/models`
-**Never to the root disk.** `/mnt/models` or similar dedicated volume only. Model must ask before starting any download.
+### 3. Download chosen weights to `/mnt/models`
 
-### 5. If Moonshot path: launch server
+**Never to the WSL root, never to `~`.** Target: `/mnt/models/kimi-k2-6-<format>/`. Model must ask before any download ≥100MB (enforced by memory rule).
+
+### 4. If Moonshot path: launch server
+
 ```bash
 bash /home/jfortin/devops-expert-local-ai/scripts/kt-serve.sh /mnt/models/kimi-k2-6-moonshot 8091
 ```
-Wrapper handles: LD_PRELOAD of numa_shim, CUDA_VISIBLE_DEVICES=0, --tp 1, --cpu-threads 4, --kt-method RAWINT4.
 
-First launch: ~2-5 min to "Ready" per tutorial, then server on :8091.
+Wrapper (now pointing at `/mnt/dev-envs/ktransformers-env`) handles: LD_PRELOAD of numa_shim, CUDA_VISIBLE_DEVICES=0, --tp 1, --cpu-threads 4, --kt-method RAWINT4. First launch: ~2-5 min to "Ready" per tutorial, then server on :8091.
 
-### 6. Flip AICP config and smoke-test
+### 5. Flip AICP config and smoke-test
+
 In `config/default.yaml`, set `backends.k2_6_local.enabled: true`. Then:
+
 ```bash
 aicp --check                                    # should list k2_6_local
 aicp --backend k2_6_local "Identify yourself."  # full stack smoke
 ```
+
+### 6. Optional storage hygiene (low priority)
+
+- Inspect `/dev/sdd` (256GB unmounted ext4, UUID `3255683f…`): mount read-only, decide keep/wipe
+- Clean up `/dev/sda` and `/dev/sde` (0GB empty VDisks)
+- Retire Ubuntu-20 (87.81GB VHDX) if unused: `wsl --unregister Ubuntu-20` + delete VHDX file
+- Enable `systemd fstrim.timer` for weekly automated TRIM on the sparse WSL root VDisk
 
 ## Non-negotiable operational constraints
 
@@ -149,11 +201,13 @@ aicp --backend k2_6_local "Identify yourself."  # full stack smoke
 
 ## File references
 
-- Adapter: `aicp/backends/k2_6_local.py`
-- Adapter tests: `tests/test_k2_6_local_backend.py` (16 tests)
-- Server wrapper: `scripts/kt-serve.sh`
-- NUMA shim source: `scripts/numa_shim.c`
+- **Storage reference (authoritative)**: [`docs/STORAGE.md`](./STORAGE.md) — tier taxonomy, VHDX creation procedure, placement rules, hard don'ts, migration plan for future Z790 platform
+- Adapter: [`aicp/backends/k2_6_local.py`](../aicp/backends/k2_6_local.py)
+- Adapter tests: [`tests/test_k2_6_local_backend.py`](../tests/test_k2_6_local_backend.py) (16 tests)
+- Server wrapper: [`scripts/kt-serve.sh`](../scripts/kt-serve.sh) (VENV now `/mnt/dev-envs/ktransformers-env`)
+- NUMA shim source: [`scripts/numa_shim.c`](../scripts/numa_shim.c)
 - Config stanza: `config/default.yaml` → `backends.k2_6_local` (currently `enabled: false`)
-- Brain spec: `~/devops-solutions-information-hub/wiki/backlog/modules/e011-m003-k2-6-local-backend-adapter.md`
-- Brain spec for server endpoint (E008-m004): `~/devops-solutions-information-hub/wiki/backlog/modules/e008-m004-local-backend-adapter.md`
-- K2.5 tutorial (architecturally same as K2.6): `/home/jfortin/ktransformers-src/doc/en/Kimi-K2.5.md`
+- K2.5 tutorial (architecturally same as K2.6): `/mnt/dev-envs/ktransformers-src/doc/en/Kimi-K2.5.md`
+- Brain — E011-m003 module spec: `~/devops-solutions-research-wiki/wiki/backlog/modules/e011-m003-k2-6-local-backend-adapter.md`
+- Brain — E008-m004 server endpoint: `~/devops-solutions-research-wiki/wiki/backlog/modules/e008-m004-local-backend-adapter.md`
+- Brain — operator storage tiering (needs afternoon-session correction): `~/devops-solutions-research-wiki/wiki/spine/references/operator-workstation-storage-tiering.md`
