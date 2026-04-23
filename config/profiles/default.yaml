@@ -27,16 +27,25 @@ backends:
     max_tokens: 4096
     timeout: 120
 
-# --- Router settings ---
-# complexity_thresholds: [low_cutoff, high_cutoff]
-#   score < low  → local
-#   score < high → openrouter
-#   score >= high → claude
-# failover_chain: ordered list of backends to try on failure
-# force_cloud_modes: modes that always route to cloud ([] to disable)
+# --- Router settings (E011-m001: 5-tier routing via tier_map) ---
+# complexity_thresholds: N cutoffs → N+1 bands (mapped via tier_map below).
+#   0.00–0.25 local          (Qwen3-8B etc. on LocalAI)
+#   0.25–0.45 k2_6_local     (KTransformers frontier, when E008 delivers)
+#   0.45–0.70 k2_6_openrouter (Kimi K2.6 via OpenRouter — default agentic / coding)
+#   0.70–0.90 openrouter     (Opus / GPT fallback premium)
+#   0.90–1.00 claude         (Anthropic-direct edge-case)
+# failover_chain: order tried when a tier is unavailable. `fleet` is a special
+# cluster-peer step handled by the controller (not a regular backend tier).
+# force_cloud_modes: modes that always route to a non-local tier ([] to disable).
 router:
-  complexity_thresholds: [0.3, 0.6]
-  failover_chain: [local, fleet, openrouter, claude]
+  complexity_thresholds: [0.25, 0.45, 0.70, 0.90]
+  failover_chain: [local, fleet, k2_6_local, k2_6_openrouter, openrouter, claude]
+  tier_map:
+    0: local
+    1: k2_6_local
+    2: k2_6_openrouter
+    3: openrouter
+    4: claude
   force_cloud_modes: [edit, act]
 
 # --- Sampling per mode ---
@@ -83,11 +92,27 @@ warmup:
   models: [qwen3-8b]          # models to pre-load
   timeout: 120                # total warmup budget in seconds
 
-# --- Circuit Breaker (Stage 4 — prevent thundering herd) ---
+# --- Circuit Breaker (Stage 4 + E011-m004 per-backend tuning) ---
 circuit_breaker:
   failure_threshold: 3       # consecutive failures before opening
   recovery_timeout: 30       # seconds before half-open probe
   half_open_max: 1           # concurrent probes allowed in half-open
+  per_backend:               # tier-specific overrides (E011-m004)
+    local:
+      failure_threshold: 2        # local recovers fast — fail fast, retry fast
+      recovery_timeout: 10
+    k2_6_local:
+      failure_threshold: 1        # TCP-binary unavailability
+      recovery_timeout: 15
+    k2_6_openrouter:
+      failure_threshold: 3        # network / OpenRouter transients common
+      recovery_timeout: 30
+    openrouter:
+      failure_threshold: 3
+      recovery_timeout: 30
+    claude:
+      failure_threshold: 5        # last-resort — open reluctantly
+      recovery_timeout: 120
 
 # --- Dead-Letter Queue (Stage 4 — persist failed tasks for retry) ---
 dlq:

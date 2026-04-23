@@ -1121,7 +1121,12 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
     console.print(f"    Fleet auto-route:  {'[green]ON[/]' if fleet_route else '[dim]OFF[/]'}")
     console.print(f"    Model auto-route:  {'[green]ON[/]' if model_route else '[dim]OFF[/]'}")
     if fleet_route:
-        console.print("    Failover chain:    local → fleet peer → openrouter → Claude")
+        router_cfg = config.get("router", {})
+        chain = router_cfg.get("failover_chain") or ["local", "fleet", "openrouter", "claude"]
+        pretty = " → ".join("fleet peer" if n == "fleet" else n for n in chain)
+        console.print(f"    Failover chain:    {pretty}")
+        if router_cfg.get("tier_map"):
+            console.print(f"    Complexity tiers:  {len(router_cfg['complexity_thresholds']) + 1}-band via tier_map (E011-m001)")
     if model_route:
         console.print("    Model selection:   qwen3-4b (fleet) / qwen3-8b (code) / qwen3-8b-fast (simple)")
 
