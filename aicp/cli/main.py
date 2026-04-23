@@ -21,6 +21,7 @@ from aicp.core.modes import Mode
 from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
+from aicp.backends.k2_6_local import K26LocalBackend
 from aicp.backends.openrouter import OpenRouterBackend
 
 
@@ -38,10 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend", "-b",
-        choices=["local", "claude", "openrouter", "k2_6_openrouter", "auto"],
+        choices=["local", "claude", "openrouter", "k2_6_openrouter", "k2_6_local", "auto"],
         default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
         help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND). "
-             "k2_6_openrouter routes to Kimi K2.6 via OpenRouter (E011-m002).",
+             "k2_6_openrouter routes to Kimi K2.6 via OpenRouter (E011-m002); "
+             "k2_6_local routes to KTransformers-served K2.6 on localhost (E011-m003).",
     )
     parser.add_argument(
         "--project", "-d",
@@ -533,6 +535,22 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
                 timeout=k2_cfg.get("timeout", 300),
                 name="k2_6_openrouter",
             )
+
+    # K2.6 local — KTransformers-served OpenAI-compat endpoint (E011-m003).
+    # Per ~/devops-solutions-research-wiki/wiki/backlog/modules/e011-m003-k2-6-local-backend-adapter.md
+    # Enabled only when config.backends.k2_6_local.enabled is truthy AND the endpoint probe succeeds,
+    # so cold-start orchestration (starting `kt run` separately) doesn't break aicp startup.
+    try:
+        k2l_cfg = get_backend_config(config, "k2_6_local")
+    except ValueError:
+        k2l_cfg = {}
+    if k2l_cfg.get("enabled", False):
+        backends["k2_6_local"] = K26LocalBackend(
+            base_url=k2l_cfg.get("base_url", "http://localhost:8091"),
+            model=k2l_cfg.get("model", "kimi-k2.6-q2"),
+            max_tokens=k2l_cfg.get("max_tokens", 8192),
+            timeout=k2l_cfg.get("timeout", 600),
+        )
 
     return backends
 
