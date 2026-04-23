@@ -2607,6 +2607,11 @@ def _run_kb(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Bridge repo .env → os.environ so OPENROUTER_API_KEY etc. reach Python.
+    # Shell `source .env` doesn't work (bare KEY=VALUE isn't exported).
+    from aicp.config.loader import load_dotenv
+    load_dotenv()
+
     parser = build_parser()
     args = parser.parse_args(argv)
 

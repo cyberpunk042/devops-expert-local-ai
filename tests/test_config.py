@@ -1,9 +1,18 @@
 """Tests for configuration loading and validation."""
 
+import os
+
 import pytest
 from pathlib import Path
 
-from aicp.config.loader import load_config, validate_config, get_backend_config, DEFAULT_CONFIG_PATH, _deep_merge
+from aicp.config.loader import (
+    DEFAULT_CONFIG_PATH,
+    _deep_merge,
+    get_backend_config,
+    load_config,
+    load_dotenv,
+    validate_config,
+)
 
 
 def test_load_default_config():
@@ -242,3 +251,100 @@ def test_get_backend_config_missing_backend():
     config = {"backends": {"local": {"model": "x"}}}
     with pytest.raises(ValueError, match="No config for backend"):
         get_backend_config(config, "nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# .env loader (bridge KEY=VALUE → os.environ)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadDotenv:
+    def test_missing_file_is_silent(self, tmp_path):
+        assert load_dotenv(tmp_path / "nope.env") == 0
+
+    def test_simple_keys(self, tmp_path, monkeypatch):
+        envfile = tmp_path / ".env"
+        envfile.write_text("FOO=bar\nBAZ=qux\n")
+        monkeypatch.delenv("FOO", raising=False)
+        monkeypatch.delenv("BAZ", raising=False)
+
+        n = load_dotenv(envfile)
+        assert n == 2
+        assert os.environ["FOO"] == "bar"
+        assert os.environ["BAZ"] == "qux"
+
+    def test_comments_and_blank_lines_skipped(self, tmp_path, monkeypatch):
+        envfile = tmp_path / ".env"
+        envfile.write_text(
+            "# header comment\n"
+            "\n"
+            "REAL_KEY=value\n"
+            "  # indented comment\n"
+            "\n"
+        )
+        monkeypatch.delenv("REAL_KEY", raising=False)
+        assert load_dotenv(envfile) == 1
+        assert os.environ["REAL_KEY"] == "value"
+
+    def test_surrounding_quotes_stripped(self, tmp_path, monkeypatch):
+        envfile = tmp_path / ".env"
+        envfile.write_text(
+            'DOUBLE="hello world"\n'
+            "SINGLE='one two'\n"
+            "BARE=plain\n"
+        )
+        for k in ("DOUBLE", "SINGLE", "BARE"):
+            monkeypatch.delenv(k, raising=False)
+        load_dotenv(envfile)
+        assert os.environ["DOUBLE"] == "hello world"
+        assert os.environ["SINGLE"] == "one two"
+        assert os.environ["BARE"] == "plain"
+
+    def test_existing_env_wins(self, tmp_path, monkeypatch):
+        """User's exported env must override .env — protects against stale keys."""
+        envfile = tmp_path / ".env"
+        envfile.write_text("APIKEY=from-dotenv\n")
+        monkeypatch.setenv("APIKEY", "from-shell")
+        n = load_dotenv(envfile)
+        assert n == 0                                # no new keys set
+        assert os.environ["APIKEY"] == "from-shell"  # shell value preserved
+
+    def test_export_prefix_tolerated(self, tmp_path, monkeypatch):
+        """Supporting `export KEY=VAL` lets the same file be sourced OR loaded."""
+        envfile = tmp_path / ".env"
+        envfile.write_text("export FOO=ok\n")
+        monkeypatch.delenv("FOO", raising=False)
+        assert load_dotenv(envfile) == 1
+        assert os.environ["FOO"] == "ok"
+
+    def test_junk_keys_skipped(self, tmp_path, monkeypatch):
+        """Malformed lines must not crash or pollute env."""
+        envfile = tmp_path / ".env"
+        envfile.write_text(
+            "=no-key\n"
+            "no-equals\n"
+            "WITH SPACE=nope\n"        # space in key → skip
+            "GOOD_KEY=good\n"
+        )
+        monkeypatch.delenv("GOOD_KEY", raising=False)
+        n = load_dotenv(envfile)
+        assert n == 1
+        assert os.environ["GOOD_KEY"] == "good"
+
+    def test_real_aicp_env_pattern(self, tmp_path, monkeypatch):
+        """Smoke: the actual .env shape from the handoff round-trips cleanly."""
+        envfile = tmp_path / ".env"
+        envfile.write_text(
+            "# ── AICP defaults ───────\n"
+            "AICP_DEFAULT_MODE=think\n"
+            "AICP_DEFAULT_BACKEND=local\n"
+            "\n"
+            "OPENROUTER_API_KEY=sk-or-v1-fakekey12345\n"
+        )
+        for k in ("AICP_DEFAULT_MODE", "AICP_DEFAULT_BACKEND", "OPENROUTER_API_KEY"):
+            monkeypatch.delenv(k, raising=False)
+
+        n = load_dotenv(envfile)
+        assert n == 3
+        assert os.environ["OPENROUTER_API_KEY"] == "sk-or-v1-fakekey12345"
+        assert os.environ["AICP_DEFAULT_MODE"] == "think"

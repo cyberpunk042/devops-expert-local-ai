@@ -19,6 +19,60 @@ import yaml
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "default.yaml"
 USER_CONFIG_PATH = Path(os.environ.get("AICP_HOME", Path.home() / ".aicp")) / "config.yaml"
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DEFAULT_DOTENV_PATH = PROJECT_ROOT / ".env"
+
+
+def load_dotenv(path: Optional[Path] = None) -> int:
+    """Populate os.environ from a KEY=VALUE .env file at the AICP project root.
+
+    Shell `source .env` does NOT export these because the repo's .env file uses
+    bare KEY=VALUE (no `export`). This helper bridges the gap so Python code —
+    which reads env via os.environ — sees the operator's keys (OPENROUTER_API_KEY,
+    HUGGINGFACE_API_KEY, AICP_* overrides, etc.) without requiring shell magic.
+
+    Call once at CLI entry (before backends are built). Existing os.environ values
+    win over .env — the env a user explicitly exports is always authoritative.
+
+    Format (one KEY=VALUE per line):
+      - `#` lines and blank lines are skipped
+      - surrounding single/double quotes on VALUE are stripped
+      - no variable interpolation (not a bash script)
+
+    Returns the count of keys actually set (i.e., those not already in os.environ).
+    Missing / unreadable file → 0, never raises.
+    """
+    target = path or DEFAULT_DOTENV_PATH
+    if not target.exists():
+        return 0
+    try:
+        content = target.read_text()
+    except OSError:
+        return 0
+
+    set_count = 0
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip()
+        if not key or not key.replace("_", "").replace("-", "").isalnum():
+            continue  # skip junk keys
+        # Strip one layer of matching surrounding quotes
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+            val = val[1:-1]
+        # Existing os.environ wins
+        if key in os.environ:
+            continue
+        os.environ[key] = val
+        set_count += 1
+    return set_count
 
 # Required config structure: (dotted_key, expected_type, description)
 _REQUIRED_KEYS = [

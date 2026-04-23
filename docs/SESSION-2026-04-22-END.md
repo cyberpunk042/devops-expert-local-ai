@@ -76,18 +76,18 @@ $ aicp --routing-report 7d
   # "Breaker opens" column = 0 (no trips this run, expected), snapshot hint absent (file present).
 ```
 
-## ⚠️ Real bug discovered (out-of-scope this session — follow-up)
+## Real bug discovered AND fixed (5th commit this session)
 
-**`.env` file uses non-exported assignments**, so `source .env && aicp ...` silently fails to propagate `OPENROUTER_API_KEY` to the Python subprocess. Symptom: `Error: Unknown backend: k2_6_openrouter` even when the key is set.
+**Symptom**: `source .env && aicp --backend k2_6_openrouter "..."` failed with `Error: Unknown backend: k2_6_openrouter` even with the key present in `.env`. Root cause: the repo's `.env` uses bare `KEY=VALUE` (no `export`), so `source` sets shell variables that are not propagated to Python subprocess.
 
-**Workaround** (what actually works today):
-```bash
-set -a && source .env && set +a && aicp --backend k2_6_openrouter "..."
-```
+**Fix** (5th commit — awaiting commit at session end):
+- [aicp/config/loader.py](../aicp/config/loader.py): new `load_dotenv(path)` helper — parses `KEY=VALUE` (and `export KEY=VALUE`) from repo-root `.env`, strips surrounding quotes, skips `#` comments and malformed lines, calls `os.environ.setdefault()` so existing shell env always wins.
+- [aicp/cli/main.py](../aicp/cli/main.py): `main()` now calls `load_dotenv()` at entry, before `build_parser()` or any backend construction.
+- Tests: 8 new in [tests/test_config.py](../tests/test_config.py) (missing file silent, simple keys, comments/blanks, quotes stripped, shell-env-wins, `export` prefix tolerated, junk lines skipped, real AICP .env shape round-trips).
 
-**Proper fix** (~15 lines, no new deps): add a simple `.env` parser to [aicp/config/loader.py](../aicp/config/loader.py) that reads `KEY=VALUE` lines from the project root `.env` and calls `os.environ.setdefault()` on each.
+**Proven live** at session end — shell `OPENROUTER_API_KEY` explicitly unset, `aicp --backend k2_6_openrouter "Say hi in one word."` still succeeded with response "Hi." — the key came exclusively via `.env` → `os.environ`.
 
-**Impact**: every new user following the handoff's `source .env && aicp ...` recipe hits this. Priority: medium — the smoke test won't pass without knowing the workaround.
+The handoff's literal recipe (`source .env && aicp ...`) now works as documented. For users without `.env` sourcing, `aicp` still works because `load_dotenv()` runs unconditionally.
 
 ## Incidental setup fixes (pre-M001 scaffolding this session)
 
@@ -109,12 +109,11 @@ set -a && source .env && set +a && aicp --backend k2_6_openrouter "..."
 ### If E008 still blocked
 Next-priority candidates in rough order:
 
-1. **Fix the .env bug** (above) — small, unblocks every new user
-2. **Promote M004/M005 wiki pages** `00_inbox` → `01_drafts` via `python3 -m tools.evolve --score` — pattern page promotion per AICP convention
-3. **Fix the 13 pre-existing MCP test failures** — most are legacy `hermes` model-name drift or list-vs-dict shape changes. Covered by `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`.
-4. **MCP deprecated tool removal** — 21 tools per the audit. Release-paced; fine to execute now.
-5. **DRY cleanup: `config/default.yaml` vs `config/profiles/default.yaml`** — both now carry router config, but only the profiles one is read via `--profile`. The profile version still has the pre-E011 `[local, fleet, openrouter, claude]` failover chain — worth reconciling.
-6. **Ruff style debt** (~200 Dict/Tuple/Optional across router.py, profiles.py, metrics.py, cli/main.py, circuit_breaker.py) — single modernization pass
+1. **Promote M004/M005 wiki pages** `00_inbox` → `01_drafts` via `python3 -m tools.evolve --score` — pattern page promotion per AICP convention
+2. **Fix the 13 pre-existing MCP test failures** — most are legacy `hermes` model-name drift or list-vs-dict shape changes. Covered by `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`.
+3. **MCP deprecated tool removal** — 21 tools per the audit. Release-paced; fine to execute now.
+4. **DRY cleanup: `config/default.yaml` vs `config/profiles/default.yaml`** — both now carry router config, but only the profiles one is read via `--profile`. The profile version still has the pre-E011 `[local, fleet, openrouter, claude]` failover chain — worth reconciling.
+5. **Ruff style debt** (~200 Dict/Tuple/Optional across router.py, profiles.py, metrics.py, cli/main.py, circuit_breaker.py) — single modernization pass
 
 ### Always-check-first commands
 
@@ -145,7 +144,7 @@ aicp --routing-report 7d                              # new: E011-m005 routing s
 
 | Metric | Session start | Session end | Delta |
 |--------|---------------|-------------|-------|
-| Passed | 1753 | 1774 | +21 |
+| Passed | 1753 | 1782 | +29 |
 | Failed (pre-existing) | 13 | 13 | 0 |
 | Skipped | 9 | 9 | 0 |
 | Wiki-lint passing | 23/23 | 23/23 | 0 |
@@ -155,9 +154,10 @@ aicp --routing-report 7d                              # new: E011-m005 routing s
 
 Tracked:
 - `aicp/core/router.py`, `aicp/core/profiles.py`, `aicp/core/circuit_breaker.py`, `aicp/core/metrics.py`
+- `aicp/config/loader.py` (new `load_dotenv()` helper — 5th commit)
 - `aicp/cli/main.py`
 - `config/default.yaml`, `config/profiles/fast.yaml`, `config/profiles/quality.yaml` (new)
-- `tests/test_router.py`, `tests/test_profiles.py`, `tests/test_circuit_breaker.py`, `tests/test_metrics.py`
+- `tests/test_router.py`, `tests/test_profiles.py`, `tests/test_circuit_breaker.py`, `tests/test_metrics.py`, `tests/test_config.py`
 - `wiki/patterns/00_inbox/aicp-5-tier-fallback-chain.md` (new)
 - `wiki/patterns/00_inbox/aicp-routing-review-ritual.md` (new)
 - `scripts/optimize-models.sh`, `scripts/build-libgosd.sh` (setup unblockers)
