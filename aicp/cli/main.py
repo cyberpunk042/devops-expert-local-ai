@@ -1792,6 +1792,7 @@ def _run_routing_report(window: str, as_json: bool) -> int:
     table.add_column("Cost (USD)", justify="right")
     table.add_column("Avg latency", justify="right")
     table.add_column("Errors", justify="right")
+    table.add_column("Breaker opens", justify="right")
 
     ordered = sorted(by_backend.items(), key=lambda kv: -kv[1]["tasks"])
     for name, b in ordered:
@@ -1804,8 +1805,16 @@ def _run_routing_report(window: str, as_json: bool) -> int:
             f"${b['cost']:.4f}",
             f"{b['avg_duration']:.1f}s",
             f"{b['errors']} ({b['error_rate']:.0f}%)",
+            str(b["breaker_opens"]),
         )
     console.print(table)
+
+    # Breaker opens come from the Prometheus snapshot (cumulative, not windowed).
+    if not data.get("snapshot_present"):
+        console.print(
+            "[dim]Breaker opens: snapshot not found at "
+            "~/.aicp/metrics_snapshot.json — run any `aicp` command first to establish it.[/]"
+        )
 
     _print_next(
         "`aicp --routing-report <W> --json` for automation, "
@@ -3537,12 +3546,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.session and actual_backend != "local":
         print_warning("--session is only supported with --backend local (LocalAI).")
 
-    # Start metrics collector (optional — records to /metrics on :9101)
+    # Start metrics collector (optional — records to /metrics on :9101).
+    # Snapshot path persists breaker trips / cost / tokens across runs so the
+    # routing-report "Breaker opens" column is meaningful (E011-m005).
     _mc = None
     try:
+        import atexit as _atexit
         from aicp.core.prometheus import MetricsCollector, start_metrics_server
-        _mc = MetricsCollector()
+        from aicp.core.metrics import _default_snapshot_path
+        _mc = MetricsCollector(snapshot_path=str(_default_snapshot_path()))
         start_metrics_server(_mc, port=9101)
+        _atexit.register(_mc.save_snapshot)
     except Exception:
         pass
 

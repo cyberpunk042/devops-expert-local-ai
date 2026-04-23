@@ -227,3 +227,47 @@ class TestAggregateWindow:
         monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
         with pytest.raises(ValueError):
             aggregate_window("not-a-window")
+
+    def test_breaker_opens_populated_from_snapshot(self, tmp_path, monkeypatch):
+        """Prometheus snapshot at AICP_METRICS_SNAPSHOT feeds the breaker_opens column."""
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+
+        snapshot_path = tmp_path / "metrics_snapshot.json"
+        monkeypatch.setenv("AICP_METRICS_SNAPSHOT", str(snapshot_path))
+        snapshot_path.write_text(json.dumps({
+            "breaker_trips": {"local": 3, "k2_6_openrouter": 7},
+            "routes": {}, "models": {}, "model_swaps": 0,
+        }))
+
+        for backend in ("local", "k2_6_openrouter", "claude"):
+            save_task("p", "think", backend, "/tmp", "r", 1.0)
+
+        data = aggregate_window("7d")
+        assert data["snapshot_present"] is True
+        assert data["by_backend"]["local"]["breaker_opens"] == 3
+        assert data["by_backend"]["k2_6_openrouter"]["breaker_opens"] == 7
+        # Backend without a trip entry in the snapshot gets 0
+        assert data["by_backend"]["claude"]["breaker_opens"] == 0
+
+    def test_breaker_opens_zero_when_no_snapshot(self, tmp_path, monkeypatch):
+        """Absent snapshot → breaker_opens=0 per backend + snapshot_present=False."""
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        monkeypatch.setenv("AICP_METRICS_SNAPSHOT", str(tmp_path / "nonexistent.json"))
+
+        save_task("p", "think", "local", "/tmp", "r", 1.0)
+
+        data = aggregate_window("7d")
+        assert data["snapshot_present"] is False
+        assert data["by_backend"]["local"]["breaker_opens"] == 0
+
+    def test_breaker_opens_tolerates_corrupt_snapshot(self, tmp_path, monkeypatch):
+        """Malformed JSON / unexpected shape must not crash aggregate_window."""
+        monkeypatch.setenv("AICP_HISTORY_DIR", str(tmp_path))
+        snapshot_path = tmp_path / "metrics_snapshot.json"
+        monkeypatch.setenv("AICP_METRICS_SNAPSHOT", str(snapshot_path))
+        snapshot_path.write_text("{not valid json")
+
+        save_task("p", "think", "local", "/tmp", "r", 1.0)
+
+        data = aggregate_window("7d")
+        assert data["by_backend"]["local"]["breaker_opens"] == 0

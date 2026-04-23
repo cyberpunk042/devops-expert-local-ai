@@ -2,10 +2,43 @@
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List
 
 from aicp.core.history import list_tasks
+
+
+def _default_snapshot_path() -> Path:
+    """Where MetricsCollector persists / restores counters (incl. breaker trips).
+
+    Honors AICP_METRICS_SNAPSHOT env var for custom paths.
+    """
+    override = os.environ.get("AICP_METRICS_SNAPSHOT")
+    if override:
+        return Path(override)
+    return Path.home() / ".aicp" / "metrics_snapshot.json"
+
+
+def _read_breaker_trips() -> dict[str, int]:
+    """Read per-backend breaker trip counts from the persisted Prometheus snapshot.
+
+    Returns an empty dict if no snapshot exists yet (e.g. fresh install, or
+    AICP_METRICS_SNAPSHOT not wired in cli/main.py). Never raises — the column
+    is informational, not critical.
+    """
+    path = _default_snapshot_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        trips = data.get("breaker_trips", {})
+        return {k: int(v) for k, v in trips.items() if isinstance(v, (int, float))}
+    except (json.JSONDecodeError, OSError, ValueError):
+        return {}
 
 
 def aggregate(count: int = 1000) -> Dict[str, Any]:
@@ -256,11 +289,16 @@ def aggregate_window(window: str = "7d", max_records: int = 10000) -> dict[str, 
         b["completion_tokens"] += ct
         b["cost"] += cost
 
-    for b in by_backend.values():
+    # Enrich with cumulative breaker-trip counts from persisted snapshot.
+    # Snapshot is cumulative-since-install, not windowed — flagged in the report.
+    trips = _read_breaker_trips()
+
+    for name, b in by_backend.items():
         b["avg_duration"] = round(b["total_duration"] / b["tasks"], 2) if b["tasks"] else 0
         b["error_rate"] = round(b["errors"] / b["tasks"] * 100, 1) if b["tasks"] else 0
         b["share_pct"] = round(b["tasks"] / total * 100, 1) if total else 0
         b["tokens"] = b["prompt_tokens"] + b["completion_tokens"]
+        b["breaker_opens"] = int(trips.get(name, 0))
 
     return {
         "window": window,
@@ -275,4 +313,5 @@ def aggregate_window(window: str = "7d", max_records: int = 10000) -> dict[str, 
         "total_cost_usd": round(total_cost, 4),
         "by_backend": by_backend,
         "by_route": by_route,
+        "snapshot_present": _default_snapshot_path().exists(),
     }
