@@ -46,15 +46,16 @@ backends:
     timeout: 300              # generous for multi-tool-call sequences
     enabled: true
   k2_6_local:
-    # Kimi K2.6 Q2 GGUF served by KTransformers — local offline frontier tier (E011-m003).
-    # Adapter lands in M003 once E008 (KTransformers install + 340GB Q2 weights + first-light benchmark)
-    # completes. OpenAI-compatible HTTP shape at base_url; reuses OpenRouterBackend class shape.
-    # Stays enabled: false until E008 delivers — flip operator-side once weights load and /health responds.
+    # Kimi K2.6 Q2 GGUF served by llama.cpp — sovereignty fallback ONLY, not a routing tier.
+    # Empirically measured 2026-04-24 on Tier 0 (X299 + DDR4-2666 + WSL + PCIe 3.0):
+    # 0.045 tok/s thinking-on, 0.10 tok/s thinking-off. 60-90 min cold reload after WSL restart.
+    # Out of default failover_chain and tier_map — opt-in via `--backend k2_6_local` for
+    # sovereignty tests / offline mode only. See docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md.
     base_url: http://localhost:8091
     model: kimi-k2.6-q2
     max_tokens: 8192
-    timeout: 1800             # llama.cpp mmap cold start on 318GB Q2 can take 10-15 min
-    enabled: true
+    timeout: 1800             # cold mmap can take 60+ min on this hardware
+    enabled: false
   claude:
     model: opus
     max_turns: 10
@@ -85,16 +86,18 @@ circuit_breaker:
 router:
   # E011-m001 — 5-tier routing via tier_map (opt-in; absence preserves legacy 3-tier logic).
   # Score → band index = count of thresholds exceeded; band index → backend via tier_map.
-  #   0.00–0.25 local          (Qwen3-8B etc. on LocalAI)
-  #   0.25–0.45 k2_6_local     (KTransformers frontier when enabled, else skipped)
-  #   0.45–0.70 k2_6_openrouter (default agentic / coding — the cost-savings win)
-  #   0.70–0.90 openrouter     (Opus 4.7 / GPT-5.4 online fallback)
-  #   0.90–1.00 claude         (Anthropic direct — edge-case only)
+  # k2_6_local is sovereignty-fallback only (too slow at 0.045-0.10 tok/s on Tier 0 hardware) —
+  # NOT in default chain. Opt in explicitly via `--backend k2_6_local`.
+  #   0.00–0.25 local           (Qwen3-8B etc. on LocalAI)
+  #   0.25–0.45 k2_6_openrouter (cheap agentic — the cost-savings win)
+  #   0.45–0.70 k2_6_openrouter (still cheap agentic)
+  #   0.70–0.90 openrouter      (Opus 4.7 / GPT-5.4 online fallback)
+  #   0.90–1.00 claude          (Anthropic direct — last resort)
   complexity_thresholds: [0.25, 0.45, 0.70, 0.90]
-  failover_chain: [local, k2_6_local, k2_6_openrouter, openrouter, claude]
+  failover_chain: [local, k2_6_openrouter, openrouter, claude]
   tier_map:
     0: local
-    1: k2_6_local
+    1: k2_6_openrouter
     2: k2_6_openrouter
     3: openrouter
     4: claude
