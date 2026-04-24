@@ -54,7 +54,7 @@ backends:
     model: kimi-k2.6-q2
     max_tokens: 8192
     timeout: 600              # local K2.6 Q2 on swap is slow; give it room
-    enabled: false
+    enabled: true
   claude:
     model: opus
     max_turns: 10

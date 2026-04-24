@@ -18,6 +18,11 @@
 # 3. --cpu-threads 4 — the WSL VM exposes 4 physical cores (i7-7800X host has 6
 #    but Hyper-V restricts). Matching this avoids CPU affinity mask errors.
 #
+# 4. PATH="${VENV}/bin:${PATH}" — sglang JIT-compiles CUDA kernels at startup
+#    via `ninja`. Without venv/bin prepended, execvp hits a `ninja/` *directory*
+#    in one of the Windows-mapped /mnt/c/... PATH entries (platformio / esp32
+#    tools) and fails with EACCES before reaching the real binary.
+#
 # Model + kt-method expectations:
 # - Model dir should be the Moonshot K2.6 repo (safetensors + config). Unsloth's
 #   GGUF-only dump doesn't work because HF transformers doesn't support GGUF for
@@ -34,7 +39,7 @@
 
 set -euo pipefail
 
-MODEL_DIR="${1:-/home/jfortin/kimi-k2-6-moonshot}"
+MODEL_DIR="${1:-/mnt/models/kimi-k2-6-moonshot}"
 PORT="${2:-8091}"
 
 VENV="/mnt/dev-envs/ktransformers-env"
@@ -72,8 +77,9 @@ echo
 exec env \
     LD_PRELOAD="${SHIM}" \
     CUDA_VISIBLE_DEVICES=0 \
+    PATH="${VENV}/bin:${PATH}" \
     "${VENV}/bin/kt" run \
-    --model "${MODEL_DIR}" \
+    "${MODEL_DIR}" \
     --port "${PORT}" \
     --tp 1 \
     --cpu-threads 4 \
