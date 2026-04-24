@@ -53,7 +53,7 @@ backends:
     base_url: http://localhost:8091
     model: kimi-k2.6-q2
     max_tokens: 8192
-    timeout: 600              # local K2.6 Q2 on swap is slow; give it room
+    timeout: 1800             # llama.cpp mmap cold start on 318GB Q2 can take 10-15 min
     enabled: true
   claude:
     model: opus
@@ -71,7 +71,7 @@ circuit_breaker:
       failure_threshold: 2        # local recovers fast — fail fast, retry fast
       recovery_timeout: 10
     k2_6_local:
-      failure_threshold: 1        # TCP-level unavailability is binary; no point retrying
+      failure_threshold: 3        # llama.cpp cold-start can appear to fail; retry before opening
       recovery_timeout: 15
     k2_6_openrouter:
       failure_threshold: 3        # transient network / OpenRouter hiccups are common
