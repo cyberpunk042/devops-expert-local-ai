@@ -1,23 +1,30 @@
-"""K2.6 local backend — Kimi K2.6 served by KTransformers on an OpenAI-compatible endpoint.
+"""K2.6 local backend — Kimi K2.6 served by llama.cpp on an OpenAI-compatible endpoint.
 
-The server is launched out-of-band (see E008-m004 / `kt run` in the kvcache-ai
-ktransformers install) and exposes an OpenAI-compatible HTTP API on localhost.
-AICP's side is just the client adapter: speak the same request shape as the
-OpenAI / OpenRouter backends, but point at the local endpoint and treat cost
-as zero.
+The server is launched out-of-band (see `scripts/llama-serve.sh` — llama.cpp's
+`llama-server` against the Unsloth UD-Q2_K_XL GGUF) and exposes an
+OpenAI-compatible HTTP API on localhost. AICP's side is just the client
+adapter: speak the same request shape as the OpenRouter / Ollama Cloud
+backends, but point at the local endpoint and treat cost as zero.
+
+Sovereignty-fallback ONLY — empirically 0.045-0.10 tok/s on Tier 0 hardware
+(X299 + DDR4-2666 + WSL + PCIe 3.0). Cold mmap reload is 60-90 min after WSL
+restart. NOT in default routing; opt-in via `--backend k2_6_local`. See
+docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md for measured numbers
+and docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md for why we're on
+llama.cpp instead of the originally-specified KTransformers/sglang+kt-kernel.
 
 Separate class (vs reusing OpenRouterBackend) because:
 - No API key — local endpoint is open
-- Much longer default timeout — first load + Q2 offload to disk is slow
+- Much longer default timeout — Q2 mmap from disk is slow on cold cache
 - No rate-limit / auth / credit error modes
 - Zero cost — local always
 
 Config contract (matches `config/default.yaml` `backends.k2_6_local`):
-- `base_url` — defaults http://localhost:8091, points at sglang-kt server
-- `model` — defaults `kimi-k2.6-q2`, must match `--served-model-name`
+- `base_url` — defaults http://localhost:8091, points at llama-server
+- `model` — defaults `kimi-k2.6-q2`, must match `--alias` passed to llama-server
 - `max_tokens` — defaults 8192
-- `timeout` — defaults 600 (10 min; generous for cold paths)
-- `enabled` — gates registration in `_build_backends`
+- `timeout` — defaults 600 (10 min; raise to 1800 in operator config for cold paths)
+- `enabled` — gates registration in `_build_backends` (default false)
 
 E011-m003.
 """
@@ -41,7 +48,7 @@ DEFAULT_MODEL = "kimi-k2.6-q2"
 
 
 class K26LocalBackend(Backend):
-    """Backend that talks to KTransformers-served K2.6 on a local OpenAI-compat endpoint."""
+    """Backend that talks to llama.cpp-served K2.6 on a local OpenAI-compat endpoint."""
 
     def __init__(
         self,
@@ -78,7 +85,7 @@ class K26LocalBackend(Backend):
                 return f"OK ({self.base_url}, models: {', '.join(ids) or 'none'})"
             return f"ERROR: status {resp.status_code}"
         except (httpx.ConnectError, httpx.TimeoutException) as e:
-            return f"UNAVAILABLE: {type(e).__name__} — is kt server running on {self.base_url}?"
+            return f"UNAVAILABLE: {type(e).__name__} — is llama-server running on {self.base_url}?"
 
     def execute(
         self,
@@ -114,7 +121,7 @@ class K26LocalBackend(Backend):
         except httpx.ConnectError:
             raise RuntimeError(
                 f"Cannot reach K2.6 local endpoint at {self.base_url}. "
-                "Is `kt run` running?"
+                "Is `scripts/llama-serve.sh` running?"
             )
         except httpx.TimeoutException:
             raise RuntimeError(

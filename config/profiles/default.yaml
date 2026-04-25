@@ -29,20 +29,23 @@ backends:
 
 # --- Router settings (E011-m001: 5-tier routing via tier_map) ---
 # complexity_thresholds: N cutoffs → N+1 bands (mapped via tier_map below).
-#   0.00–0.25 local          (Qwen3-8B etc. on LocalAI)
-#   0.25–0.45 k2_6_local     (KTransformers frontier, when E008 delivers)
-#   0.45–0.70 k2_6_openrouter (Kimi K2.6 via OpenRouter — default agentic / coding)
-#   0.70–0.90 openrouter     (Opus / GPT fallback premium)
-#   0.90–1.00 claude         (Anthropic-direct edge-case)
+#   0.00–0.25 local           (Qwen3-8B etc. on LocalAI)
+#   0.25–0.45 k2_6_openrouter (Kimi K2.6 via OpenRouter, audit-safe pinned)
+#   0.45–0.70 k2_6_openrouter (Kimi K2.6 cont. — the cost-savings sweet spot)
+#   0.70–0.90 openrouter      (Opus 4.7 / GPT-5.4 / Gemini fallback)
+#   0.90–1.00 claude          (Anthropic-direct edge-case, hard-gated)
+# k2_6_local is sovereignty-fallback only (0.045-0.10 tok/s on Tier 0) — opt in
+# via `--backend k2_6_local`, NOT auto-routed. See `personal` profile to swap
+# band 1 to ollama_cloud for non-monetizable workloads.
 # failover_chain: order tried when a tier is unavailable. `fleet` is a special
 # cluster-peer step handled by the controller (not a regular backend tier).
 # force_cloud_modes: modes that always route to a non-local tier ([] to disable).
 router:
   complexity_thresholds: [0.25, 0.45, 0.70, 0.90]
-  failover_chain: [local, fleet, k2_6_local, k2_6_openrouter, openrouter, claude]
+  failover_chain: [local, fleet, k2_6_openrouter, openrouter, claude]
   tier_map:
     0: local
-    1: k2_6_local
+    1: k2_6_openrouter
     2: k2_6_openrouter
     3: openrouter
     4: claude
@@ -102,7 +105,7 @@ circuit_breaker:
       failure_threshold: 2        # local recovers fast — fail fast, retry fast
       recovery_timeout: 10
     k2_6_local:
-      failure_threshold: 1        # TCP-binary unavailability
+      failure_threshold: 3        # cold mmap can take minutes — tolerate before opening
       recovery_timeout: 15
     k2_6_openrouter:
       failure_threshold: 3        # network / OpenRouter transients common

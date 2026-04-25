@@ -86,7 +86,7 @@ def test_status_detail_flags_server_down():
     with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
         status = b.status_detail()
     assert "UNAVAILABLE" in status
-    assert "kt server" in status.lower() or "8091" in status
+    assert "llama-server" in status.lower() or "8091" in status
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ def test_execute_raises_on_connection_error(tmp_path):
             b.execute("p", Mode.THINK, tmp_path)
         except RuntimeError as exc:
             assert "local endpoint" in str(exc).lower()
-            assert "kt run" in str(exc).lower()
+            assert "llama-serve" in str(exc).lower()
             return
     raise AssertionError("expected RuntimeError")
 
