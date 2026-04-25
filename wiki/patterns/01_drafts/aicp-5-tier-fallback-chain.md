@@ -16,7 +16,7 @@ instances:
   - page: "AICP controller failover (aicp/core/controller.py lines 170-171, 446-483)"
     context: "Build-time: `build_breakers(list(backends.keys()), config)` creates one breaker per registered backend with per-backend thresholds from `config.circuit_breaker.per_backend`. Run-time: `breaker.call(fn)` wraps each backend.execute; CircuitBreakerOpen short-circuits the outer try/except into the failover loop which walks `self.failover_chain` in order."
   - page: "AICP default.yaml (config/default.yaml `circuit_breaker:` + `router.failover_chain:`)"
-    context: "Per-tier thresholds encode tier-specific failure semantics: local=2/10s (fast-recover), k2_6_local=1/15s (TCP-binary), k2_6_openrouter=3/30s (network hiccups), openrouter=3/30s, claude=5/120s (last-resort)."
+    context: "Per-tier thresholds encode tier-specific failure semantics: local=2/10s (fast-recover), k2_6_openrouter=3/30s (network hiccups), openrouter=3/30s, claude=5/120s (last-resort). k2_6_local out of default chain since 2026-04-25 (sovereignty-only opt-in via --backend, breaker entry retained at 3/15s for opt-in flow)."
 created: 2026-04-22
 updated: 2026-04-22
 sources:
@@ -39,7 +39,7 @@ tags: [pattern, aicp, fallback, failover, reliability, circuit-breaker, 5-tier, 
 
 ## Summary
 
-A tier-specific specialization of the growing-tier [per-backend-circuit-breaker-with-failover-chain](../02_reviewed/per-backend-circuit-breaker-with-failover-chain.md) pattern for E011's 5-tier routing design (local → k2_6_local → k2_6_openrouter → openrouter → claude). Documents per-tier breaker thresholds, trigger conditions, HALF_OPEN recovery semantics, and an operator playbook keyed to each tier. The parent pattern explains the *mechanism*; this page explains the *tier-specific* failure semantics: why `local` opens at 2/10s (fast recover), `k2_6_local` at 1/15s (TCP-binary), `k2_6_openrouter` at 3/30s (network transients), `claude` at 5/120s (reluctant last-resort).
+A tier-specific specialization of the growing-tier [per-backend-circuit-breaker-with-failover-chain](../02_reviewed/per-backend-circuit-breaker-with-failover-chain.md) pattern for E011's 5-band tier_map routing (5 score bands → 4 distinct backends in the default failover_chain: local → k2_6_openrouter → openrouter → claude). Documents per-tier breaker thresholds, trigger conditions, HALF_OPEN recovery semantics, and an operator playbook keyed to each tier. The parent pattern explains the *mechanism*; this page explains the *tier-specific* failure semantics: why `local` opens at 2/10s (fast recover), `k2_6_openrouter` at 3/30s (network transients), `claude` at 5/120s (reluctant last-resort). **As of 2026-04-25**, `k2_6_local` is sovereignty-only (opt-in via `--backend k2_6_local`, NOT in default chain — empirical 0.045-0.10 tok/s on Tier 0 made it unfit for auto-routing).
 
 ## Why a specialization
 
@@ -48,33 +48,34 @@ The growing-tier pattern [per-backend-circuit-breaker-with-failover-chain](../02
 ## The chain (in order)
 
 ```
-┌──────────────┐   picked      ┌─────────────────┐   picked      ┌─────────────────┐
-│   local      │ ───success──▶ │  k2_6_local     │ ───success──▶ │ k2_6_openrouter │
-│ Qwen3-8B etc │ ──failure──┐  │ KTransformers   │ ──failure──┐  │  Moonshot Kimi  │
-└──────────────┘            │  │ (disabled M003) │            │  │  via OpenRouter │
-                            ▼  └─────────────────┘            ▼  └─────────────────┘
-                     breaker OPEN                       breaker OPEN
-                      skip to next                       skip to next
-                                                                           │
-                                                                           ▼
-                       ┌────────────┐   picked      ┌──────────────────────────┐
-                       │   claude   │ ◀──failure─── │ openrouter (Opus/GPT-5)  │
-                       │ Anthropic  │               │    generic paid tier     │
-                       │  direct    │               └──────────────────────────┘
-                       └────────────┘
-                        (edge-case
-                       last resort)
+┌──────────────┐   picked      ┌──────────────────────────┐   picked      ┌──────────────────────────┐
+│   local      │ ───success──▶ │ k2_6_openrouter          │ ───success──▶ │ openrouter (Opus/GPT-5)  │
+│ Qwen3-8B etc │ ──failure──┐  │ Moonshot Kimi K2.6       │ ──failure──┐  │   generic paid tier      │
+└──────────────┘            │  │ via OpenRouter (pinned)  │            │  └──────────────────────────┘
+                            ▼  └──────────────────────────┘            ▼                  │
+                     breaker OPEN                              breaker OPEN               │
+                      skip to next                             skip to next               │
+                                                                                          ▼
+                                                                            ┌───────────────────────┐
+                                                                            │       claude          │
+                                                                            │  Anthropic direct     │
+                                                                            │  (last resort, gated) │
+                                                                            └───────────────────────┘
 ```
 
+**Sovereignty fallback (NOT auto-routed):** `k2_6_local` (llama.cpp serving Unsloth Q2 GGUF on localhost:8091) — opt in explicitly via `--backend k2_6_local`. See [docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md](../../docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md) for empirical numbers (0.045-0.10 tok/s on Tier 0) explaining why it's not in the chain.
+
+**Optional `personal` profile** swaps band 1 (medium-complexity) to `ollama_cloud` (Ollama Cloud Pro subscription, shared inference pool — never for client/audit-required work). See [config/profiles/personal.yaml](../../config/profiles/personal.yaml).
+
 Failover order from [aicp/core/router.py](../../aicp/core/router.py) + [config/default.yaml](../../config/default.yaml):
-`[local, k2_6_local, k2_6_openrouter, openrouter, claude]`
+`[local, k2_6_openrouter, openrouter, claude]`
 
 ## Per-tier thresholds (rationale)
 
 | Tier | threshold | recovery (s) | Why |
 |------|-----------|--------------|-----|
 | local | 2 | 10 | LocalAI recovers fast (container restart ~s); fail-fast + retry-fast maximizes local share |
-| k2_6_local | 1 | 15 | KTransformers unavailability is binary (process up/down, TCP refused); one fail is signal enough |
+| k2_6_local | 3 | 15 | Sovereignty opt-in path. llama.cpp cold mmap can take minutes — tolerate before opening. Not in default chain since 2026-04-25; entry retained for `--backend k2_6_local` flow |
 | k2_6_openrouter | 3 | 30 | Network / OpenRouter transients are common and resolve quickly — tolerate more before giving up |
 | openrouter | 3 | 30 | Same semantics as k2_6_openrouter — OpenRouter-side stability is shared |
 | claude | 5 | 120 | Last-resort tier; opening it means the whole chain is broken. Open reluctantly, recover slowly to avoid thundering the Anthropic API |
@@ -84,7 +85,7 @@ Failover order from [aicp/core/router.py](../../aicp/core/router.py) + [config/d
 A tier is skipped when ANY of:
 1. **Breaker OPEN** — consecutive failures ≥ threshold in recent window
 2. **`is_available() == False`** — initial probe at build-time or runtime health check (local TCP probe, HTTP HEAD)
-3. **Not in `backends` dict** — tier not registered (e.g., k2_6_local until E011-m003 ships; `k2_6_openrouter` skipped when `OPENROUTER_API_KEY` absent)
+3. **Not in `backends` dict** — tier not registered (e.g., `k2_6_local` when `enabled: false` (default since 2026-04-25); `k2_6_openrouter` skipped when `OPENROUTER_API_KEY` absent; `ollama_cloud` skipped when `OLLAMA_API_KEY` absent or `enabled: false`)
 4. **Same name as originating backend** — `failover_chain` loop at [aicp/core/controller.py:457](../../aicp/core/controller.py#L457) skips the one that just failed
 
 ## Recovery semantics (HALF_OPEN probe)
@@ -104,8 +105,11 @@ Implication: if a backend is genuinely flapping (succeeds intermittently), it wi
 - If network: verify egress to `openrouter.ai`
 - Possible response: temporarily raise `circuit_breaker.per_backend.k2_6_openrouter.failure_threshold` to smooth over transients
 
-**k2_6_local breaker opens on startup (before M003 lands)**
-- Expected — `backends.k2_6_local.enabled: false` means the backend isn't in the backends dict, so the tier is skipped, not OPEN. No action.
+**k2_6_local breaker opens during a sovereignty-mode session**
+- `--backend k2_6_local` requires `scripts/llama-serve.sh` running on `localhost:8091` (60–90 min cold reload on fresh WSL boot)
+- 3 consecutive timeouts within `timeout=1800s` is signal that the server isn't actually serving — check `pgrep -x llama-server` and `curl -s localhost:8091/v1/models`
+- During normal default-routed operation this breaker should never open: `enabled: false` keeps `k2_6_local` out of the registered backends entirely
+- The `--profile personal` chain also doesn't include it; it's strictly opt-in via the `--backend` flag
 
 **claude breaker opens (threshold=5 means 5 failures in a row)**
 - This is a red alert — the entire chain before it has failed AND Anthropic itself is unreachable

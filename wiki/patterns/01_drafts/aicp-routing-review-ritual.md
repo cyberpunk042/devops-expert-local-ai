@@ -101,7 +101,8 @@ curl -s http://localhost:9101/metrics | grep '^aicp_circuit_breaker_trips_total'
 | `k2_6_openrouter` breaker opens | > 10 / week | Network stability; check OpenRouter status page |
 | `local` breaker opens | > 10 / week | LocalAI container health, GPU memory pressure |
 | Weekly cost | > 2× median of last 4 weeks | Investigate which backend + which prompts drove it |
-| `avg_latency(k2_6_local)` | > 60s (when enabled) | KTransformers tuning — see E008-m003 |
+| `avg_latency(k2_6_local)` | > 1800s (sovereignty opt-in only) | llama.cpp cold mmap tuning — empirical 0.045-0.10 tok/s on Tier 0 is a hardware ceiling, not a tuning target. See `docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md` |
+| `ollama_cloud` rate-limit (429) | > 3 / day under `--profile personal` | Ollama Cloud Pro caps (5hr/7d) hit — bump to Max ($100 USD/mo) or fall back to k2_6_openrouter |
 
 ## What to tune
 

@@ -538,10 +538,11 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
                 name="k2_6_openrouter",
             )
 
-    # K2.6 local — KTransformers-served OpenAI-compat endpoint (E011-m003).
+    # K2.6 local — llama.cpp-served OpenAI-compat endpoint (E011-m003).
     # Per ~/devops-solutions-research-wiki/wiki/backlog/modules/e011-m003-k2-6-local-backend-adapter.md
-    # Enabled only when config.backends.k2_6_local.enabled is truthy AND the endpoint probe succeeds,
-    # so cold-start orchestration (starting `kt run` separately) doesn't break aicp startup.
+    # Enabled only when config.backends.k2_6_local.enabled is truthy (default false — sovereignty
+    # fallback only), so cold-start orchestration (starting `scripts/llama-serve.sh` separately)
+    # doesn't break aicp startup.
     try:
         k2l_cfg = get_backend_config(config, "k2_6_local")
     except ValueError:

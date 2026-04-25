@@ -26,7 +26,7 @@ E011 modules (detail in brain):
 |--------|----------|
 | E011-m001 | AICP config: 7-tier stack with K2.6-cheap-online primary agentic |
 | E011-m002 | K2.6 OpenRouter backend adapter (`aicp/backends/`) |
-| E011-m003 | K2.6 local backend adapter (KTransformers) |
+| E011-m003 | K2.6 local backend adapter (llama.cpp + Unsloth Q2 GGUF, sovereignty-fallback) |
 | E011-m004 | Per-backend circuit breakers + fallback chain doc |
 | E011-m005 | Routing-split metric + weekly review ritual |
 
@@ -35,7 +35,7 @@ Related brain epics (NOT AICP-owned but AICP depends on):
 | Epic | Owner | Why AICP cares |
 |------|-------|----------------|
 | E007 — OpenRouter deadline de-risk | brain/operator | E011-m002 requires OpenRouter K2.6 route working |
-| E008 — Local K2.6 offline frontier tier | brain/operator | E011-m003 requires KTransformers + Q2 GGUF + benchmark |
+| E008 — Local K2.6 offline frontier tier | brain/operator | E011-m003 delivered via llama.cpp + Unsloth Q2 GGUF (KTransformers/sglang+kt-kernel path rejected on consumer hardware — see `docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md`) |
 | E010 — Storage and hardware enablement | operator | 64GB RAM + /dev/sdd mount required for E011-m003 |
 
 ## Planned

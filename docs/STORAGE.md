@@ -68,12 +68,10 @@ autoMemoryReclaim=gradual
 
 | Data | Tier | Path |
 |---|---|---|
-| K2.6 Q2 GGUF weights (340GB) when re-downloaded | T0 | `/mnt/models/kimi-k2-6-q2/` |
+| K2.6 Q2 GGUF weights (318GB) | T0 | `/mnt/models/kimi-k2-6-q2/UD-Q2_K_XL/` (Unsloth UD-Q2_K_XL, 8 shards) |
 | LocalAI model weights (LLM GGUFs, SD, clip, whisper, TTS voices) | T0 | `/mnt/models/localai/models/` (symlinked from `<repo>/models`) |
 | LocalAI backend build context (CUDA llama-cpp, whisper, piper, SD) | T0 | `/mnt/models/localai/backends/` (symlinked from `<repo>/backends`) |
-| KTransformers venv | T1-on-NAS-VHDX | `/mnt/dev-envs/ktransformers-env/` (dedicated VHDX `H:\vdisks\dev-envs.vhdx`, native ext4) |
-| KTransformers source | T1-on-NAS-VHDX | `/mnt/dev-envs/ktransformers-src/` |
-| KTransformers weights/caches working set | T0 | `/mnt/models/kt-cache/` |
+| llama.cpp build (CUDA, b8920+) | T1-on-NAS-VHDX | `/mnt/dev-envs/llama.cpp/build/bin/` (dedicated VHDX `H:\vdisks\dev-envs.vhdx`, native ext4) |
 | AirLLM offload tier | T0 | `/mnt/models/airllm-cache/` |
 | LoRA / fine-tune adapters (hot-swap) | T0 | `/mnt/models/adapters/` |
 | Inventory manifest (E010-M004) | T0 | `/mnt/models/.inventory.json` |
@@ -179,7 +177,7 @@ When the new platform lands, T0 migrates from single-NVMe-VHDX to a larger, fast
    - Size generously (1.5–2TB dynamic given the larger model ambitions).
 2. **Benchmark with `fio`** before any migration — new target must clear ~5 GB/s sustained to justify the move.
 3. **Attach the new VHDX** per the Step 1 procedure above; it gets a new `/dev/sdX` letter.
-4. **Stop consumers** (`kt-serve`, AICP, any process with an open mmap on `/mnt/models`).
+4. **Stop consumers** (`llama-server`, AICP, any process with an open mmap on `/mnt/models`).
 5. **Atomic data move**: `rsync -aHAX --info=progress2 /mnt/models/ /mnt/models-new/` followed by a sanity diff (`diff -rq /mnt/models /mnt/models-new`).
 6. **Flip `/etc/fstab`**: replace the old UUID with the new one, same mount point.
 7. **Detach and retire** the old VHDX only after the new mount is proven in production for at least one work cycle. Keep the old VHDX file offline as rollback for 1–2 weeks.
