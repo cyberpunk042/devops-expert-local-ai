@@ -1,0 +1,33 @@
+# personal profile — research / dev / personal workloads.
+#
+# PRIVACY BOUNDARY: this profile routes band 1 (medium-complexity) to Ollama
+# Cloud, which is a SHARED INFERENCE POOL. Never use this profile for
+# client-monetizable, audit-required, or NDA-covered work — switch to the
+# `default` profile (band 1 → k2_6_openrouter, OpenRouter with pinned provider)
+# for those.
+#
+# Cost shape:
+#   Ollama Cloud Pro $20/mo USD (~$27 CAD): subscription-flat agentic tier
+#     with elastic 5hr/7d caps. Effective ~30M tokens/mo before throttling.
+#   OpenRouter K2.6 (band 2): pay-per-token fallback at $0.745/$4.655 per M.
+#   Claude (band 4): hard-gated last resort.
+
+name: personal
+description: "Personal / research / AICP-dev — Ollama Cloud band 1, OpenRouter pinned band 2"
+extends: default
+
+backends:
+  ollama_cloud:
+    enabled: true
+    model: kimi-k2.6
+    max_tokens: 8192
+
+router:
+  complexity_thresholds: [0.25, 0.45, 0.70, 0.90]
+  failover_chain: [local, ollama_cloud, k2_6_openrouter, openrouter, claude]
+  tier_map:
+    0: local
+    1: ollama_cloud
+    2: k2_6_openrouter
+    3: openrouter
+    4: claude

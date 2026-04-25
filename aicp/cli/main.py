@@ -22,6 +22,7 @@ from aicp.core.controller import Controller, Task
 from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
 from aicp.backends.k2_6_local import K26LocalBackend
+from aicp.backends.ollama_cloud import OllamaCloudBackend
 from aicp.backends.openrouter import OpenRouterBackend
 
 
@@ -39,11 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend", "-b",
-        choices=["local", "claude", "openrouter", "k2_6_openrouter", "k2_6_local", "auto"],
+        choices=["local", "claude", "openrouter", "k2_6_openrouter", "k2_6_local", "ollama_cloud", "auto"],
         default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
         help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND). "
              "k2_6_openrouter routes to Kimi K2.6 via OpenRouter (E011-m002); "
-             "k2_6_local routes to KTransformers-served K2.6 on localhost (E011-m003).",
+             "k2_6_local routes to llama.cpp-served K2.6 on localhost (E011-m003); "
+             "ollama_cloud routes to Ollama Cloud subscription-flat agentic tier.",
     )
     parser.add_argument(
         "--project", "-d",
@@ -550,6 +552,22 @@ def _build_backends(config: Dict) -> Dict[str, Backend]:
             model=k2l_cfg.get("model", "kimi-k2.6-q2"),
             max_tokens=k2l_cfg.get("max_tokens", 8192),
             timeout=k2l_cfg.get("timeout", 600),
+        )
+
+    # Ollama Cloud — subscription-flat agentic tier (Pro ~$20/mo USD, Max ~$100/mo USD).
+    # NEVER for client-monetizable work (shared pool); use OpenRouter pinned or local K2.6 for that.
+    try:
+        oc_cfg = get_backend_config(config, "ollama_cloud")
+    except ValueError:
+        oc_cfg = {}
+    oc_key = os.environ.get("OLLAMA_API_KEY", oc_cfg.get("api_key", ""))
+    if oc_cfg.get("enabled", False) and oc_key:
+        backends["ollama_cloud"] = OllamaCloudBackend(
+            api_key=oc_key,
+            model=oc_cfg.get("model", "kimi-k2.6"),
+            max_tokens=oc_cfg.get("max_tokens", 8192),
+            base_url=oc_cfg.get("base_url", "https://ollama.com/v1"),
+            timeout=oc_cfg.get("timeout", 300),
         )
 
     return backends

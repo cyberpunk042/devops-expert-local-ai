@@ -56,6 +56,18 @@ backends:
     max_tokens: 8192
     timeout: 1800             # cold mmap can take 60+ min on this hardware
     enabled: false
+  ollama_cloud:
+    # Ollama Cloud — subscription-flat agentic tier. Pro $20/mo USD (~30M tokens/mo effective,
+    # 5hr session / 7d weekly caps), Max $100/mo USD (5× Pro). Bearer auth via OLLAMA_API_KEY.
+    # PRIVACY: shared inference pool — NEVER route client-monetizable or audit-sensitive work
+    # here. Use k2_6_openrouter (pinned provider) or k2_6_local (sovereignty) for those.
+    # Catalog (verified 2026-04-24): kimi-k2.6, deepseek-v4-flash, glm-4.7-flash, glm-5.1,
+    # qwen3-coder-next, qwen3.6, nemotron-3-super, gemma4, devstral-small-2, ...
+    base_url: https://ollama.com/v1
+    model: kimi-k2.6
+    max_tokens: 8192
+    timeout: 300
+    enabled: true
   claude:
     model: opus
     max_turns: 10
