@@ -248,4 +248,56 @@ Local K2.6 Q2 runs on operator's hardware but at 0.045-0.10 tok/s — sovereignt
 
 ---
 
+## 11. UPDATE 2026-04-25 — Phase 4 + 5 complete (post-compaction continuation)
+
+This addendum records what landed AFTER the original compaction, on the same mission arc.
+
+### Things that changed from sections 2 and 7
+
+- **llama-server killed.** Was holding 51 GB RSS with no benefit (LocalAI page-cache contention re-cold's K2.6 anyway on next call). Now launch-on-demand only via `scripts/llama-serve.sh`. 60–90 min cold reload accepted as the cost of sovereignty.
+- **`k2_6_local` removed from default routing.** `enabled: false`, dropped from `failover_chain` and `tier_map`. Sovereignty-only opt-in via `--backend k2_6_local`. Empirical 0.045–0.10 tok/s makes it unfit for any band that auto-routes to it. Commit `f8aa2ba`.
+- **Ollama Cloud adapter built and operational.** New `aicp/backends/ollama_cloud.py`, registered in `_build_backends`, OpenAI-compat at `https://ollama.com/v1`, Bearer auth via `OLLAMA_API_KEY`. 20 tests passing. Smoke verified end-to-end: 9.2 sec wall-time for a 1-token response (~5.5× faster than local K2.6 thinking-off). Commit `11d3235`.
+- **`personal` profile added.** `config/profiles/personal.yaml` routes band 1 (medium-complexity, scores 0.25–0.45) to `ollama_cloud` instead of `k2_6_openrouter`. Privacy boundary documented: NEVER use `personal` for client/audit-required work — Ollama Cloud is a shared inference pool. Switch back to `default` for those.
+- **Brain contribution submitted.** `python3 -m tools.gateway contribute` — E008 epic correction filed at `~/devops-solutions-information-hub/wiki/log/`, status `pending-review`. Documents the M001 vs M002 vs M004 internal inconsistency that caused the 2-day wrong-path execution. Recommends llama.cpp + Unsloth Q2 for consumer hardware, separate hardware-class gates per path.
+- **Cleanup landed.** `scripts/kt-serve.sh` annotated as superseded (kept as historical reference; targets deleted Moonshot weights). `/mnt/dev-envs/ktransformers-env/` and `/mnt/dev-envs/ktransformers-src/` removed (~11 GB reclaimed).
+- **Storage hygiene fixed.** `fstrim.timer` was systemd-skipped on WSL (`ConditionVirtualization=!container`). Drop-in override in `/etc/systemd/system/fstrim.{timer,service}.d/override.conf` clears the condition; schedule changed from weekly → 30-min interval. Operator-side. Will compact VHDXs going forward without manual intervention.
+
+### Mission posture as of 2026-04-25 (2 days early on the 2026-04-27 deadline)
+
+```
+Phase 1 (storage)            ✅
+Phase 2 (postmortem)         ✅
+Phase 3 (local sovereignty)  ✅ (sovereignty-only, slow but proven)
+Phase 4 (cloud activation)   ✅ (ollama_cloud + k2_6_openrouter live)
+Phase 5 (smart routing)      ✅ (default profile + personal profile)
+Brain feedback loop          ✅ (E008 correction submitted)
+Cleanup                      ✅
+```
+
+**Cost shape now:**
+- `aicp --profile personal "..."` — Ollama Cloud Pro ~$27 CAD/mo flat (5hr/7d caps, ~30M tokens/mo effective).
+- default profile — OpenRouter K2.6 pay-per-token at $0.745/$4.655 per M.
+- `--backend k2_6_local` — sovereignty fallback, free electricity.
+- Claude — hard-gated last resort.
+
+**Realistic blended:** ~$30–60 CAD/mo across personal + occasional client work. Replaces $540 CAD/mo prior Anthropic habit at ~1/10 the cost.
+
+### Open follow-ups (none critical-path)
+
+- Soak / observe Ollama Cloud Pro usage over 2-3 weeks vs the 5hr/7d elastic caps. If Pro caps regularly hit, evaluate Max ($100 USD/mo) vs OpenRouter spillover.
+- Stress-validate failover: deliberately fail one tier and watch the chain cascade through. Routing math is verified by `--check`; full empirical validation deferred.
+- The skill discovery test (`tests/test_skills.py::test_discover_global_skills`) leaks the project's `.claude/skills/` into `tmp_path`-isolated tests. Pre-existing, unrelated to Phase 4. Worth a fix in a separate PR.
+
+### Key file references (current canonical paths)
+
+- `aicp/backends/ollama_cloud.py` — the new adapter.
+- `config/default.yaml` — `backends.ollama_cloud.enabled: true`, default routing on `k2_6_openrouter` (audit-safe).
+- `config/profiles/personal.yaml` — research/dev routing through Ollama Cloud.
+- `scripts/llama-serve.sh` — canonical local K2.6 launcher (sovereignty fallback).
+- `scripts/kt-serve.sh` — superseded, kept for postmortem reference, do not run.
+- `docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md` — full forensic.
+- `docs/EXPLORATION-LOG-LOCAL-K26-EMPIRICAL-2026-04-24.md` — measured numbers.
+
+---
+
 *End of pre-compaction handoff. Next session starts by reading this document.*
