@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
+# ============================================================================
+# SUPERSEDED — DO NOT USE on this hardware.
+# ----------------------------------------------------------------------------
+# This script targets sglang+kt-kernel against Moonshot's 555GB safetensors,
+# which require ~50GB peak RAM at startup and crashed WSL on 64GB hardware
+# (2026-04-24). The Moonshot weights have been deleted. The model directory
+# default below (/mnt/models/kimi-k2-6-moonshot) no longer exists, so this
+# script will fail its own preflight check.
+#
+# Canonical replacement: scripts/llama-serve.sh
+#   — llama.cpp + Unsloth Q2 GGUF (318GB), ~22GB RAM, fits this hardware.
+#
+# Kept here as historical reference for the failure-mode postmortem
+# (docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md). Delete if you want
+# the cleanup.
+# ============================================================================
+#
 # kt-serve.sh — launch KTransformers sglang-kt server for Kimi K2.6 local inference.
 #
 # This is the operational wrapper that E008-m004 (OpenAI-compat endpoint at :8091)
