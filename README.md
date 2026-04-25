@@ -61,9 +61,13 @@ aicp "refactor this" -m edit
 aicp "run the tests" -m act
 
 # Backends
-aicp "explain" -b local                     # LocalAI (fast, private)
-aicp "complex refactor" -b claude           # Claude Code (stronger reasoning)
-aicp "help me" -b auto                      # auto-route by prompt complexity
+aicp "explain" -b local                     # LocalAI Qwen3/Gemma4 (fast, private)
+aicp "agentic refactor" -b k2_6_openrouter  # Kimi K2.6 via OpenRouter (audit-safe)
+aicp "research task" -b ollama_cloud --profile personal  # Ollama Cloud (subscription, NEVER for client work)
+aicp "premium fallback" -b openrouter       # Opus 4.7 / GPT-5.4 / Gemini via OpenRouter
+aicp "last resort" -b claude                # Claude Code direct (Anthropic API)
+aicp "sovereignty test" -b k2_6_local       # llama.cpp + Unsloth Q2 GGUF on localhost (slow, opt-in)
+aicp "help me" -b auto                      # score-banded routing through default chain
 
 # Streaming (real-time output)
 aicp "explain quantum computing" --stream
