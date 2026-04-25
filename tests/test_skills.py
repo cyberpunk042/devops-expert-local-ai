@@ -23,6 +23,7 @@ def _create_skill_yaml(path, name, desc="", params=None, steps=None):
 
 def test_discover_global_skills(tmp_path, monkeypatch):
     monkeypatch.setenv("AICP_HOME", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
     skill_dir = tmp_path / "skills"
     _create_skill_yaml(skill_dir / "my-skill.yaml", "my-skill", "A test skill")
 
