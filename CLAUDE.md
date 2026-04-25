@@ -29,17 +29,18 @@ This is one of four projects in the fleet ecosystem:
 
 ## The Mission
 
-**Post-Anthropic self-autonomous AI stack** by 2026-04-27 (P0 milestone, brain-assigned 2026-04-22 — see `wiki/log/2026-04-22-k2-6-directive-and-post-anthropic-pivot.md`). The original LocalAI-independence mission persists as the long arc; the new direction adds Kimi K2.6 (Moonshot, MIT-licensed, 1T/32B-active MoE, agentic frontier) as the primary cloud tier via OpenRouter (~$0.80/$3.50 per M tokens, ~6-7× cheaper than Opus) and as a local frontier tier via KTransformers + 64GB RAM + RAID 0 NVMe swap.
+**Post-Anthropic self-autonomous AI stack** by 2026-04-27 (P0 milestone, brain-assigned 2026-04-22 — see `wiki/log/2026-04-22-k2-6-directive-and-post-anthropic-pivot.md`). **Status as of 2026-04-25: functionally reached, 2 days early.** Kimi K2.6 (Moonshot, MIT-licensed, 1T/32B-active MoE) is now the primary cloud tier via OpenRouter (pinned-provider, $0.745/$4.655 per M, audit-safe) and via Ollama Cloud Pro (subscription-flat ~$27 CAD/mo, personal/research only — shared pool). Local K2.6 Q2 GGUF runs on operator's Tier 0 hardware via llama.cpp (sovereignty fallback only — empirically 0.045–0.10 tok/s, not interactive).
 
-**5-day strategic shift** (2026-04-22 → 2026-04-27):
+**Mission shift** (2026-04-22 → 2026-04-25):
 
 | Tier | Before | After |
 |------|--------|-------|
-| Primary cloud agentic | Claude Opus 4.7 (Anthropic API) | **Kimi K2.6 (OpenRouter)** |
+| Primary cloud agentic | Claude Opus 4.7 (Anthropic API) | **Kimi K2.6** via OpenRouter (audit-safe) + **Ollama Cloud Pro** (personal/research) |
 | Anthropic role | Default escalation target | Hard-gated last-resort fallback only |
-| Local frontier | Qwen3-30B-A3B (dual-GPU) | + **K2.6 Q2 via KTransformers** (340GB GGUF on NVMe swap) |
-| Router tiers | 4 (local → fleet → openrouter → claude) | **7** (adds K2.6-OpenRouter, K2.6-local; demotes Claude) |
-| Hardware ceiling | 19GB VRAM | + **64GB RAM + RAID 0 NVMe** |
+| Local frontier | Qwen3-30B-A3B (dual-GPU) | + **K2.6 Q2 via llama.cpp** (318GB Unsloth UD-Q2_K_XL GGUF) — sovereignty-only on Tier 0; opt-in via `--backend k2_6_local` |
+| Router tiers (default profile) | 4 (local → fleet → openrouter → claude) | **4** (local → k2_6_openrouter → openrouter → claude); `personal` profile inserts `ollama_cloud` between local and k2_6_openrouter |
+| Hardware ceiling | 19GB VRAM | + **64GB RAM** (sufficient for llama.cpp mmap of 318GB Q2 GGUF; sglang+kt-kernel datacenter path rejected — see `docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md`) |
+| Realistic monthly cost | ~$540 CAD (prior Anthropic) | ~$30–60 CAD blended (Ollama Pro flat + occasional OpenRouter spillover) |
 
 AICP owns brain epic **E011 — Routing Integration** (5 modules, 15-20 tasks). Authoritative scope at `~/devops-solutions-research-wiki/wiki/backlog/epics/pre-milestone/E011-routing-integration-aicp-tiers.md`.
 
@@ -49,7 +50,7 @@ AICP owns brain epic **E011 — Routing Integration** (5 modules, 15-20 tasks). 
 2. **Route simple operations to LocalAI** — done (4-tier router with circuit breakers, DLQ, warmup, 9 profiles)
 3. **Progressive offload** — hardware unlocked 2026-04-17 (19GB VRAM, dual-gpu profile runnable). Now sits ALONGSIDE the K2.6 tier work.
 4. **Reliability and failover** — partial (circuit breakers + DLQ + reliable profile shipped; cluster peering pending)
-5. **Near-independent operation** — subsumed by Post-Anthropic milestone for the critical-path
+5. **Near-independent operation** — **functionally reached 2026-04-25** via Post-Anthropic milestone (Ollama Cloud Pro + OpenRouter K2.6 pinned + local K2.6 sovereignty fallback; Anthropic gated to last resort)
 
 > "I dont want to have to deal with Anthropic and Claude and Opus in the future......" (operator, 2026-04-22)
 
@@ -58,11 +59,18 @@ AICP owns brain epic **E011 — Routing Integration** (5 modules, 15-20 tasks). 
 ## Architecture
 
 ```
-User → AICP Controller → Router → (LocalAI | Claude Code) → Project/Repo
+User → AICP Controller → Router → (5 backends below) → Project/Repo
                             │
-                            ├── Does this need reasoning?
-                            │   NO → LocalAI (local, free, fast)
-                            │   YES → Claude (cloud, paid, powerful)
+                            ├── Score-banded routing via tier_map
+                            │   0.00–0.25  local            (LocalAI Qwen3/Gemma4)
+                            │   0.25–0.45  k2_6_openrouter  (Kimi K2.6, audit-safe pinned)
+                            │              [or ollama_cloud under `personal` profile]
+                            │   0.45–0.70  k2_6_openrouter  (Kimi K2.6 cont.)
+                            │   0.70–0.90  openrouter       (Opus 4.7 / GPT-5.4 fallback)
+                            │   0.90–1.00  claude           (Anthropic direct, last resort)
+                            │
+                            └── Sovereignty fallback: --backend k2_6_local
+                                (llama.cpp + Unsloth Q2 GGUF, opt-in)
 ```
 
 ### Three Permission Modes
@@ -70,20 +78,24 @@ User → AICP Controller → Router → (LocalAI | Claude Code) → Project/Repo
 - **Edit** — modify files in a controlled scope. Produce patches/diffs.
 - **Act** — run commands, workflows, tools. Highest power, most controlled.
 
-### Two Backends
-- **LocalAI** — fast, private, default for most tasks. OpenAI-compatible API on port 8090.
-- **Claude Code** — stronger reasoning/coding, used for complex tasks and escalation.
+### Backends (5 active, 1 sovereignty-only)
+- **local** — LocalAI (Docker, port 8090). Qwen3/Gemma4 family, OpenAI-compat. Default for low-complexity work.
+- **k2_6_openrouter** — Kimi K2.6 via OpenRouter, pinned-provider, audit-safe. Default agentic tier ($0.745/$4.655 per M).
+- **ollama_cloud** — Ollama Cloud Pro subscription (~$27 CAD/mo flat). Personal/research only — shared inference pool. Activated under `personal` profile.
+- **openrouter** — OpenRouter generic catalog (Opus 4.7, GPT-5.4, Gemini, etc.). Fallback for premium models.
+- **claude** — Claude Code direct subprocess (Anthropic API). Hard-gated last resort.
+- **k2_6_local** *(sovereignty-only, not in default routing)* — llama.cpp serving Unsloth K2.6 Q2 GGUF on localhost:8091. Opt-in via `--backend k2_6_local`. Empirical 0.045–0.10 tok/s on Tier 0, 60–90 min cold reload — proves independence, not interactive.
 
 ## Tech Stack
 
-Python 3.11+ • LocalAI v4.1.3 (Docker, GPU via WSL2) • Claude Code CLI subprocess • YAML config • structured JSON logs • NVIDIA dual-GPU via WSL2 `/dev/dxg` (8GB + 11GB = 19GB) • Single-active GPU model with LRU eviction (MAX_ACTIVE_BACKENDS=3).
+Python 3.11+ • LocalAI v4.1.3 (Docker, GPU via WSL2) • Claude Code CLI subprocess • llama.cpp (CUDA, b8920+, for local K2.6 sovereignty) • OpenRouter HTTP • Ollama Cloud HTTP • YAML config • structured JSON logs • NVIDIA dual-GPU via WSL2 `/dev/dxg` (8GB + 11GB = 19GB) • 64GB DDR4-2666 quad-channel (X299) • Single-active GPU model with LRU eviction (MAX_ACTIVE_BACKENDS=3).
 
 ## Project Structure (top-level packages)
 
 | Package | Responsibility | Key modules |
 |---------|---------------|-------------|
 | [aicp/core/](aicp/core/) | Controller + router + modes + reliability + intelligent infra | controller, router, modes, pipeline, session, budget, metrics, observability, tools, skills, rag, kb, gpu, cluster, history, models, approval, events, tasks, memory_relevance, memory_extract, compaction, circuit_breaker, dlq, prometheus, health_report |
-| [aicp/backends/](aicp/backends/) | LocalAI + Claude Code clients | localai, claude_code, base |
+| [aicp/backends/](aicp/backends/) | All backend clients | base, localai, claude_code, openrouter, k2_6_local, ollama_cloud |
 | [aicp/guardrails/](aicp/guardrails/) | Permission enforcement | checks, paths, response |
 | [aicp/cli/](aicp/cli/) | CLI dispatcher + interactive + dashboard | main, control, interactive, dashboard, display, project_ops |
 | [aicp/agent/](aicp/agent/) | Agent server (fleet integration) | client, server (task lifecycle, away summary, progress events) |
@@ -119,7 +131,9 @@ LocalAI is running and functional on Docker with GPU acceleration. API on `local
 - **Watchdog**: auto-recovers stuck backends (15m idle / 10m busy).
 - **API**: OpenAI-compatible chat completions (`localhost:8090`). Routes `aicp_route` MCP tool wraps the controller's full routing decision.
 
-### Routing strategy (4-tier)
+### Routing strategy (5-tier, post-mission)
+
+Default profile (audit-safe; client/monetizable work):
 
 | Operation | Backend | Model | Why |
 |-----------|---------|-------|-----|
@@ -127,10 +141,20 @@ LocalAI is running and functional on Docker with GPU acceleration. API on `local
 | Fleet ops (status, chat) | local | gemma4-e2b | 53 tok/s, multimodal |
 | Simple Q&A / format / translate | local | qwen3-8b-fast | No thinking, fewer tokens |
 | Code (implement, debug) | local | qwen3-8b | Thinking enabled |
-| Medium complexity | openrouter | qwen3-8b:free | Free cloud fallback |
-| Complex / architecture / security | claude | opus | Cannot compromise |
+| Medium / agentic | k2_6_openrouter | moonshotai/kimi-k2.6 | Audit-safe pinned provider |
+| Premium fallback | openrouter | opus / gpt-5.4 / gemini-3.1-pro | When K2.6 not enough |
+| Last resort | claude | opus | Hard-gated |
 
-**Configurable per profile**: failover chain, escalation threshold (default `score < 0.25`), complexity thresholds (default `[0.3, 0.6]`), `force_cloud_modes` per mode.
+`personal` profile (research/dev/non-monetizable; shared pool acceptable):
+
+| Band | Backend | Why |
+|------|---------|-----|
+| Medium | **ollama_cloud** | Subscription-flat (~$27 CAD/mo), faster than per-token |
+| Higher | k2_6_openrouter | Spillover when Ollama caps hit |
+| Premium | openrouter | Opus / GPT fallback |
+| Last resort | claude | Hard-gated |
+
+**Configurable per profile**: failover chain, escalation threshold, complexity thresholds, `force_cloud_modes` per mode. See `config/profiles/*.yaml` (10 profiles total — `default`, `personal` are post-mission canonical; `fast`, `quality`, `reliable`, `dual-gpu`, etc. inherit and override).
 
 ### Infrastructure target
 
