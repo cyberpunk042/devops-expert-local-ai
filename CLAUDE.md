@@ -20,10 +20,10 @@ This is one of four projects in the fleet ecosystem:
 | Dimension | Value | Evidence |
 |-----------|-------|----------|
 | **Type** | product (backend AI platform) | CLI (`python -m aicp.cli`) + 4-tier router + MCP server (**64 tools — audit pending**, see lesson `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md`) + guardrails + 9 operational profiles |
-| **Domain** | backend-ai-platform-python | Python 3.11+; 61 modules in `aicp/`; 94 test files / 1,758 tests; backend stack = LocalAI v4.1.3 (Docker, GPU via WSL2) + Claude Code subprocess |
+| **Domain** | backend-ai-platform-python | Python 3.11+; 64 modules in `aicp/`; 97 test files / 1,840 tests; backend stack = LocalAI v4.1.3 (Docker) + llama.cpp (local K2.6 sovereignty) + OpenRouter + Ollama Cloud + Claude Code subprocess |
 | **Second-brain** | connected | Forwarder at [tools/gateway.py](tools/gateway.py) → `~/devops-solutions-research-wiki`. AICP is documented in `wiki/ecosystem/project_profiles/aicp/identity-profile.md`. Compliance currently **Tier 4/4 STRUCTURAL** (see `python3 -m tools.gateway compliance`). |
 | **Phase** | production — Stage 2 routing operational; **Stage 3 hardware unlocked 2026-04-17** | LocalAI Stage 1 complete; 4-tier router with circuit breakers + DLQ + warmup deployed; hardware upgrade to **19GB VRAM** (RTX 2080 8GB + RTX 2080 Ti 11GB) — unblocks Qwen3-30B-A3B MoE and Gemma 4 26B (dual-gpu profile becomes runnable) |
-| **Scale** | medium | 61 Python modules, 94 test files, 1,758 tests, 78 skills, 9 profiles, 14 model configs |
+| **Scale** | medium | 64 Python modules, 97 test files, 1,840 tests, 84 skills, 11 profiles, 19 model configs |
 
 **Consumer/task properties NOT declared here** (per the consumer-property doctrine — `wiki/lessons/01_drafts/execution-mode-is-consumer-property-not-project-property.md`): execution mode (default solo), SDLC profile (default Goldilocks), methodology model (per-task), current stage (per-task). Full table + commands in [AGENTS.md](AGENTS.md).
 
@@ -100,11 +100,11 @@ Python 3.11+ • LocalAI v4.1.3 (Docker, GPU via WSL2) • Claude Code CLI subpr
 | [aicp/cli/](aicp/cli/) | CLI dispatcher + interactive + dashboard | main, control, interactive, dashboard, display, project_ops |
 | [aicp/agent/](aicp/agent/) | Agent server (fleet integration) | client, server (task lifecycle, away summary, progress events) |
 | [aicp/mcp/](aicp/mcp/) | MCP server — **64 tools (audit pending)** | server.py — chat, vision, transcribe, speak, voice_pipeline, imagine, embed, models, grammar, rerank, system, agent, store_*, kb_*, route, deep_health, profile, task_status, dlq_status, model_*, lora_*, tts*, transcribe_detailed, tokenize*, embed_typed*, similarity, nearest_neighbors, fleet_*, multimodal, bestof, logprobs, json, seed, infill, batch, metrics, warmup, models_loaded, complete*, vad, detect, p2p_status, sound, edit, model_gallery/install/status/unload/delete/config*, embed_image/dims, server_config, tools_stream, backends_list — see `wiki/lessons/00_inbox/aicp-mcp-server-tool-surface-drift-from-claude-md.md` for audit findings |
-| [config/](config/) | Default config + 9 profiles + 14 model YAMLs + alerts | default.yaml, fleet.yaml, alerts.yaml, profiles/, models/ |
-| [tests/](tests/) | 94 test files, 1,758 tests | mirrors aicp/ structure |
+| [config/](config/) | Default config + 11 profiles + 19 model YAMLs + alerts | default.yaml, fleet.yaml, alerts.yaml, profiles/, models/ |
+| [tests/](tests/) | 97 test files, 1,840 tests | mirrors aicp/ structure |
 | [wiki/](wiki/) | AICP knowledge wiki (per second brain standards) | config/, backlog/, lessons/, patterns/, decisions/ |
 | [docs/](docs/) | Architecture and planning + KB content | kb/research/, kb/models/, kb/infrastructure/, knowledge-map/ |
-| [.claude/skills/](.claude/skills/) | 78 skills (conditional, just-in-time) | per skill: SKILL.md + scripts/ + references/ |
+| [.claude/skills/](.claude/skills/) | 84 skills (conditional, just-in-time) | per skill: SKILL.md + scripts/ + references/ |
 
 ## LocalAI Assessment (operational state)
 
@@ -267,7 +267,7 @@ AICP provides LocalAI inference + skill library to the fleet ecosystem.
 | [aicp/core/kb.py](aicp/core/kb.py) | Knowledge base, file ingestion, BGE reranker |
 | [aicp/core/stores.py](aicp/core/stores.py) | LocalAI /stores/ API client |
 | [aicp/core/router.py](aicp/core/router.py) | Score-based routing with configurable thresholds |
-| [aicp/core/skills.py](aicp/core/skills.py) | 3-layer skill system (78 skills in `.claude/skills/`) |
+| [aicp/core/skills.py](aicp/core/skills.py) | 3-layer skill system (84 skills in `.claude/skills/`) |
 | [aicp/core/circuit_breaker.py](aicp/core/circuit_breaker.py) | Prevents thundering herd from fleet agents |
 | [aicp/core/dlq.py](aicp/core/dlq.py) | Persists failed tasks for retry |
 

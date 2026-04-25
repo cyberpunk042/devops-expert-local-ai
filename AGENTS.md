@@ -7,7 +7,7 @@ This file is the **universal layer** of AICP's three-layer agent context (per th
 Source of truth: [CLAUDE.md `## Identity Profile`](CLAUDE.md). The brain's view: `python3 -m tools.gateway status`.
 
 Stable: type=product (backend AI platform); domain=backend-ai-platform-python; second-brain=connected.
-State: phase=production — Stage 2 routing operational, **Stage 3 hardware unlocked 2026-04-17** (19GB VRAM); scale=medium (61 modules / 94 test files / 1,758 tests / 78 skills).
+State: phase=production — **Post-Anthropic mission functionally reached 2026-04-25** (Ollama Cloud Pro + OpenRouter K2.6 pinned + local K2.6 sovereignty fallback; Anthropic gated last-resort); Stage 3 hardware unlocked 2026-04-17 (19GB VRAM + 64GB RAM); scale=medium (64 modules / 97 test files / 1,840 tests / 84 skills / 11 profiles).
 
 **Consumer/task properties NOT declared here** (per the consumer-property doctrine — `wiki/lessons/01_drafts/execution-mode-is-consumer-property-not-project-property.md`): execution mode (default solo), SDLC profile (default), methodology model (per-task). Set these per task at the consumer's runtime.
 
@@ -82,9 +82,9 @@ Three-layer defense (per Quality Standards):
 | Mission + roadmap | [CLAUDE.md `## The Mission`](CLAUDE.md) |
 | Architecture | [CLAUDE.md `## Architecture`](CLAUDE.md) |
 | Backend/router internals | [aicp/core/](aicp/core/) — controller, router, modes, profiles, circuit_breaker, dlq, etc. |
-| Operational profiles (9) | [config/profiles/](config/profiles/) |
-| Model configs (14) | [config/models/](config/models/) |
-| Skills (78, conditional) | [.claude/skills/](.claude/skills/) |
+| Operational profiles (11) | [config/profiles/](config/profiles/) |
+| Model configs (19) | [config/models/](config/models/) |
+| Skills (84, conditional) | [.claude/skills/](.claude/skills/) |
 | Knowledge wiki | [wiki/](wiki/) — config, backlog, lessons, patterns, decisions |
 | Second brain (canonical methodology) | `python3 -m tools.gateway` (forwards to `~/devops-solutions-research-wiki`) |
 | Adoption status | `python3 -m tools.gateway compliance` (Tier 4/4 STRUCTURAL as of 2026-04-17) |
@@ -93,7 +93,7 @@ Three-layer defense (per Quality Standards):
 
 ```bash
 # Tests
-pytest tests/                    # full suite (1,758 tests)
+pytest tests/                    # full suite (1,840 tests)
 pytest tests/ -x --tb=short      # fail-fast for active dev
 
 # Lint + format
