@@ -223,15 +223,17 @@ Named bundles coordinating backends + router + RAG + budget + cache + timeouts +
 
 | Profile | Primary | Failover | Use case |
 |---------|---------|----------|----------|
-| **default** | qwen3-8b | local→fleet→openrouter→claude | Balanced everyday |
-| **fast** | gemma4-e2b | local→openrouter | Quick, 53 tok/s |
-| **offline** | qwen3-8b | local→fleet | Air-gapped |
-| **thorough** | qwen3-8b | full chain | Architecture/security audits |
-| **code-review** | qwen3-8b | local→openrouter→claude | Code analysis, low temp |
-| **fleet-light** | gemma4-e2b | local→fleet | Heartbeat duty |
-| **reliable** | qwen3-8b | full chain | Production — breaker, warmup, DLQ, reports |
-| **dual-gpu** | qwen3-30b-a3b | full chain | 19GB VRAM MoE (now runnable) |
-| **benchmark** | qwen3-8b | local only | Deterministic (temp=0, seed=42) |
+| **default** | qwen3-8b | local→fleet→k2_6_openrouter→openrouter→claude | Balanced, audit-safe (pinned K2.6 mid-tier) |
+| **personal** | kimi-k2.6 | local→ollama_cloud→k2_6_openrouter→openrouter→claude | Research/dev/non-monetizable — band 1 routes Ollama Cloud Pro (shared pool) |
+| **quality** | qwen3-8b | local→k2_6_openrouter→openrouter→claude | Max reasoning per dollar — K2.6 widens, Opus reserved for top ~8% |
+| **fast** | gemma4-e2b | local→openrouter | Low-latency, 53 tok/s, minimal RAG |
+| **offline** | qwen3-8b | local→fleet | Air-gapped — no cloud backends |
+| **thorough** | qwen3-8b | local→fleet→openrouter→claude | Full thinking, deep RAG, generous budgets |
+| **code-review** | qwen3-8b | local→openrouter→claude | Code analysis, low temperature |
+| **fleet-light** | gemma4-e2b | inherits default | Fleet heartbeat duty, zero RAG |
+| **reliable** | qwen3-8b | inherits default | Production — aggressive breaker, auto-warmup, DLQ, reports |
+| **dual-gpu** | qwen3-30b-a3b | inherits default | 19GB VRAM MoE — local-frontier expansion |
+| **benchmark** | qwen3-8b | local only | Deterministic (temp=0, seed=42) for evals |
 
 ### Config load order
 
@@ -243,7 +245,7 @@ Named bundles coordinating backends + router + RAG + budget + cache + timeouts +
 2. `AICP_PROFILE=fast` (env var)
 3. `make profile-use PROFILE=fast` (.env)
 
-Profiles can `extends:` other profiles (deep merge, circular detection). Implementation: [aicp/core/profiles.py](aicp/core/profiles.py); 49 profile tests in [tests/test_profiles.py](tests/test_profiles.py).
+Profiles can `extends:` other profiles (deep merge, circular detection). Implementation: [aicp/core/profiles.py](aicp/core/profiles.py); 58 profile tests in [tests/test_profiles.py](tests/test_profiles.py).
 
 ## Docker (LocalAI)
 
