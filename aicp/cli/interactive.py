@@ -236,6 +236,7 @@ def _handle_slash(
 
             # Loaded model
             try:
+                base_url = backend.base_url if backend else config.get("backends", {}).get("local", {}).get("base_url", "http://localhost:8090")
                 r = httpx.get(f"{base_url}/v1/models", timeout=5.0)
                 models_data = r.json().get("data", [])
                 loaded = [m.get("id", "?") for m in models_data] if models_data else ["none"]

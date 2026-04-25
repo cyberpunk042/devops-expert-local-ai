@@ -2855,6 +2855,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if getattr(args, "status", False):
         import httpx
         local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
+        config = load_config(getattr(args, "config", None))
         console.print("[bold]AICP System Status[/]\n")
 
         # GPU
