@@ -1,5 +1,11 @@
 /* numa_shim.c — LD_PRELOAD shim to fake libnuma success on WSL (no /sys/devices/system/node).
  *
+ * SUPERSEDED 2026-04-25 — only useful for the kt-kernel/sglang local serving path,
+ * which was rejected on this hardware (see docs/POSTMORTEM-2026-04-24-k26-local-wrong-path.md).
+ * The current local K2.6 stack uses llama.cpp (scripts/llama-serve.sh), which does NOT call
+ * libnuma and does not need this shim. Kept for historical reference and in case a future
+ * libnuma-using workload returns to this environment.
+ *
  * WSL's kernel doesn't expose NUMA topology. kt-kernel's worker_pool.h calls
  *   numa_bitmask_alloc(numa_num_configured_nodes())  // passes 0 on WSL → "request to allocate mask for invalid number"
  *   numa_bind(mask)

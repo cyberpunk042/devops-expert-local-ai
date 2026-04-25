@@ -3,8 +3,11 @@
 A personal AI control workspace that orchestrates local and cloud AI backends under your control — not theirs.
 
 ```
-You → AICP → (LocalAI | Claude Code) → Your Project
+You → AICP → router → 5 backends (LocalAI, OpenRouter, Ollama Cloud,
+                                  Claude Code, llama.cpp local K2.6) → Your Project
 ```
+
+Score-banded routing with circuit-breaker failover. Default profile is audit-safe (OpenRouter K2.6 with pinned provider). `--profile personal` swaps the medium-complexity band to Ollama Cloud Pro for non-monetizable work. `--backend k2_6_local` is a sovereignty fallback (llama.cpp + Unsloth Q2 GGUF on operator hardware).
 
 ## Quick Start
 
@@ -140,11 +143,15 @@ aicp "analyze" -d /path/to/project
 
 ## Backends
 
-| Backend | Speed | Privacy | Mode Enforcement |
-|---------|-------|---------|-----------------|
-| **local** (LocalAI) | Fast | 100% local | Advisory (system prompt) |
-| **claude** (Claude Code) | Slower | Cloud | Hard (CLI flags) |
-| **auto** | — | — | Routes by prompt complexity |
+| Backend | Cost | Privacy | When |
+|---------|------|---------|------|
+| **local** (LocalAI Qwen3/Gemma4) | Free | 100% local | Default — low-complexity, fleet ops, simple Q&A |
+| **k2_6_openrouter** (Kimi K2.6 via OpenRouter) | $0.745/$4.655 per M | Cloud, pinned provider (audit-safe) | Default agentic / coding tier |
+| **ollama_cloud** (Ollama Cloud Pro) | ~$27 CAD/mo flat | Cloud, **shared inference pool** | `--profile personal` only — research/dev/non-monetizable |
+| **openrouter** (Opus 4.7 / GPT-5.4 / Gemini etc.) | varies | Cloud | Premium fallback when K2.6 not enough |
+| **claude** (Claude Code direct) | $5/$25 per M (Opus 4.7) | Cloud | Hard-gated last resort |
+| **k2_6_local** *(opt-in only)* | Free electricity | 100% local sovereignty | `--backend k2_6_local` — slow (0.045–0.10 tok/s on Tier 0), sovereignty fallback |
+| **auto** | — | — | Score-banded routing across the chain above |
 
 ## Environment Variables
 
