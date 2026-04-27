@@ -2,11 +2,12 @@
 title: "Skills Audit 2026-04-17 — 47% boilerplate against Extension Standards"
 type: decision
 domain: backend-ai-platform-python
-status: synthesized
+status: discharged
 confidence: high
-maturity: seed
+maturity: validated
 created: 2026-04-17
-updated: 2026-04-17
+updated: 2026-04-27
+discharged: 2026-04-27
 sources:
   - id: extension-standards
     type: wiki
@@ -19,10 +20,13 @@ sources:
   - id: aicp-skills
     type: directory
     file: /home/jfortin/devops-expert-local-ai/.claude/skills/
-    description: 78 skills inventory
-tags: [audit, skills, extension-standards, anti-pattern, technical-debt, epic-b]
+    description: 78 skills inventory at audit time; 84 at discharge (6 AICP-namespace skills authored fresh during MCP Phase 2a)
+tags: [audit, skills, extension-standards, anti-pattern, technical-debt, epic-b, discharged]
 contribution_status: pending-review
 ---
+
+> **Status: DISCHARGED 2026-04-27.** All 26 fleet-referenced skills now match the gold-standard pattern (trigger phrases, named operations with per-op Process + Quality bar, 5 Gotchas with rule+detection+reasoning, Reference exemplars, Domain context, Related-skills disambiguation). Discharge artifacts: [docs/HANDOFF-SKILLS-PHASE-2-2026-04-27.md](../../../docs/HANDOFF-SKILLS-PHASE-2-2026-04-27.md), [docs/retros/RETRO-post-anthropic-2026-04-27.md](../../../docs/retros/RETRO-post-anthropic-2026-04-27.md). Lessons contributed to brain: `sunk-cost-in-technical-paths-prefer-root-switching`, `audit-numbers-age-fast-rebaseline-before-execute`. The "47%" figure was correct at audit time; by execution time, in-flight work had silently moved the figure — the second contributed lesson captures this as a generalizable pattern. The discharged plan stays in /00_inbox until brain ingests for evolution; do NOT re-execute against the original numbers.
+
 
 # Skills Audit 2026-04-17 — 47% boilerplate against Extension Standards
 
