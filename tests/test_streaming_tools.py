@@ -209,7 +209,6 @@ class TestExecuteWithToolsStream:
         """Verify mode sampling params are included in the streaming request."""
         backend = _make_backend()
         sse = _sse_lines([{"choices": [{"delta": {"content": "ok"}}]}])
-        managers = []
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.iter_lines.return_value = iter(sse)

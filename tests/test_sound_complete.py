@@ -254,7 +254,7 @@ class TestMcpSoundComplete:
         mock_backend.complete.return_value = "answer"
 
         with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
-            result = aicp_complete("Question?", stop="###,\\n")
+            aicp_complete("Question?", stop="###,\\n")
 
         call_args = mock_backend.complete.call_args
         assert call_args.kwargs.get("stop") == ["###", "\\n"]

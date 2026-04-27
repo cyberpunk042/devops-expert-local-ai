@@ -139,7 +139,7 @@ class TestGenerateImage:
         backend = _backend()
         with patch("httpx.post", return_value=gen_resp), \
              patch("httpx.get", return_value=img_resp):
-            result = backend.generate_image("test", output)
+            backend.generate_image("test", output)
         assert output.exists()
         assert output.read_bytes() == png_bytes
 

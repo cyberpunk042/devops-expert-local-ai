@@ -224,7 +224,7 @@ class TestFailoverChain:
         )
         task = Task(prompt="hello", mode=Mode.THINK, project_path=tmp_path, backend_name="local")
 
-        with patch("aicp.core.controller.execute_remote", return_value={"result": "peer result"}) as mock_exec:
+        with patch("aicp.core.controller.execute_remote", return_value={"result": "peer result"}):
             # find_best_node returns self (192.168.40.10) so _try_fleet_route returns None,
             # then local fails, then _try_fleet_failover tries the peer
             with patch("aicp.core.controller.find_best_node", return_value=NodeInfo(

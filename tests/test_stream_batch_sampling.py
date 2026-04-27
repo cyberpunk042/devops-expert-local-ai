@@ -238,7 +238,7 @@ class TestMcpBatchTokenize:
         mock_backend.tokenize_batch.return_value = [{"tokens": [1], "count": 1}]
 
         with patch("aicp.mcp.server._get_backend", return_value=mock_backend):
-            result = aicp_tokenize_batch("Hello\n\n\n")
+            aicp_tokenize_batch("Hello\n\n\n")
 
         mock_backend.tokenize_batch.assert_called_once_with(["Hello"])
 

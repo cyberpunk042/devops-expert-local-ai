@@ -242,7 +242,7 @@ class TestTaskManager:
 
     def test_active_count(self):
         t1 = self.mgr.register("a")
-        t2 = self.mgr.register("b")
+        self.mgr.register("b")  # second task — left pending; checked via active_count below
         self.mgr.start(t1.id)
         self.mgr.complete(t1.id)
         assert self.mgr.active_count == 1  # t2 is still pending

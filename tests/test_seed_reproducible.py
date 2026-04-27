@@ -121,7 +121,7 @@ class TestExecuteStreamSeed:
             return ctx
 
         with patch("httpx.stream", side_effect=capture_stream):
-            chunks = list(backend.execute_stream("test", Mode.THINK, Path("/tmp"), seed=77))
+            list(backend.execute_stream("test", Mode.THINK, Path("/tmp"), seed=77))
 
         assert captured["seed"] == 77
 

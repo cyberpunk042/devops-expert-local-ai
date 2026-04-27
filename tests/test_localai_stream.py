@@ -93,7 +93,7 @@ def test_execute_stream_skips_empty_lines():
     # Actually our implementation continues past [DONE], so "x" won't appear either way.
     # This test just verifies empty lines don't raise.
     with patch("httpx.stream", return_value=_FakeStreamResponse(lines)):
-        chunks = list(backend.execute_stream("hi", Mode.THINK, PROJECT_PATH))
+        list(backend.execute_stream("hi", Mode.THINK, PROJECT_PATH))
     # No assertion on content — just confirm no exception
 
 
