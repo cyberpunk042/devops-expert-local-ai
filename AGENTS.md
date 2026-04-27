@@ -91,48 +91,17 @@ Three-layer defense (per Quality Standards):
 
 ## How to operate the project
 
+Full command reference: **[TOOLS.md](TOOLS.md)** (mirrors the second-brain `TOOLS.md` pattern).
+
+Quick orientation:
+
 ```bash
-# Tests
 pytest tests/                    # full suite (1,840 tests)
-pytest tests/ -x --tb=short      # fail-fast for active dev
-
-# Lint + format
-ruff check aicp/ tests/
-ruff format aicp/ tests/
-
-# CLI
-python -m aicp.cli               # interactive
-python -m aicp.cli --help        # subcommands
-
-# LocalAI
+ruff check aicp/ tests/          # lint
 docker compose up -d             # start LocalAI on :8090
-curl http://localhost:8090/v1/models
-
-# Profiles
-make profile-list
-make profile-use PROFILE=fast    # writes .env + restarts containers
-make profile-show PROFILE=reliable
-make profile-diff PROFILE_A=fast PROFILE_B=offline
-
-# Models
-make model-qwen3                 # Qwen3-8B + Qwen3-4B (8GB GPU)
-make model-list-remote           # full catalog with VRAM info
-
-# Knowledge base (LocalAI Collections)
-make kb-sync                     # sync docs/kb/ to LocalAI
-make kb-sync-force               # reset + re-upload
-
-# Observability
-make monitoring-up               # Prometheus :9090 + Grafana :3000
-
-# Reliability
-aicp --health-report             # trend report
-aicp --retry-dlq                 # retry failed tasks
-
-# Second brain
-python3 -m tools.gateway status     # identity + SDLC profile
-python3 -m tools.gateway compliance # adoption tier
-python3 -m tools.gateway orient     # full orientation flow
+make profile-use PROFILE=<name>  # switch profile (.env + restart)
+aicp --check                     # backend availability + GPU
+python3 -m tools.gateway orient  # second-brain orientation
 ```
 
 ## Conventions
