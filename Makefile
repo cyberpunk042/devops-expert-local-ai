@@ -227,7 +227,7 @@ auto-config:
 	.venv/bin/aicp --auto-config
 
 benchmark:
-	.venv/bin/aicp --models benchmark --models-arg hermes
+	.venv/bin/aicp --models benchmark --models-arg qwen3-8b
 
 self-test:
 	.venv/bin/aicp --self-test
