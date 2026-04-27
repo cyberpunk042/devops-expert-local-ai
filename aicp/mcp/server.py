@@ -740,7 +740,7 @@ def aicp_model_gallery(search: str = "") -> str:
     Returns:
         JSON array of available models with name, installed status, and tags, plus deprecation warning.
     """
-    _deprecation_warning("aicp_model_gallery", "the `aicp-model-mgmt` skill (`aicp --model-cmd gallery`)")
+    _deprecation_warning("aicp_model_gallery", "the `aicp-model-mgmt` skill (`aicp --models gallery [--models-arg <search>]`)")
     deprecation = {
         "warning": "aicp_model_gallery MCP tool deprecated; use 'aicp --models gallery' CLI. Removal next release.",
     }
@@ -768,7 +768,7 @@ def aicp_model_install(model_id: str, name: str = "") -> str:
     Returns:
         JSON with job UUID for tracking progress, plus deprecation warning.
     """
-    _deprecation_warning("aicp_model_install", "the `aicp-model-mgmt` skill (`aicp --model-cmd install <id>`)")
+    _deprecation_warning("aicp_model_install", "the `aicp-model-mgmt` skill (`aicp --models install --models-arg <id>`)")
     deprecation = {
         "warning": "aicp_model_install MCP tool deprecated; use 'aicp --models download' CLI. Removal next release.",
     }
@@ -1011,7 +1011,7 @@ def aicp_lora_load(model_name: str, adapter_path: str) -> str:
     Returns:
         Server response as JSON, plus deprecation warning.
     """
-    _deprecation_warning("aicp_lora_load", "the `aicp-lora` skill")
+    _deprecation_warning("aicp_lora_load", "the `aicp-lora` skill (`aicp --lora-cmd load <model> <adapter>`)")
     deprecation = {
         "warning": "aicp_lora_load MCP tool deprecated; CLI flag 'aicp --lora-cmd load' pending. Removal after CLI ships.",
     }
@@ -1031,7 +1031,7 @@ def aicp_lora_list() -> str:
     Returns:
         JSON array of models that have LoRA adapters attached, plus deprecation warning.
     """
-    _deprecation_warning("aicp_lora_list", "the `aicp-lora` skill")
+    _deprecation_warning("aicp_lora_list", "the `aicp-lora` skill (`aicp --lora-cmd list`)")
     deprecation = {
         "warning": "aicp_lora_list MCP tool deprecated; CLI flag 'aicp --lora-cmd list' pending. Removal after CLI ships.",
     }
@@ -1152,7 +1152,7 @@ def aicp_warmup(model_name: str = "") -> str:
     Returns:
         JSON with loaded status, model name, and duration, plus deprecation warning.
     """
-    _deprecation_warning("aicp_warmup", "the `aicp-ops-runtime` skill or `aicp --warmup` CLI")
+    _deprecation_warning("aicp_warmup", "deliberate profile config: edit `config/profiles/<name>.yaml` `warmup.models:`, then `make profile-use PROFILE=<name>`")
     deprecation = {
         "warning": "aicp_warmup MCP tool deprecated; warmup is operator-deliberate (config/profiles/<name>.yaml warmup.models). Removal next release.",
     }
@@ -1402,7 +1402,7 @@ def aicp_model_config(model_name: str = "") -> str:
     Returns:
         JSON object with the model's configuration, plus deprecation warning.
     """
-    _deprecation_warning("aicp_model_config", "the `aicp-model-mgmt` skill (`aicp --model-cmd config <name>`)")
+    _deprecation_warning("aicp_model_config", "the `aicp-model-mgmt` skill (`aicp --models info --models-arg <name>`)")
     deprecation = {
         "warning": "aicp_model_config MCP tool deprecated; use 'aicp --models info' CLI or read config/models/<name>.yaml directly. Removal next release.",
     }
@@ -1448,7 +1448,7 @@ def aicp_model_config_update(
     Returns:
         Server response as JSON, plus deprecation warning.
     """
-    _deprecation_warning("aicp_model_config_update", "the `aicp-model-mgmt` skill (`aicp --model-cmd config-update`)")
+    _deprecation_warning("aicp_model_config_update", "the `aicp-model-mgmt` skill (`aicp --model-cmd update <name>`)")
     deprecation = {
         "warning": "aicp_model_config_update MCP tool deprecated; edit config/models/<name>.yaml + restart LocalAI for durable changes. CLI flag 'aicp --model-cmd update' pending. Removal after CLI ships.",
     }
