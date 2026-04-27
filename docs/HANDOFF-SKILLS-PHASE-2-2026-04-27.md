@@ -1,8 +1,9 @@
 # Handoff — Skills Audit Phase 2 (2026-04-27)
 
-**Written**: 2026-04-27, mid-Phase-2.
-**For**: next session (same operator), to resume the skills audit work without re-discovery.
-**Read first**: this document. It tells you the north, what's done, what's left, and how to resume orderly.
+**Status**: ✅ **COMPLETE** as of 2026-04-27. All 26 fleet-referenced skills rewritten to brain Extension Standards gold-standard pattern.
+**Written**: 2026-04-27, originally mid-Phase-2; updated at completion.
+**For**: future sessions referring back to this handoff for the gold-standard pattern itself (it's reusable for any future skill authoring).
+**Read first**: section 3 (the pattern) is the reusable artifact. Sections 4-7 are the historical record of how Phase 2 went.
 
 ---
 
@@ -110,12 +111,11 @@ Authoring conventions captured across the 14 already-rewritten skills:
 
 ---
 
-## 4. Progress (as of 2026-04-27)
+## 4. Progress (final — 2026-04-27)
 
-### ✅ Done — 14 of 26 fleet-referenced skills rewritten this session
+### ✅ Done — all 26 fleet-referenced skills rewritten
 
-In rewrite order:
-
+**Session 1** (14 skills):
 1. `architecture-propose` — 3 ops + 5 gotchas
 2. `architecture-review` — 3 ops + 5 gotchas
 3. `foundation-auth` — 4 ops + 5 gotchas
@@ -131,24 +131,21 @@ In rewrite order:
 13. `openclaw-setup` — 4 ops + 5 gotchas
 14. `ops-backup` — 4 ops + 5 gotchas
 
-Each is committed (operator pattern: "its commited, continue" between rewrites).
+**Session 2** (12 skills, completing the audit):
+15. `ops-deploy` — 4 ops + 5 gotchas
+16. `ops-incident` — 3 ops + 5 gotchas
+17. `ops-maintenance` — 4 ops + 5 gotchas
+18. `ops-rollback` — 4 ops + 5 gotchas
+19. `pm-assess` — 3 ops + 5 gotchas
+20. `pm-changelog` — 3 ops + 5 gotchas
+21. `pm-handoff` — 3 ops + 5 gotchas (this skill itself; cites this handoff doc as live exemplar)
+22. `pm-plan` — 4 ops + 5 gotchas
+23. `pm-retrospective` — 3 ops + 5 gotchas
+24. `pm-status-report` — 3 ops + 5 gotchas
+25. `scaffold` — 4 ops + 5 gotchas
+26. `scaffold-subagent` — 4 ops + 5 gotchas
 
-### 🔲 Remaining — 12 fleet-referenced skills, in suggested rewrite order
-
-In a sensible order to maintain context (sibling skills together):
-
-1. `ops-deploy`
-2. `ops-incident`
-3. `ops-maintenance`
-4. `ops-rollback`
-5. `pm-assess`
-6. `pm-changelog`
-7. `pm-handoff`
-8. `pm-plan`
-9. `pm-retrospective`
-10. `pm-status-report`
-11. `scaffold`
-12. `scaffold-subagent`
+Total: ~5,400 lines of skill-specific content. Cluster shape achieved (ops / pm / foundation / architecture / openclaw / scaffold / idea / backup).
 
 ### Already-tier-2 fleet skills (do NOT rewrite — already gold-standard)
 
@@ -229,8 +226,8 @@ That framing still applies on resume. Specifically:
 
 ## 8. One-paragraph summary for the very impatient
 
-Mission reached. Now executing brain-prescribed Phase 2: rewrite 26 fleet-referenced AICP skills against Extension Standards. 14 done, 12 left. Pattern is solid: 9 frontmatter+section structure, 2-4 operations per skill with per-operation Process + Quality bar, 5 Gotchas with rule+detection+reasoning, plus Reference exemplars + Domain context + Related-skills disambiguation table. Resume by reading the brain's Extension Standards + a recently-rewritten skill as template, then take the next skill (`ops-deploy`) and apply the pattern. Operator authorizes via "continue" after each commit. Don't teach the brain. Don't fabricate. Don't deflect.
+Phase 2 complete. All 26 fleet-referenced AICP skills now match the brain's Extension Standards gold-standard pattern: 2-4 named operations with per-op Process + Quality bar, 5 Gotchas with rule+detection+reasoning, plus Reference exemplars + Domain context + Related-skills disambiguation. The pattern in section 3 of this doc is the reusable artifact for any future skill authoring (new skills, sister-project skills, evolved versions). The brain-prescribed audit (`wiki/decisions/00_inbox/skills-audit-2026-04-17.md`) is closed. Pre-existing tech debt in section 6 ("Pre-existing technical debt") is the next pickable work — none of it is Phase 2 leftover; each is independent.
 
 ---
 
-*End of Phase 2 handoff. Next session resumes by reading this file, then the brain's Extension Standards, then `ops-deploy/SKILL.md`.*
+*End of Phase 2 handoff. Audit closed 2026-04-27. The pattern documented in section 3 lives on as the canonical AICP skill structure.*
