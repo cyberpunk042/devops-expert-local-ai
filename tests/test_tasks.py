@@ -29,8 +29,11 @@ class TestTaskStatus:
         assert TaskStatus.RUNNING.is_terminal is False
 
     def test_string_value(self):
+        # StrEnum: .value and str() both return the underlying string (Python 3.11+ canonical
+        # — different from the older `class X(str, Enum)` pattern where str(X.A) == "X.A").
         assert TaskStatus.PENDING.value == "pending"
-        assert str(TaskStatus.RUNNING) == "TaskStatus.RUNNING"
+        assert str(TaskStatus.RUNNING) == "running"
+        assert TaskStatus.RUNNING == "running"  # str-equality preserved (mission-critical for JSON)
 
 
 class TestTaskId:

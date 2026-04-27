@@ -31,4 +31,5 @@ Readiness ranges (cumulative): 0-25 (document) → 25-50 (design) → 50-80 (sca
 
 ## Methodology
 
-Defined in [../config/methodology.yaml](../config/methodology.yaml) — 9 chains, 5 stages, 8 execution modes, 5 end conditions. Baseline copied from second brain on 2026-04-17; AICP-specific adaptations (pytest gates, ruff lint, Docker stage commands) to follow.
+- **Generic engine**: [../config/methodology.yaml](../config/methodology.yaml) — 9 chains, 5 stages, 8 execution modes, 5 end conditions. Mirrors the second-brain authoritative engine; AICP imports it unchanged.
+- **AICP-specific adaptations**: [../config/domain-profiles/backend-ai-platform-python.yaml](../config/domain-profiles/backend-ai-platform-python.yaml) — pytest gates per stage, ruff lint commands, path patterns, forbidden zones, scaffold→implement transition rules tied to AICP's Python+Docker+LocalAI runtime.
