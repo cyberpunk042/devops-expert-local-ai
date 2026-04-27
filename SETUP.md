@@ -10,7 +10,7 @@ This document covers everything needed to get AICP running on a fresh machine. I
 |-------------|-------|-------|
 | Python 3.8+ | `python3 --version` | 3.12 works fine |
 | Docker | `docker --version` | 20+ recommended |
-| NVIDIA GPU + drivers | `nvidia-smi` | RTX 3060 Ti (8 GB) confirmed working |
+| NVIDIA GPU + drivers | `nvidia-smi` | Tested configs: single 8GB (RTX 3060 Ti), dual-GPU 8+11GB (RTX 2080 + RTX 2080 Ti). 6GB+ minimum. |
 | CUDA 12+ | `nvidia-smi` shows CUDA version | Driver 560+ |
 | NVIDIA Container Toolkit | `docker run --gpus all nvidia/cuda:12.0-base nvidia-smi` | Needed for GPU passthrough to Docker |
 | Claude CLI | `which claude` | At `~/.local/bin/claude` on this machine |
@@ -60,42 +60,29 @@ cp .env.example .env
 # Edit .env as needed
 ```
 
-The only value you likely need to change is `backends.local.model` — it must match the filename (without `.gguf`) of the model you download in Step 3.
+The default backend is `qwen3-8b` (set in [config/default.yaml](config/default.yaml)). Don't change `backends.local.model` unless you're swapping to a different LocalAI-served model.
 
 ---
 
 ## Step 3: Download a model
 
-LocalAI needs at least one GGUF model in the `models/` directory.
+The fastest path: use the curated Qwen3 bundle.
 
 ```bash
-# Example: Hermes-2-Pro-Mistral 7B (Q4_K_M quantization, ~4.4 GB)
-make model-download \
-  MODEL=hermes-2-pro-mistral-7b.Q4_K_M.gguf \
-  URL=https://huggingface.co/NousResearch/Hermes-2-Pro-Mistral-7B-GGUF/resolve/main/Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf
-
-# The model name in config/default.yaml must match (without .gguf):
-# backends.local.model: "hermes-2-pro-mistral-7b.Q4_K_M"
+make model-qwen3            # Qwen3-8B (main reasoning) + Qwen3-4B (fleet lightweight), 8GB GPU
+make model-list-remote      # full catalog with VRAM info
 ```
 
-> **FLAG — MANUAL STEP:** Model selection and download URLs were chosen manually on the original machine. The `config/default.yaml` value `model: "hermes"` implies a short alias — LocalAI can use a `models/hermes.yaml` config file to map the alias to a GGUF file. That YAML file (LocalAI model config) was likely present on the original machine but is **not committed to this repo**. You need to either:
-> - Use the full GGUF filename as the model name, or
-> - Create `models/hermes.yaml` — see [LocalAI model config](#localai-model-config) below.
+This downloads GGUFs to `models/` AND drops the matching LocalAI YAML config alongside, so the alias (`qwen3-8b`) resolves correctly without manual config.
 
-### LocalAI model config
+For other models (Gemma 4, custom GGUFs):
 
-To use a short alias like `hermes`, create `models/hermes.yaml`:
-
-```yaml
-name: hermes
-backend: llama-cpp
-parameters:
-  model: hermes-2-pro-mistral-7b.Q4_K_M.gguf
-  context_size: 4096
-  gpu_layers: 35   # adjust based on VRAM — RTX 3060 Ti (8 GB) can handle ~35 layers for 7B
+```bash
+make model-download MODEL=<name>.gguf URL=<huggingface-url>
+# Then create models/<name>.yaml manually (see config/models/*.yaml for templates)
 ```
 
-> **FLAG:** This file is gitignored (models/ is not tracked). Add `models/*.yaml` to version control, or add a `models/hermes.yaml.example` template to the repo.
+The committed `config/models/*.yaml` files are the canonical source — they declare backend, context_size, gpu_layers tuned per model. Read those before authoring new ones.
 
 ---
 
@@ -122,17 +109,24 @@ make models-list
 # Lists all models LocalAI currently has available
 ```
 
-Expected output on a healthy system:
+Expected output on a healthy system (current dual-GPU + post-mission cloud config):
 
 ```
   Config: OK
-  GPU 0 RTX 3060 Ti: 7400/8192 MiB free (driver 560.94)
+  GPU 0 NVIDIA GeForce RTX 2080 Ti: 8950/11264 MiB free
+  GPU 1 NVIDIA GeForce RTX 2080:    7043/8192 MiB free
 
-  local  OK (http://localhost:8090, models: hermes)
-  claude UNAVAILABLE: claude CLI not in PATH   ← only if claude not installed
+  [OK]  local: OK (http://localhost:8090, models: qwen3-8b)
+  [OK]  claude: OK (Claude Code CLI available)
+  [OK]  openrouter: OK (355 models, default: qwen/qwen3-32b)
+  [OK]  k2_6_openrouter: OK (default: moonshotai/kimi-k2.6)
+  [OK]  ollama_cloud: OK (38 models, default: kimi-k2.6)
 
+  Failover chain: local → k2_6_openrouter → openrouter → claude
   All systems ready.
 ```
+
+(`k2_6_local` shows only when `--backend k2_6_local` is opted into for sovereignty mode — see [docs/architecture/post-anthropic-mission.md](docs/architecture/post-anthropic-mission.md).)
 
 ---
 
@@ -206,7 +200,7 @@ curl http://localhost:9100/health
 | `aicp: command not found` | `.venv` not activated | `source .venv/bin/activate` |
 | `No module named 'httpx'` | deps not installed | `pip install -e ".[dev]"` |
 | `Cannot connect to LocalAI` | Container not running | `make local-up` |
-| `WARNING: model 'hermes' not found` | model file missing | Download GGUF, create `models/hermes.yaml` |
+| `WARNING: model 'qwen3-8b' not found` | model GGUF + YAML missing | `make model-qwen3` (downloads weights + writes config) |
 | `docker compose build` fails | `backends/cuda12-llama-cpp` missing | Fixed — see [Dockerfile.localai](Dockerfile.localai) |
 | GPU not detected in container | NVIDIA Container Toolkit missing | See Step 1 prerequisites |
 | `pip not found` | system pip not installed | Use `python3 -m pip` or `python3 -m ensurepip` then `make setup` |
