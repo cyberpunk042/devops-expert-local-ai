@@ -308,7 +308,9 @@ class TestToolDefinitions:
 
     def test_system_info_in_all_modes(self):
         from aicp.core.tools import ALL_TOOLS, EDIT_TOOLS, THINK_TOOLS
-        names = lambda tools: [t["function"]["name"] for t in tools]
+
+        def names(tools):
+            return [t["function"]["name"] for t in tools]
         assert "system_info" in names(THINK_TOOLS)
         assert "system_info" in names(EDIT_TOOLS)
         assert "system_info" in names(ALL_TOOLS)

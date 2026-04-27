@@ -307,7 +307,9 @@ class TestStoreTools:
 
     def test_store_tools_in_tool_sets(self):
         from aicp.core.tools import ALL_TOOLS, EDIT_TOOLS, THINK_TOOLS
-        names = lambda tools: [t["function"]["name"] for t in tools]
+
+        def names(tools):
+            return [t["function"]["name"] for t in tools]
         # recall is read-only → in think
         assert "store_recall" in names(THINK_TOOLS)
         # remember is write → in edit and act

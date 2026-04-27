@@ -179,7 +179,7 @@ class TestSelfTestVadDetectProbes:
         assert "Voice activity detection" in output
         # Should be SKIP not FAIL
         lines = output.split("\n")
-        vad_line = [l for l in lines if "Voice activity detection" in l][0]
+        vad_line = [line for line in lines if "Voice activity detection" in line][0]
         assert "SKIP" in vad_line
 
     def test_detection_probe_skip_on_404(self):
@@ -187,5 +187,5 @@ class TestSelfTestVadDetectProbes:
         responses["/v1/detection"] = {"status": 404}
         rc, output = self._run(responses)
         lines = output.split("\n")
-        det_line = [l for l in lines if "Object detection" in l][0]
+        det_line = [line for line in lines if "Object detection" in line][0]
         assert "SKIP" in det_line

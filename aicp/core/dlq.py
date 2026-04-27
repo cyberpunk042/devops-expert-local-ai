@@ -229,7 +229,7 @@ def _prune_oldest(keep: int) -> None:
             else:
                 # Partial prune: keep last N lines
                 with open(path) as f:
-                    lines = [l for l in f.readlines() if l.strip()]
+                    lines = [line for line in f.readlines() if line.strip()]
                 with open(path, "w") as f:
                     f.writelines(lines[to_remove:])
                 to_remove = 0

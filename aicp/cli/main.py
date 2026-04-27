@@ -1589,7 +1589,7 @@ def _run_capabilities() -> int:
         if line.strip().startswith("/"):
             console.print(f"  [cyan]{line.strip()}[/]")
     # Count them
-    cmd_count = sum(1 for l in _SLASH_HELP.split("\n") if l.strip().startswith("/"))
+    cmd_count = sum(1 for line in _SLASH_HELP.split("\n") if line.strip().startswith("/"))
     console.print(f"\n  [bold]{cmd_count}[/] slash commands\n")
 
     # ── LLM-Callable Tools ───────────────────────────────────────────────

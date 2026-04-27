@@ -19,7 +19,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger("aicp.tasks")
@@ -34,7 +34,7 @@ _ID_PREFIX = {
 }
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """Task lifecycle states."""
     PENDING = "pending"
     RUNNING = "running"
@@ -47,7 +47,7 @@ class TaskStatus(str, Enum):
         return self in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.KILLED)
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """Types of tasks AICP can track."""
     INFERENCE = "inference"
     TOOL = "tool"

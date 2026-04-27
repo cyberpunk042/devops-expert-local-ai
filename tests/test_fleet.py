@@ -143,8 +143,8 @@ class TestCheckCluster:
         mock_client_b = MagicMock()
         mock_client_b.health.return_value = False
 
-        with patch("aicp.core.cluster.AgentClient") as MockClient:
-            MockClient.side_effect = [mock_client_a, mock_client_b]
+        with patch("aicp.core.cluster.AgentClient") as mock_client:
+            mock_client.side_effect = [mock_client_a, mock_client_b]
             result = check_cluster(nodes)
 
         assert result[0].online is True

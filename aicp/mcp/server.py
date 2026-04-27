@@ -576,12 +576,10 @@ def aicp_kb_ingest(path: str) -> str:
         JSON summary with files_ingested, total_chunks, errors.
     """
     try:
-        from pathlib import Path as _P
-
         from aicp.core.kb import KnowledgeBase
         backend = _get_backend()
         kb = KnowledgeBase(backend, _config)
-        p = _P(path)
+        p = Path(path)
         if p.is_dir():
             result = kb.ingest_directory(p)
         elif p.is_file():
@@ -866,9 +864,8 @@ def aicp_vad(audio_path: str) -> str:
     Returns:
         JSON array of voice segments with start/end times.
     """
-    from pathlib import Path as _Path
     backend = _get_backend()
-    segments = backend.vad(_Path(audio_path))
+    segments = backend.vad(Path(audio_path))
     return json.dumps(segments)
 
 
@@ -882,9 +879,8 @@ def aicp_detect(image_path: str) -> str:
     Returns:
         JSON array of detected objects with labels, confidence, and bounding boxes.
     """
-    from pathlib import Path as _Path
     backend = _get_backend()
-    detections = backend.detect(_Path(image_path))
+    detections = backend.detect(Path(image_path))
     return json.dumps(detections)
 
 
@@ -967,12 +963,9 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
     Returns:
         The final text response after all tool rounds complete.
     """
-    from pathlib import Path as _Path
-
-    from aicp.core.modes import Mode as _Mode
     backend = _get_backend()
     chunks = list(backend.execute_with_tools_stream(
-        prompt, _Mode(mode), _Path("."),
+        prompt, Mode(mode), Path("."),
     ))
     return "".join(chunks)
 
@@ -990,9 +983,8 @@ def aicp_embed_image(image_path: str) -> str:
     Returns:
         JSON object with embedding vector and dimension count.
     """
-    from pathlib import Path as _Path
     backend = _get_backend()
-    vec = backend.embed_image(_Path(image_path))
+    vec = backend.embed_image(Path(image_path))
     return json.dumps({"embedding": vec[:10], "dimensions": len(vec), "truncated": len(vec) > 10})
 
 
