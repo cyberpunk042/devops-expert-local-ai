@@ -1,9 +1,7 @@
 """Tests for task history."""
 
-import os
-import json
 
-from aicp.core.history import save_task, list_tasks, get_task
+from aicp.core.history import get_task, list_tasks, save_task
 
 
 def test_save_and_list(tmp_path, monkeypatch):

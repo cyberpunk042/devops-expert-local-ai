@@ -16,21 +16,21 @@ import logging
 import socket
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any
 
-from aicp.core.modes import Mode
 from aicp.backends.base import Backend
-from aicp.core.events import get_emitter
 from aicp.core.cluster import (
     check_cluster,
     execute_remote,
     find_best_node,
     load_cluster_config,
 )
+from aicp.core.events import get_emitter
 from aicp.core.history import save_task
+from aicp.core.modes import Mode
 from aicp.core.router import intercept_operation, score_response_quality
 from aicp.guardrails.checks import run_preflight_checks
 
@@ -59,14 +59,14 @@ class ResponseCache:
     def __init__(self, ttl_seconds: float = 300.0, max_entries: int = 256) -> None:
         self.ttl = ttl_seconds
         self.max_entries = max_entries
-        self._store: Dict[str, _CacheEntry] = {}
+        self._store: dict[str, _CacheEntry] = {}
 
     @staticmethod
     def _key(prompt: str, mode: str, backend: str) -> str:
         raw = f"{prompt}|{mode}|{backend}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-    def get(self, prompt: str, mode: str, backend: str) -> Optional[str]:
+    def get(self, prompt: str, mode: str, backend: str) -> str | None:
         key = self._key(prompt, mode, backend)
         entry = self._store.get(key)
         if entry is None:
@@ -110,7 +110,7 @@ class Task:
     backend_name: str = "local"
 
 
-def _local_ips() -> Set[str]:
+def _local_ips() -> set[str]:
     """Return a set of IP addresses belonging to this machine."""
     ips = {"127.0.0.1", "::1", "localhost"}
     try:
@@ -136,8 +136,8 @@ class Controller:
 
     def __init__(
         self,
-        backends: Dict[str, Backend],
-        config: Dict[str, Any] = None,
+        backends: dict[str, Backend],
+        config: dict[str, Any] = None,
         metrics_collector=None,
         model_coordinator=None,
     ) -> None:
@@ -147,7 +147,7 @@ class Controller:
         self._coordinator = model_coordinator
         self._fleet_checked = False
         self._fleet_nodes: list = []
-        self.last_route: Optional[str] = None
+        self.last_route: str | None = None
         # Response cache (E-M50)
         cache_cfg = self.config.get("cache", {})
         self._cache = ResponseCache(
@@ -202,7 +202,7 @@ class Controller:
             online = [n for n in self._fleet_nodes if n.online]
             logger.info("Fleet: %d nodes loaded, %d online", len(nodes), len(online))
 
-    def _try_fleet_route(self, task: Task) -> Optional[str]:
+    def _try_fleet_route(self, task: Task) -> str | None:
         """Attempt to route the task to the best fleet node.
 
         Returns the response string if routed remotely, None if we should
@@ -239,7 +239,7 @@ class Controller:
         )
         return result_dict.get("response", result_dict.get("result", str(result_dict)))
 
-    def _try_fleet_failover(self, task: Task) -> Optional[str]:
+    def _try_fleet_failover(self, task: Task) -> str | None:
         """Try to execute on any available fleet peer (failover).
 
         Called when the local backend has failed. Tries each online remote
@@ -285,7 +285,7 @@ class Controller:
         output_path: Path,
         model: str = "",
         size: str = "512x512",
-        step: Optional[int] = None,
+        step: int | None = None,
     ) -> Path:
         """Generate an image through the model coordinator (swap-aware).
 
@@ -300,7 +300,7 @@ class Controller:
             raise ValueError("No local backend configured")
         return backend.generate_image(prompt, output_path, model=model, size=size, step=step)
 
-    def _try_quality_escalation(self, task: Task, result: str) -> Optional[str]:
+    def _try_quality_escalation(self, task: Task, result: str) -> str | None:
         """Check response quality; escalate to a better backend if too low.
 
         Only escalates from local → openrouter → claude. Never re-escalates

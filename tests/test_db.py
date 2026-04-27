@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-from aicp.core.db import record_task, query_tasks, rebuild_db, _SCHEMA
-
+from aicp.core.db import query_tasks, rebuild_db, record_task
 
 # ---------------------------------------------------------------------------
 # Helpers

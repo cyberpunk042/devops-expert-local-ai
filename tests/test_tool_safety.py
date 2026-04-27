@@ -1,18 +1,16 @@
 """Tests for tool safety metadata and validation pipeline."""
 
 import json
-import pytest
 
 from aicp.core.tools import (
-    TOOL_SAFETY,
-    get_tool_meta,
-    validate_tool_input,
+    ALL_TOOLS,
+    EDIT_TOOLS,
+    THINK_TOOLS,
+    _meta,
     check_tool_permissions,
     execute_tool,
-    ALL_TOOLS,
-    THINK_TOOLS,
-    EDIT_TOOLS,
-    _meta,
+    get_tool_meta,
+    validate_tool_input,
 )
 
 

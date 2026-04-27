@@ -18,7 +18,6 @@ from typing import Any
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 STATE_DIR = REPO_ROOT / ".aicp"
 STATE_FILE = STATE_DIR / "state.yaml"
@@ -53,7 +52,7 @@ def write_state(active_task: str, active_stage: str, mode: str = "edit") -> Path
         "active_task": active_task,
         "active_stage": active_stage,
         "mode": mode,
-        "updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     STATE_FILE.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return STATE_FILE

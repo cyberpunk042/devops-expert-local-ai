@@ -5,8 +5,13 @@ from pathlib import Path
 import yaml
 
 from aicp.core.skills import (
-    Skill, SkillParam, discover_skills, get_skill, resolve_params,
-    apply_params, create_skill, generate_claude_command, _load_skill,
+    Skill,
+    SkillParam,
+    apply_params,
+    create_skill,
+    discover_skills,
+    get_skill,
+    resolve_params,
 )
 
 

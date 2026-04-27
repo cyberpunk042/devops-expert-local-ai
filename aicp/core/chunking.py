@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
 
 
 def chunk_text(
@@ -11,7 +10,7 @@ def chunk_text(
     chunk_size: int = 512,
     chunk_overlap: int = 64,
     separator: str = "\n",
-) -> List[str]:
+) -> list[str]:
     """Split text into overlapping chunks.
 
     Uses a separator-aware strategy: splits on the separator first,
@@ -36,8 +35,8 @@ def chunk_text(
     segments = text.split(separator)
     segments = [s for s in segments if s.strip()]
 
-    chunks: List[str] = []
-    current: List[str] = []
+    chunks: list[str] = []
+    current: list[str] = []
     current_len = 0
 
     for segment in segments:
@@ -79,7 +78,7 @@ def chunk_file(
     path: Path,
     chunk_size: int = 512,
     chunk_overlap: int = 64,
-) -> List[dict]:
+) -> list[dict]:
     """Read a file and return chunks with metadata.
 
     Returns:
@@ -95,15 +94,15 @@ def chunk_file(
 
 
 def _overlap_segments(
-    segments: List[str],
+    segments: list[str],
     separator: str,
     overlap: int,
-) -> tuple[List[str], int]:
+) -> tuple[list[str], int]:
     """Return the tail segments that fit within the overlap budget."""
     if overlap <= 0:
         return [], 0
 
-    result: List[str] = []
+    result: list[str] = []
     total = 0
     for seg in reversed(segments):
         seg_len = len(seg) + len(separator)
@@ -115,9 +114,9 @@ def _overlap_segments(
     return result, total
 
 
-def _force_split(text: str, chunk_size: int, overlap: int) -> List[str]:
+def _force_split(text: str, chunk_size: int, overlap: int) -> list[str]:
     """Split a single long segment into fixed-size pieces."""
-    pieces: List[str] = []
+    pieces: list[str] = []
     start = 0
     step = max(chunk_size - overlap, 1)
     while start < len(text):

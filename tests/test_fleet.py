@@ -1,16 +1,19 @@
 """Tests for Fleet Bootstrap & Multi-Machine (M95)."""
 
 import json
-import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 
-from aicp.core.cluster import NodeInfo, load_fleet_config, load_cluster_config, check_cluster, find_best_node
+from aicp.core.cluster import (
+    NodeInfo,
+    check_cluster,
+    find_best_node,
+    load_cluster_config,
+    load_fleet_config,
+)
 from aicp.core.modes import Mode
-
 
 # ── load_fleet_config() ──────────────────────────────────────────────────
 

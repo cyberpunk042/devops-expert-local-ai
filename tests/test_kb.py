@@ -1,13 +1,8 @@
 """Tests for KnowledgeBase wrapper (KB + reranking integration)."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-import json
-
-import pytest
+from unittest.mock import MagicMock
 
 from aicp.core.kb import KnowledgeBase
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

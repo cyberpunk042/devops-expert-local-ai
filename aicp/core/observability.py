@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
 
-def scrape_prometheus(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
+def scrape_prometheus(base_url: str, timeout: float = 3.0) -> dict[str, Any]:
     """Scrape and parse LocalAI's /metrics endpoint.
 
     Returns a dict with key metrics extracted from Prometheus text format.
@@ -35,7 +35,7 @@ def scrape_prometheus(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
     }
 
 
-def get_loaded_models(base_url: str, timeout: float = 3.0) -> List[str]:
+def get_loaded_models(base_url: str, timeout: float = 3.0) -> list[str]:
     """Return list of model IDs from /v1/models."""
     try:
         resp = httpx.get(f"{base_url}/v1/models", timeout=timeout)
@@ -46,7 +46,7 @@ def get_loaded_models(base_url: str, timeout: float = 3.0) -> List[str]:
     return []
 
 
-def get_system_info(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
+def get_system_info(base_url: str, timeout: float = 3.0) -> dict[str, Any]:
     """Query LocalAI's /system endpoint for runtime info.
 
     Returns loaded models (in GPU memory) and installed backends.
@@ -67,7 +67,7 @@ def get_system_info(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
     return {"available": False, "loaded_models": [], "backends": []}
 
 
-def get_backends_detail(base_url: str, timeout: float = 3.0) -> List[Dict[str, Any]]:
+def get_backends_detail(base_url: str, timeout: float = 3.0) -> list[dict[str, Any]]:
     """Query LocalAI's /backends/ endpoint for installed backend details."""
     try:
         resp = httpx.get(f"{base_url}/backends/", timeout=timeout)
@@ -87,7 +87,7 @@ def get_backends_detail(base_url: str, timeout: float = 3.0) -> List[Dict[str, A
     return []
 
 
-def get_system_status(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
+def get_system_status(base_url: str, timeout: float = 3.0) -> dict[str, Any]:
     """Build a comprehensive system status snapshot.
 
     Combines: model list, Prometheus metrics, system info, and GPU status.
@@ -113,7 +113,7 @@ def get_system_status(base_url: str, timeout: float = 3.0) -> Dict[str, Any]:
     }
 
 
-def get_gpu_status() -> Dict[str, Any]:
+def get_gpu_status() -> dict[str, Any]:
     """Query nvidia-smi for GPU status."""
     import subprocess
     try:
@@ -151,7 +151,7 @@ def measure_request(
     base_url: str,
     model: str = "hermes",
     timeout: float = 30.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Send a minimal test request and measure latency breakdown.
 
     Returns timing for: total, time_to_first_token (if streaming), tokens/sec.
@@ -215,7 +215,7 @@ def measure_embedding(
     base_url: str,
     model: str = "nomic-embed",
     timeout: float = 30.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark embedding generation speed."""
     text = "The quick brown fox jumps over the lazy dog. " * 10
     t0 = time.perf_counter()
@@ -243,7 +243,7 @@ def measure_rerank(
     base_url: str,
     model: str = "bge-reranker-v2-m3",
     timeout: float = 30.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark reranking speed."""
     docs = [
         "Python is a programming language used for web development.",
@@ -277,7 +277,7 @@ def measure_grammar(
     base_url: str,
     model: str = "hermes",
     timeout: float = 30.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Benchmark grammar-constrained generation."""
     t0 = time.perf_counter()
     try:
@@ -307,7 +307,7 @@ def measure_grammar(
 # ── Prometheus text format parsing ─────────────────────────────────────────
 
 
-def _parse_gauge(text: str, metric_name: str) -> Optional[float]:
+def _parse_gauge(text: str, metric_name: str) -> float | None:
     """Extract a simple gauge value from Prometheus text."""
     pattern = rf"^{re.escape(metric_name)}\s+([\d.e+\-]+)"
     match = re.search(pattern, text, re.MULTILINE)
@@ -319,13 +319,13 @@ def _parse_gauge(text: str, metric_name: str) -> Optional[float]:
     return None
 
 
-def _parse_api_call_histogram(text: str) -> Dict[str, Any]:
+def _parse_api_call_histogram(text: str) -> dict[str, Any]:
     """Extract api_call histogram summary."""
     total_pattern = r'api_call_count\{.*?method="(\w+)".*?\}\s+([\d.e+\-]+)'
     sum_pattern = r'api_call_sum\{.*?method="(\w+)".*?\}\s+([\d.e+\-]+)'
 
-    counts: Dict[str, float] = {}
-    sums: Dict[str, float] = {}
+    counts: dict[str, float] = {}
+    sums: dict[str, float] = {}
 
     for match in re.finditer(total_pattern, text):
         method = match.group(1)
@@ -335,7 +335,7 @@ def _parse_api_call_histogram(text: str) -> Dict[str, Any]:
         method = match.group(1)
         sums[method] = sums.get(method, 0) + float(match.group(2))
 
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for method in set(list(counts.keys()) + list(sums.keys())):
         c = counts.get(method, 0)
         s = sums.get(method, 0)
@@ -347,7 +347,7 @@ def _parse_api_call_histogram(text: str) -> Dict[str, Any]:
     return result
 
 
-def _bytes_to_mb(value: Optional[float]) -> Optional[float]:
+def _bytes_to_mb(value: float | None) -> float | None:
     if value is None:
         return None
     return round(value / (1024 * 1024), 1)

@@ -1,7 +1,7 @@
 """Tests for circuit breaker — state machine, integration with controller."""
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,7 +11,6 @@ from aicp.core.circuit_breaker import (
     State,
     build_breakers,
 )
-
 
 # ---------------------------------------------------------------------------
 # State machine tests

@@ -1,17 +1,14 @@
 """Tests for benchmark observability functions."""
 
-from unittest.mock import MagicMock, patch
 import json
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from aicp.core.observability import (
-    measure_request,
     measure_embedding,
-    measure_rerank,
     measure_grammar,
+    measure_request,
+    measure_rerank,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

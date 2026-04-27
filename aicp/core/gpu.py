@@ -6,7 +6,6 @@ import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -23,7 +22,7 @@ class GpuInfo:
     compute_cap: str
 
 
-def detect_gpus() -> List[GpuInfo]:
+def detect_gpus() -> list[GpuInfo]:
     """Detect available NVIDIA GPUs via nvidia-smi."""
     try:
         result = subprocess.run(
@@ -79,8 +78,8 @@ SYSTEM_VRAM_RESERVE_MB = 800
 
 def calculate_optimal_config(
     gguf_path: Path,
-    gpus: List[GpuInfo],
-    target_gpu_indices: Optional[List[int]] = None,
+    gpus: list[GpuInfo],
+    target_gpu_indices: list[int] | None = None,
 ) -> dict:
     """Calculate optimal LocalAI model config based on available hardware.
 

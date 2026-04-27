@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from pathlib import Path
-from typing import Dict, Generator, Optional
 
 from aicp.core.modes import Mode
 from aicp.core.result import TaskResult

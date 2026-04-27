@@ -5,24 +5,23 @@ Run with: aicp-agent --port 9100 --token <shared-secret>
 
 from __future__ import annotations
 
-import json
-import hashlib
 import hmac
+import json
 import os
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
-from aicp.config.loader import load_config, get_backend_config
+from aicp.backends.localai import LocalAIBackend
+from aicp.config.loader import get_backend_config, load_config
 from aicp.core.controller import Controller, Task
 from aicp.core.events import get_emitter
 from aicp.core.gpu import detect_gpus
 from aicp.core.models import list_models
 from aicp.core.modes import Mode
-from aicp.core.tasks import get_task_manager, TaskType, TaskStatus
+from aicp.core.tasks import TaskType, get_task_manager
 
 
 def _generate_away_summary(config: dict) -> str:
@@ -269,12 +268,12 @@ class AgentHandler(BaseHTTPRequestHandler):
         provided = self.headers.get("Authorization", "").replace("Bearer ", "")
         return hmac.compare_digest(provided, expected)
 
-    def _read_body(self) -> Dict[str, Any]:
+    def _read_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
         return json.loads(raw) if raw else {}
 
-    def _respond_json(self, status: int, data: Dict) -> None:
+    def _respond_json(self, status: int, data: dict) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -287,7 +286,7 @@ class AgentHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run_agent(port: int = 9100, token: str = "", config_path: Optional[Path] = None) -> None:
+def run_agent(port: int = 9100, token: str = "", config_path: Path | None = None) -> None:
     """Start the AICP agent daemon."""
     config = load_config(config_path) if config_path else load_config()
 

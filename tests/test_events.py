@@ -1,7 +1,6 @@
 """Tests for aicp.core.events — event emitter system."""
 
 import threading
-import time
 from unittest.mock import MagicMock
 
 import pytest

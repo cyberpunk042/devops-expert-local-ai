@@ -1,6 +1,5 @@
 """Tests for Fill-in-the-Middle (FIM) code completion (M80)."""
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

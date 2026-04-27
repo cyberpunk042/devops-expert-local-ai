@@ -11,8 +11,7 @@ Typical flow:
 
 from __future__ import annotations
 
-import json
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -200,7 +199,7 @@ class EmbeddingStore:
         value = f"{metadata}: {text}" if metadata else text
         self.store.set([embedding], [value])
 
-    def remember_batch(self, texts: list[str], metadata: Optional[list[str]] = None) -> None:
+    def remember_batch(self, texts: list[str], metadata: list[str] | None = None) -> None:
         """Store multiple texts in working memory.
 
         Args:

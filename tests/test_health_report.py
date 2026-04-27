@@ -1,14 +1,9 @@
 """Tests for health reports and persistent metrics (Stage 4 Phases 5+6)."""
 
-import json
 import time
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from aicp.core.prometheus import MetricsCollector
-
 
 # ---------------------------------------------------------------------------
 # Phase 5: Persistent Metrics
@@ -132,7 +127,7 @@ class TestHealthReport:
             assert any("offload" in r.lower() for r in report["recommendations"])
 
     def test_save_and_list(self, tmp_path, monkeypatch):
-        from aicp.core.health_report import save_report, list_reports
+        from aicp.core.health_report import list_reports, save_report
         monkeypatch.setenv("AICP_HOME", str(tmp_path))
         report = {"timestamp": "2026-04-07", "status": "healthy", "summary": {}}
         path = save_report(report)

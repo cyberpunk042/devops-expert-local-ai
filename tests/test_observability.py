@@ -3,13 +3,12 @@
 import pytest
 
 from aicp.core.observability import (
-    _parse_gauge,
-    _parse_api_call_histogram,
     _bytes_to_mb,
-    scrape_prometheus,
+    _parse_api_call_histogram,
+    _parse_gauge,
     get_gpu_status,
+    scrape_prometheus,
 )
-
 
 # ── Prometheus parsing ───────────────────────────────────────────────────────
 

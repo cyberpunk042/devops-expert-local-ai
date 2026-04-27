@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
@@ -24,5 +24,5 @@ class TaskResult:
     """Structured result from a backend execution."""
     text: str
     usage: TokenUsage = field(default_factory=TokenUsage)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    session_id: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    session_id: str | None = None

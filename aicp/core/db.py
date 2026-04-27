@@ -24,8 +24,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -49,7 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project   ON tasks (project);
 """
 
 
-def _db_path() -> Optional[str]:
+def _db_path() -> str | None:
     """Return the configured DB path, or None if not set."""
     raw = os.environ.get("AICP_DB_FILE", "").strip()
     if not raw:
@@ -65,7 +64,7 @@ def _connect(path: str) -> sqlite3.Connection:
     return conn
 
 
-def record_task(record: Dict[str, Any]) -> None:
+def record_task(record: dict[str, Any]) -> None:
     """Insert or replace a task record in the SQLite DB.
 
     Called automatically by ``history.save_task()`` when AICP_DB_FILE is set.
@@ -117,7 +116,7 @@ def rebuild_db() -> int:
     if not path:
         raise RuntimeError("AICP_DB_FILE is not set. Set it before calling rebuild_db().")
 
-    from aicp.core.history import list_tasks, _history_dir
+    from aicp.core.history import _history_dir
 
     count = 0
     conn = _connect(path)
@@ -162,10 +161,10 @@ def rebuild_db() -> int:
 
 
 def query_tasks(
-    backend: Optional[str] = None,
-    since_days: Optional[int] = None,
+    backend: str | None = None,
+    since_days: int | None = None,
     limit: int = 100,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Query tasks from the DB with optional filters.
 
     Falls back gracefully to an empty list if AICP_DB_FILE is not set.
@@ -175,7 +174,7 @@ def query_tasks(
         return []
 
     conditions = []
-    params: List[Any] = []
+    params: list[Any] = []
 
     if backend:
         conditions.append("backend = ?")

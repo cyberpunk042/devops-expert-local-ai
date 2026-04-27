@@ -2,13 +2,9 @@
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import json
-
-import pytest
 
 from aicp.cli.interactive import _handle_slash
 from aicp.core.modes import Mode
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -4,7 +4,6 @@ These tests require backends to be available. Skipped when not.
 """
 
 import shutil
-import os
 from pathlib import Path
 
 import pytest
@@ -58,7 +57,7 @@ class TestLocalAIIntegration:
 
     def test_auto_config(self):
         """Verify auto-config produces sensible results."""
-        from aicp.core.gpu import detect_gpus, calculate_optimal_config
+        from aicp.core.gpu import calculate_optimal_config, detect_gpus
         gpus = detect_gpus()
         gguf = PROJECT / "models" / "Hermes-3-Llama-3.2-3B-Q4_K_M.gguf"
         if gguf.exists():
@@ -106,8 +105,8 @@ class TestRouterIntegration:
 
     def test_auto_routing_executes(self):
         """Verify auto-routed task actually executes."""
-        from aicp.backends.localai import LocalAIBackend
         from aicp.backends.claude_code import ClaudeCodeBackend
+        from aicp.backends.localai import LocalAIBackend
         from aicp.core.router import classify_task_with_reason
 
         backends = {

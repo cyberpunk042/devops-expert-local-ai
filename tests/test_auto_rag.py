@@ -1,12 +1,8 @@
 """Tests for auto-RAG: automatic KB context injection."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from aicp.core.kb import KnowledgeBase
-
 
 # ── KnowledgeBase augment_prompt is the core of auto-RAG ─────────────────────
 

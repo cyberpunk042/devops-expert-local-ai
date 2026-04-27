@@ -16,9 +16,9 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from aicp.core.metrics import aggregate
 
@@ -32,7 +32,7 @@ def _reports_dir() -> Path:
     return d
 
 
-def generate_report(config: Dict[str, Any] = None) -> Dict[str, Any]:
+def generate_report(config: dict[str, Any] = None) -> dict[str, Any]:
     """Generate a health report from task history.
 
     Compares recent stats (last 24h) vs previous period (prior 24h)
@@ -104,7 +104,7 @@ def generate_report(config: Dict[str, Any] = None) -> Dict[str, Any]:
     return report
 
 
-def _detect_trends(stats: Dict[str, Any]) -> List[Dict[str, str]]:
+def _detect_trends(stats: dict[str, Any]) -> list[dict[str, str]]:
     """Detect concerning trends in the stats."""
     trends = []
 
@@ -157,9 +157,9 @@ def _detect_trends(stats: Dict[str, Any]) -> List[Dict[str, str]]:
 
 
 def _generate_recommendations(
-    summary: Dict[str, Any],
-    trends: List[Dict[str, str]],
-) -> List[str]:
+    summary: dict[str, Any],
+    trends: list[dict[str, str]],
+) -> list[str]:
     """Generate actionable recommendations based on summary and trends."""
     recs = []
 
@@ -193,7 +193,7 @@ def _generate_recommendations(
     return recs
 
 
-def save_report(report: Dict[str, Any]) -> Path:
+def save_report(report: dict[str, Any]) -> Path:
     """Save a report to disk. Returns the file path."""
     ts = datetime.utcnow().strftime("%Y-%m-%d-%H%M")
     path = _reports_dir() / f"{ts}.json"
@@ -202,7 +202,7 @@ def save_report(report: Dict[str, Any]) -> Path:
     return path
 
 
-def list_reports(max_count: int = 20) -> List[Dict[str, str]]:
+def list_reports(max_count: int = 20) -> list[dict[str, str]]:
     """List recent reports, newest first."""
     reports = []
     for path in sorted(_reports_dir().glob("*.json"), reverse=True):
@@ -232,7 +232,7 @@ def cleanup_old_reports(retain_days: int = 30) -> int:
     return removed
 
 
-def format_report(report: Dict[str, Any]) -> str:
+def format_report(report: dict[str, Any]) -> str:
     """Format a report as human-readable text."""
     lines = []
     summary = report.get("summary", {})

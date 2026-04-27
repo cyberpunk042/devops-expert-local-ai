@@ -11,7 +11,6 @@ import math
 import sqlite3
 import time
 from pathlib import Path
-from typing import List, Optional
 
 from aicp.core.chunking import chunk_file, chunk_text
 
@@ -44,10 +43,10 @@ class VectorStore:
     def add(
         self,
         store: str,
-        texts: List[str],
-        embeddings: List[List[float]],
-        sources: List[str],
-        chunk_indices: List[int],
+        texts: list[str],
+        embeddings: list[list[float]],
+        sources: list[str],
+        chunk_indices: list[int],
     ) -> int:
         """Insert chunks with their embeddings.  Returns count inserted."""
         now = time.time()
@@ -66,10 +65,10 @@ class VectorStore:
     def search(
         self,
         store: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
         threshold: float = 0.0,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Find the top-k most similar chunks by cosine similarity.
 
         Returns list of dicts: {text, source, chunk_index, similarity}
@@ -94,7 +93,7 @@ class VectorStore:
         results.sort(key=lambda r: r["similarity"], reverse=True)
         return results[:top_k]
 
-    def list_sources(self, store: str) -> List[dict]:
+    def list_sources(self, store: str) -> list[dict]:
         """List all ingested sources with chunk counts."""
         cur = self._conn.execute(
             "SELECT source, COUNT(*) as chunks, MIN(created_at) as first_added "
@@ -195,7 +194,7 @@ class RAGPipeline:
             chunk_indices=list(range(len(raw_chunks))),
         )
 
-    def retrieve(self, query: str, top_k: Optional[int] = None) -> List[dict]:
+    def retrieve(self, query: str, top_k: int | None = None) -> list[dict]:
         """Embed the query and return the most relevant chunks."""
         query_emb = self.embed(query)
         return self.store.search(
@@ -214,7 +213,7 @@ class RAGPipeline:
         if not results:
             return query
 
-        context_parts: List[str] = []
+        context_parts: list[str] = []
         total = 0
         for r in results:
             text = r["text"]
@@ -234,7 +233,7 @@ class RAGPipeline:
             f"Question: {query}"
         )
 
-    def list_sources(self) -> List[dict]:
+    def list_sources(self) -> list[dict]:
         return self.store.list_sources(self.store_name)
 
     def delete_source(self, source: str) -> int:
@@ -247,7 +246,7 @@ class RAGPipeline:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))

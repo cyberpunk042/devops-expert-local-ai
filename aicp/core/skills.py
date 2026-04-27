@@ -10,10 +10,9 @@ Skills are YAML pipeline files with parameter support.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -34,14 +33,14 @@ class Skill:
     description: str
     source: str  # "global", "project", or "claude-command"
     path: Path
-    parameters: List[SkillParam] = field(default_factory=list)
-    steps: List[Dict[str, Any]] = field(default_factory=list)
+    parameters: list[SkillParam] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
     # New fields (inspired by Claude Code)
     model: str = ""              # Model override (e.g., "gemma4-e2b" for fleet skills)
-    allowed_tools: List[str] = field(default_factory=list)  # Tool restriction
+    allowed_tools: list[str] = field(default_factory=list)  # Tool restriction
     effort: str = ""             # low, medium, high
     context: str = "inline"      # "inline" (expand in conversation) or "fork" (sub-agent)
-    paths: List[str] = field(default_factory=list)  # Scope restriction
+    paths: list[str] = field(default_factory=list)  # Scope restriction
 
 
 def _global_skills_dir() -> Path:
@@ -60,7 +59,7 @@ def _global_claude_skills_dir() -> Path:
     return Path.home() / ".claude" / "skills"
 
 
-def discover_skills(project_path: Optional[Path] = None) -> List[Skill]:
+def discover_skills(project_path: Path | None = None) -> list[Skill]:
     """Discover skills from all layers.
 
     Discovery order (later overrides earlier):
@@ -121,7 +120,7 @@ def discover_skills(project_path: Optional[Path] = None) -> List[Skill]:
     return skills
 
 
-def get_skill(name: str, project_path: Optional[Path] = None) -> Optional[Skill]:
+def get_skill(name: str, project_path: Path | None = None) -> Skill | None:
     """Find a skill by name across all layers."""
     for skill in discover_skills(project_path):
         if skill.name == name:
@@ -129,7 +128,7 @@ def get_skill(name: str, project_path: Optional[Path] = None) -> Optional[Skill]
     return None
 
 
-def resolve_params(skill: Skill, provided: Dict[str, str]) -> Dict[str, str]:
+def resolve_params(skill: Skill, provided: dict[str, str]) -> dict[str, str]:
     """Resolve skill parameters, applying defaults and checking required ones."""
     resolved = {}
     for param in skill.parameters:
@@ -142,7 +141,7 @@ def resolve_params(skill: Skill, provided: Dict[str, str]) -> Dict[str, str]:
     return resolved
 
 
-def apply_params(steps: List[Dict[str, Any]], params: Dict[str, str]) -> List[Dict[str, Any]]:
+def apply_params(steps: list[dict[str, Any]], params: dict[str, str]) -> list[dict[str, Any]]:
     """Substitute {param_name} in step prompts."""
     result = []
     for step in steps:
@@ -158,8 +157,8 @@ def apply_params(steps: List[Dict[str, Any]], params: Dict[str, str]) -> List[Di
 def create_skill(
     name: str,
     description: str,
-    parameters: List[Dict[str, Any]],
-    steps: List[Dict[str, Any]],
+    parameters: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
     target_dir: Path,
 ) -> Path:
     """Create a new skill YAML file."""
@@ -245,7 +244,7 @@ description: {skill.description}"""
 generate_claude_command = generate_claude_skill
 
 
-def _parse_allowed_tools(raw: Any) -> List[str]:
+def _parse_allowed_tools(raw: Any) -> list[str]:
     """Parse allowed-tools from frontmatter (comma-separated string or list)."""
     if isinstance(raw, list):
         return [str(t).strip() for t in raw if t]
@@ -254,7 +253,7 @@ def _parse_allowed_tools(raw: Any) -> List[str]:
     return []
 
 
-def _load_skill_yaml(path: Path, source: str) -> Optional[Skill]:
+def _load_skill_yaml(path: Path, source: str) -> Skill | None:
     """Load a skill from a YAML file (AICP format)."""
     try:
         with open(path) as f:
@@ -292,7 +291,7 @@ def _load_skill_yaml(path: Path, source: str) -> Optional[Skill]:
 _load_skill = _load_skill_yaml
 
 
-def _load_skill_md(path: Path, source: str) -> Optional[Skill]:
+def _load_skill_md(path: Path, source: str) -> Skill | None:
     """Load a skill from a SKILL.md file (Claude Code format).
 
     Parses YAML frontmatter between --- delimiters.

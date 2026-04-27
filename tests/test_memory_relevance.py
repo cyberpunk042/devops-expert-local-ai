@@ -1,26 +1,21 @@
 """Tests for aicp.core.memory_relevance — memory scoring, aging, scanning."""
 
-import os
 import time
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 from aicp.core.memory_relevance import (
+    MAX_MEMORY_FILES,
     MemoryHeader,
     MemoryRelevanceScorer,
-    ScoredMemory,
+    _cosine_similarity,
+    _parse_frontmatter,
+    format_memory_manifest,
     memory_age_days,
     memory_age_text,
     memory_freshness_warning,
     scan_memory_files,
-    format_memory_manifest,
-    _parse_frontmatter,
-    _cosine_similarity,
-    MAX_MEMORY_FILES,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

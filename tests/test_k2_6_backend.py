@@ -10,8 +10,6 @@ e011-m002-k2-6-openrouter-backend-adapter.md
 """
 from __future__ import annotations
 
-import os
-
 from aicp.backends.openrouter import OpenRouterBackend
 
 

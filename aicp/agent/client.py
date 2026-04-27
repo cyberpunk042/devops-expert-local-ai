@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -14,7 +14,7 @@ class AgentClient:
         self.base_url = f"http://{host}:{port}"
         self.token = token
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
         if self.token:
             h["Authorization"] = f"Bearer {self.token}"
@@ -29,7 +29,7 @@ class AgentClient:
                 httpx.RemoteProtocolError, OSError):
             return False
 
-    def status(self) -> Optional[Dict[str, Any]]:
+    def status(self) -> dict[str, Any] | None:
         """Get remote node status (GPUs, models, backends)."""
         try:
             r = httpx.get(f"{self.base_url}/status", timeout=5.0)
@@ -46,7 +46,7 @@ class AgentClient:
         mode: str = "think",
         backend: str = "local",
         project: str = ".",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Send a task to the remote agent. Returns result dict."""
         r = httpx.post(
             f"{self.base_url}/task",

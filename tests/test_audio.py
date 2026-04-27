@@ -1,16 +1,12 @@
 """Tests for audio capabilities (STT + TTS)."""
 
+import wave
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import json
-import struct
-import wave
-import io
 
 import pytest
 
 from aicp.backends.localai import LocalAIBackend
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

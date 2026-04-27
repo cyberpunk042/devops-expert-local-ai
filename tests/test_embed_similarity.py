@@ -1,7 +1,6 @@
 """Tests for Embedding Dimensions & Similarity Utilities (M91)."""
 
 import json
-import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

@@ -2,13 +2,15 @@
 
 from pathlib import Path
 
-import pytest
-
 from aicp.core.modes import Mode
-from aicp.guardrails.paths import is_path_allowed, get_forbidden_patterns
-from aicp.guardrails.checks import check_project_path, check_mode_compatibility, check_forbidden_path, run_preflight_checks
-from aicp.guardrails.response import scan_think_mode, scan_response_secrets
-
+from aicp.guardrails.checks import (
+    check_forbidden_path,
+    check_mode_compatibility,
+    check_project_path,
+    run_preflight_checks,
+)
+from aicp.guardrails.paths import get_forbidden_patterns, is_path_allowed
+from aicp.guardrails.response import scan_response_secrets, scan_think_mode
 
 # --- Path guardrails ---
 

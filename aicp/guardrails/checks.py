@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from aicp.core.modes import Mode
 from aicp.guardrails.paths import is_path_allowed
-
 
 # Paths that should never be used as project roots
 _DANGEROUS_ROOTS = ["/", "/root", "/home", "/etc", "/var", "/usr", "/tmp"]
 
 
-def check_project_path(project_path: Path) -> List[str]:
+def check_project_path(project_path: Path) -> list[str]:
     """Validate the project path is safe to operate on."""
     errors = []
 
@@ -45,7 +44,7 @@ def check_project_path(project_path: Path) -> List[str]:
     return errors
 
 
-def check_mode_compatibility(mode: Mode, backend_name: str) -> List[str]:
+def check_mode_compatibility(mode: Mode, backend_name: str) -> list[str]:
     """Validate that the mode is compatible with the backend.
 
     Documents enforcement reality:
@@ -67,8 +66,8 @@ def check_mode_compatibility(mode: Mode, backend_name: str) -> List[str]:
 def check_forbidden_path(
     project_path: Path,
     mode: Mode,
-    config: Dict[str, Any],
-) -> List[str]:
+    config: dict[str, Any],
+) -> list[str]:
     """Block Edit/Act tasks targeting forbidden or out-of-scope paths.
 
     Checks two things:
@@ -78,7 +77,7 @@ def check_forbidden_path(
     if mode == Mode.THINK:
         return []  # read-only mode: no restriction needed
 
-    from aicp.guardrails.paths import get_forbidden_patterns, is_path_allowed
+    from aicp.guardrails.paths import get_forbidden_patterns
 
     forbidden_patterns = get_forbidden_patterns(config)
 
@@ -113,8 +112,8 @@ def run_preflight_checks(
     project_path: Path,
     mode: Mode,
     backend_name: str,
-    config: Dict[str, Any],
-) -> List[str]:
+    config: dict[str, Any],
+) -> list[str]:
     """Run all pre-execution checks. Returns list of errors/warnings."""
     results = []
 

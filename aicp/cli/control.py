@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from rich.console import Console
-from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from aicp.core.history import list_tasks
 from aicp.core.projects import list_projects, load_project_state
@@ -18,7 +14,7 @@ from aicp.core.projects import list_projects, load_project_state
 console = Console()
 
 
-def run_control(project_name: Optional[str] = None) -> int:
+def run_control(project_name: str | None = None) -> int:
     """Display the control plane — overview or deep dive."""
     if project_name:
         return _project_deep_dive(project_name)
@@ -52,7 +48,7 @@ def _overview() -> int:
     enriched.sort(key=lambda x: x[2], reverse=True)
 
     # Phase summary counts
-    phase_counts: Dict[str, int] = {}
+    phase_counts: dict[str, int] = {}
     for _, state, _ in enriched:
         phase = (state or {}).get("phase", "no state")
         phase_counts[phase] = phase_counts.get(phase, 0) + 1

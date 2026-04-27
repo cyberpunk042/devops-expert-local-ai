@@ -19,9 +19,8 @@ from __future__ import annotations
 import threading
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Dict, Optional
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 @dataclass
@@ -45,18 +44,18 @@ class MetricsCollector:
     periodically and restores on startup (Stage 4 Phase 5).
     """
 
-    def __init__(self, snapshot_path: Optional[str] = None) -> None:
+    def __init__(self, snapshot_path: str | None = None) -> None:
         self._lock = threading.Lock()
-        self._backends: Dict[str, _BackendStats] = defaultdict(_BackendStats)
-        self._models: Dict[str, int] = defaultdict(int)  # model → request count
-        self._routes: Dict[str, int] = defaultdict(int)   # route → count
+        self._backends: dict[str, _BackendStats] = defaultdict(_BackendStats)
+        self._models: dict[str, int] = defaultdict(int)  # model → request count
+        self._routes: dict[str, int] = defaultdict(int)   # route → count
         self._start_time = time.time()
         # Warm pool tracking (E-M52)
-        self._loaded_models: Dict[str, float] = {}  # model → last_used timestamp
+        self._loaded_models: dict[str, float] = {}  # model → last_used timestamp
         self._model_swaps: int = 0
         # Circuit breaker tracking (Stage 4)
-        self._breaker_states: Dict[str, str] = {}   # backend → state
-        self._breaker_trips: Dict[str, int] = defaultdict(int)  # backend → trip count
+        self._breaker_states: dict[str, str] = {}   # backend → state
+        self._breaker_trips: dict[str, int] = defaultdict(int)  # backend → trip count
         # Snapshot persistence (Stage 4 Phase 5)
         self._snapshot_path = snapshot_path
         if snapshot_path:
@@ -120,7 +119,7 @@ class MetricsCollector:
             self._breaker_trips[backend] += 1
 
     @property
-    def loaded_models(self) -> Dict[str, float]:
+    def loaded_models(self) -> dict[str, float]:
         with self._lock:
             return dict(self._loaded_models)
 
@@ -314,7 +313,7 @@ class MetricsCollector:
 class _MetricsHandler(BaseHTTPRequestHandler):
     """HTTP handler that serves Prometheus metrics."""
 
-    collector: Optional[MetricsCollector] = None
+    collector: MetricsCollector | None = None
 
     def do_GET(self) -> None:
         if self.path == "/metrics":

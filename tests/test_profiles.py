@@ -1,9 +1,11 @@
 """Tests for the profile system — loading, validation, merging, and config wiring."""
 
-import pytest
-import yaml
 from pathlib import Path
 
+import pytest
+import yaml
+
+from aicp.config.loader import DEFAULT_CONFIG_PATH, _deep_merge, load_config
 from aicp.core.profiles import (
     PROFILES_DIR,
     diff_profiles,
@@ -14,8 +16,6 @@ from aicp.core.profiles import (
     resolve_profile,
     validate_profile,
 )
-from aicp.config.loader import _deep_merge, load_config, DEFAULT_CONFIG_PATH
-
 
 # ---------------------------------------------------------------------------
 # Factories

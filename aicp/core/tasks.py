@@ -20,7 +20,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aicp.tasks")
 
@@ -63,7 +63,7 @@ class TaskProgress:
     token_count: int = 0
     last_activity: str = ""
     last_activity_time: float = 0.0
-    recent_activities: List[str] = field(default_factory=list)
+    recent_activities: list[str] = field(default_factory=list)
 
     _MAX_RECENT = 5
 
@@ -93,22 +93,22 @@ class TaskState:
     backend: str = ""
     project: str = ""
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    result: Optional[str] = None
-    error: Optional[str] = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    result: str | None = None
+    error: str | None = None
     progress: TaskProgress = field(default_factory=TaskProgress)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Elapsed time from start to completion (or now if running)."""
         if self.started_at is None:
             return None
         end = self.completed_at or time.time()
         return round(end - self.started_at, 2)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dict for API responses."""
         return {
             "id": self.id,
@@ -154,7 +154,7 @@ class TaskManager:
         eviction_delay: float = 30.0,
         event_emitter=None,
     ) -> None:
-        self._tasks: Dict[str, TaskState] = {}
+        self._tasks: dict[str, TaskState] = {}
         self._lock = threading.Lock()
         self._max_completed = max_completed
         self._eviction_delay = eviction_delay
@@ -175,7 +175,7 @@ class TaskManager:
         mode: str = "",
         backend: str = "",
         project: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> TaskState:
         """Register a new task. Returns the task state with generated ID."""
         task_id = generate_task_id(task_type)
@@ -198,7 +198,7 @@ class TaskManager:
         logger.debug("Registered task %s (%s)", task_id, task_type.value)
         return task
 
-    def start(self, task_id: str) -> Optional[TaskState]:
+    def start(self, task_id: str) -> TaskState | None:
         """Transition task from PENDING to RUNNING."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -212,7 +212,7 @@ class TaskManager:
 
         return task
 
-    def complete(self, task_id: str, result: str = "") -> Optional[TaskState]:
+    def complete(self, task_id: str, result: str = "") -> TaskState | None:
         """Transition task to COMPLETED with result."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -229,7 +229,7 @@ class TaskManager:
         logger.debug("Task %s completed (%.1fs)", task_id, task.duration_seconds or 0)
         return task
 
-    def fail(self, task_id: str, error: str = "") -> Optional[TaskState]:
+    def fail(self, task_id: str, error: str = "") -> TaskState | None:
         """Transition task to FAILED with error."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -246,7 +246,7 @@ class TaskManager:
         logger.debug("Task %s failed: %s", task_id, error[:100])
         return task
 
-    def kill(self, task_id: str, reason: str = "cancelled") -> Optional[TaskState]:
+    def kill(self, task_id: str, reason: str = "cancelled") -> TaskState | None:
         """Transition task to KILLED (user or timeout cancellation)."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -265,10 +265,10 @@ class TaskManager:
     def update_progress(
         self,
         task_id: str,
-        tool_name: Optional[str] = None,
+        tool_name: str | None = None,
         tokens: int = 0,
-        activity: Optional[str] = None,
-    ) -> Optional[TaskState]:
+        activity: str | None = None,
+    ) -> TaskState | None:
         """Update task progress (tool use, tokens, activity)."""
         with self._lock:
             task = self._tasks.get(task_id)
@@ -282,17 +282,17 @@ class TaskManager:
                 task.progress.token_count += tokens
         return task
 
-    def get(self, task_id: str) -> Optional[TaskState]:
+    def get(self, task_id: str) -> TaskState | None:
         """Get task state by ID."""
         with self._lock:
             return self._tasks.get(task_id)
 
     def list_tasks(
         self,
-        status: Optional[TaskStatus] = None,
-        task_type: Optional[TaskType] = None,
+        status: TaskStatus | None = None,
+        task_type: TaskType | None = None,
         limit: int = 50,
-    ) -> List[TaskState]:
+    ) -> list[TaskState]:
         """List tasks, optionally filtered by status or type."""
         with self._lock:
             tasks = list(self._tasks.values())
@@ -341,7 +341,7 @@ class TaskManager:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-_global_manager: Optional[TaskManager] = None
+_global_manager: TaskManager | None = None
 _global_lock = threading.Lock()
 
 

@@ -1,19 +1,16 @@
 """Tests for multimodal tools (vision, audio, image gen, KB search)."""
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import json
-
-import pytest
 
 from aicp.core.tools import (
+    ALL_TOOLS,
+    EDIT_TOOLS,
+    THINK_TOOLS,
     execute_tool,
     get_tools_for_mode,
-    ALL_TOOLS,
-    THINK_TOOLS,
-    EDIT_TOOLS,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

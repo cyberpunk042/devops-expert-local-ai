@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 # Default patterns — used when config doesn't specify any
 DEFAULT_FORBIDDEN_PATTERNS = [
@@ -19,7 +18,7 @@ DEFAULT_FORBIDDEN_PATTERNS = [
 ]
 
 
-def get_forbidden_patterns(config: Optional[Dict[str, Any]] = None) -> List[str]:
+def get_forbidden_patterns(config: dict[str, Any] | None = None) -> list[str]:
     """Get forbidden patterns from config, falling back to defaults."""
     if config is not None:
         patterns = config.get("guardrails", {}).get("forbidden_patterns")
@@ -31,8 +30,8 @@ def get_forbidden_patterns(config: Optional[Dict[str, Any]] = None) -> List[str]
 def is_path_allowed(
     path: Path,
     project_root: Path,
-    allowed_paths: Optional[List[Path]] = None,
-    forbidden_patterns: Optional[List[str]] = None,
+    allowed_paths: list[Path] | None = None,
+    forbidden_patterns: list[str] | None = None,
 ) -> bool:
     """Check if a path is safe to access.
 

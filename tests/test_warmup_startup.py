@@ -1,14 +1,10 @@
 """Tests for startup model pre-warming and enhanced health endpoint (Stage 4 Phase 2+3)."""
 
-import json
 import time
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from aicp.agent.server import AgentHandler
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -110,14 +106,14 @@ class TestHealthEndpoint:
 class TestWarmupConfig:
     def test_warmup_disabled_by_default(self):
         """Default profile has warmup.enabled=false."""
-        from aicp.config.loader import load_config, DEFAULT_CONFIG_PATH
+        from aicp.config.loader import DEFAULT_CONFIG_PATH, load_config
         config = load_config(DEFAULT_CONFIG_PATH)
         warmup = config.get("warmup", {})
         assert warmup.get("enabled", False) is False
 
     def test_fleet_light_warmup_enabled(self):
         """Fleet-light profile has warmup enabled with gemma4-e2b."""
-        from aicp.config.loader import load_config, DEFAULT_CONFIG_PATH
+        from aicp.config.loader import DEFAULT_CONFIG_PATH, load_config
         config = load_config(DEFAULT_CONFIG_PATH, profile="fleet-light")
         warmup = config.get("warmup", {})
         assert warmup.get("enabled") is True
@@ -149,9 +145,9 @@ class TestWarmupConfig:
 class TestWarmupExecution:
     def test_warmup_calls_model_warmup(self):
         """Warmup sequence calls backend.model_warmup for each model."""
+        from unittest.mock import MagicMock, patch
+
         from aicp.agent.server import run_agent
-        from unittest.mock import patch, MagicMock
-        import threading
 
         warmup_calls = []
         mock_backend = MagicMock()

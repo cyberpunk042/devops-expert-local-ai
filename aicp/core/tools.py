@@ -5,8 +5,9 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aicp.backends.localai import LocalAIBackend
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 # ── Tool safety metadata (inspired by Claude Code's buildTool pattern) ──────
 # Fail-closed: assume tools are NOT safe unless explicitly marked.
 
-ToolMeta = Dict[str, Any]  # typing alias
+ToolMeta = dict[str, Any]  # typing alias
 
 def _meta(
     is_read_only: bool = False,
@@ -22,7 +23,7 @@ def _meta(
     is_concurrent_safe: bool = False,
     requires_backend: bool = False,
     requires_path: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build tool safety metadata with fail-closed defaults."""
     return {
         "is_read_only": is_read_only,
@@ -34,7 +35,7 @@ def _meta(
 
 
 # Safety metadata per tool name
-TOOL_SAFETY: Dict[str, Dict[str, Any]] = {
+TOOL_SAFETY: dict[str, dict[str, Any]] = {
     "file_read":        _meta(is_read_only=True, is_concurrent_safe=True, requires_path=True),
     "file_list":        _meta(is_read_only=True, is_concurrent_safe=True),
     "grep":             _meta(is_read_only=True, is_concurrent_safe=True),
@@ -417,7 +418,7 @@ def _execute_shell(args: dict, project_path: Path) -> str:
 # ── Multimodal tool implementations ────────────────────────────────────────
 
 def _execute_image_analyze(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Analyze an image using the vision model."""
     if not backend:
@@ -443,7 +444,7 @@ def _execute_image_analyze(
 
 
 def _execute_audio_transcribe(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Transcribe audio to text."""
     if not backend:
@@ -462,7 +463,7 @@ def _execute_audio_transcribe(
 
 
 def _execute_text_to_speech(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Generate speech from text."""
     if not backend:
@@ -477,7 +478,7 @@ def _execute_text_to_speech(
 
 
 def _execute_image_generate(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Generate an image from a text prompt."""
     if not backend:
@@ -493,7 +494,7 @@ def _execute_image_generate(
 
 
 def _execute_kb_search(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Search the knowledge base."""
     if not backend:
@@ -501,8 +502,8 @@ def _execute_kb_search(
     query = args["query"]
     top_k = args.get("top_k", 5)
     try:
-        from aicp.core.kb import KnowledgeBase
         from aicp.config.loader import load_config
+        from aicp.core.kb import KnowledgeBase
         config = load_config()
         kb = KnowledgeBase(backend, config)
         results = kb.search(query, top_k=top_k)
@@ -514,7 +515,7 @@ def _execute_kb_search(
 
 
 def _execute_store_remember(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Store information in working memory."""
     if not backend:
@@ -529,7 +530,7 @@ def _execute_store_remember(
 
 
 def _execute_store_recall(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Search working memory."""
     if not backend:
@@ -545,13 +546,13 @@ def _execute_store_recall(
 
 
 def _execute_system_info(
-    args: dict, project_path: Path, backend: Optional[LocalAIBackend] = None,
+    args: dict, project_path: Path, backend: LocalAIBackend | None = None,
 ) -> str:
     """Get LocalAI system status."""
     if not backend:
         return "Error: system info requires a LocalAI backend"
     try:
-        from aicp.core.observability import get_system_info, get_loaded_models
+        from aicp.core.observability import get_loaded_models, get_system_info
         sys_info = get_system_info(backend.base_url)
         models = get_loaded_models(backend.base_url)
         return json.dumps({
@@ -584,12 +585,12 @@ _MULTIMODAL_REGISTRY: dict[str, Callable] = {
 }
 
 
-def get_tool_meta(name: str) -> Dict[str, Any]:
+def get_tool_meta(name: str) -> dict[str, Any]:
     """Get safety metadata for a tool. Returns fail-closed defaults if unknown."""
     return TOOL_SAFETY.get(name, _meta())
 
 
-def validate_tool_input(name: str, arguments: str | dict) -> Optional[str]:
+def validate_tool_input(name: str, arguments: str | dict) -> str | None:
     """Validate tool input before execution.
 
     Returns None if valid, or an error message string if invalid.
@@ -639,7 +640,7 @@ def validate_tool_input(name: str, arguments: str | dict) -> Optional[str]:
     return None
 
 
-def check_tool_permissions(name: str, mode_name: str) -> Optional[str]:
+def check_tool_permissions(name: str, mode_name: str) -> str | None:
     """Check if a tool is allowed in the given permission mode.
 
     Returns None if allowed, or a denial reason string.
@@ -661,8 +662,8 @@ def execute_tool(
     name: str,
     arguments: str,
     project_path: Path,
-    backend: Optional[LocalAIBackend] = None,
-    mode: Optional[str] = None,
+    backend: LocalAIBackend | None = None,
+    mode: str | None = None,
 ) -> str:
     """Execute a tool by name with JSON-encoded arguments.
 

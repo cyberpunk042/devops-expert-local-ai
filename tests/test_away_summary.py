@@ -1,17 +1,11 @@
 """Tests for away summary and task integration in agent server."""
 
-import json
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 from aicp.agent.server import (
     _generate_away_summary,
-    save_away_summary,
     load_away_summary,
-    _AWAY_SUMMARY_PATH,
+    save_away_summary,
 )
 
 

@@ -1,6 +1,5 @@
 """Tests for LocalAI backend — constructor, config wiring, cold-start logic."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

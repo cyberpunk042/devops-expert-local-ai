@@ -20,7 +20,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("aicp.dlq")
 
@@ -42,8 +42,8 @@ def enqueue(
     backend: str,
     project: str,
     error: str,
-    failover_chain: List[str] = None,
-    config: Dict[str, Any] = None,
+    failover_chain: list[str] = None,
+    config: dict[str, Any] = None,
 ) -> bool:
     """Write a failed task to the DLQ.
 
@@ -84,9 +84,9 @@ def enqueue(
     return True
 
 
-def list_entries(max_count: int = 100) -> List[Dict[str, Any]]:
+def list_entries(max_count: int = 100) -> list[dict[str, Any]]:
     """List DLQ entries, newest first."""
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     for path in sorted(_dlq_dir().glob("*.jsonl"), reverse=True):
         try:
             with open(path) as f:
@@ -117,9 +117,9 @@ def count() -> int:
 
 def retry_pending(
     controller,
-    config: Dict[str, Any] = None,
+    config: dict[str, Any] = None,
     max_items: int = 10,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retry pending DLQ entries through the controller.
 
     Returns dict with: retried, succeeded, failed counts.
@@ -177,7 +177,7 @@ def retry_pending(
     return results
 
 
-def _mark_entry(entry: Dict, status: str, retry_count: int = None) -> None:
+def _mark_entry(entry: dict, status: str, retry_count: int = None) -> None:
     """Update an entry's status in its file."""
     file_path = entry.get("_file")
     if not file_path or not Path(file_path).exists():
@@ -237,7 +237,7 @@ def _prune_oldest(keep: int) -> None:
             continue
 
 
-def status(config: Dict[str, Any] = None) -> Dict[str, Any]:
+def status(config: dict[str, Any] = None) -> dict[str, Any]:
     """Return DLQ status summary."""
     config = config or {}
     dlq_cfg = config.get("dlq", {})

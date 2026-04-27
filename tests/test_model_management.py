@@ -1,7 +1,6 @@
 """Tests for model gallery & lifecycle management (M67)."""
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import time
 from datetime import datetime
-from typing import Dict, List
 
 import httpx
 from rich.console import Console
@@ -13,7 +12,6 @@ from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from aicp.core.metrics import aggregate
 from aicp.core.observability import scrape_prometheus
@@ -130,8 +128,9 @@ def _localai_panel(local_url: str) -> Panel:
         total_req = local_stats.get("tasks", 0)
         today_req = 0
         # Approximate today's local requests
-        from aicp.core.history import list_tasks
         from datetime import datetime
+
+        from aicp.core.history import list_tasks
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
         for t in list_tasks(200):
             if t.get("backend") == "local" and (t.get("timestamp") or "").startswith(today_str):

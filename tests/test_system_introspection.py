@@ -1,12 +1,9 @@
 """Tests for system introspection (system info, backends, active model)."""
 
-from unittest.mock import MagicMock, patch
 import json
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from aicp.core.observability import get_system_info, get_backends_detail
-
+from aicp.core.observability import get_backends_detail, get_system_info
 
 # ── get_system_info tests ────────────────────────────────────────────────────
 

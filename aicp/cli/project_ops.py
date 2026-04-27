@@ -7,17 +7,17 @@ and evaluate project state.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
-from typing import Any, Dict
 
 from rich.console import Console
 
 from aicp.backends.base import Backend
 from aicp.core.modes import Mode
 from aicp.core.projects import (
-    register_project, init_project_state, load_project_state,
-    save_project_state, add_milestone,
+    add_milestone,
+    load_project_state,
+    register_project,
+    save_project_state,
 )
 
 console = Console(stderr=True)
@@ -279,7 +279,7 @@ Provide:
 
     # Update session
     from aicp.core.projects import update_session
-    update_session(project_path, f"Assessment completed")
+    update_session(project_path, "Assessment completed")
 
 
 def _write_generated_files(project_path: Path, output: str) -> None:

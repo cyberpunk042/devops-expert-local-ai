@@ -1,9 +1,9 @@
 """Tests for configuration loading and validation."""
 
 import os
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 from aicp.config.loader import (
     DEFAULT_CONFIG_PATH,
@@ -140,6 +140,7 @@ def test_load_config_applies_user_override(tmp_path, monkeypatch):
     monkeypatch.setenv("AICP_HOME", str(tmp_path))
     # Re-import to pick up the patched env (USER_CONFIG_PATH is computed at import time)
     import importlib
+
     import aicp.config.loader as loader_module
     importlib.reload(loader_module)
 
@@ -161,6 +162,7 @@ def test_load_config_applies_project_override(tmp_path):
     )
 
     import importlib
+
     import aicp.config.loader as loader_module
     importlib.reload(loader_module)
 
@@ -184,6 +186,7 @@ def test_load_config_project_override_does_not_affect_other_keys(tmp_path):
     )
 
     import importlib
+
     import aicp.config.loader as loader_module
     importlib.reload(loader_module)
 
@@ -200,6 +203,7 @@ def test_load_config_project_override_does_not_affect_other_keys(tmp_path):
 
 def test_load_config_no_project_override_when_file_missing(tmp_path):
     import importlib
+
     import aicp.config.loader as loader_module
     importlib.reload(loader_module)
 

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict
+from pathlib import Path
 
 from aicp.backends.base import Backend
 from aicp.core.modes import Mode
-from pathlib import Path
 
 
 def run_with_approval(

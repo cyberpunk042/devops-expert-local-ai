@@ -14,11 +14,9 @@ Key features:
 from __future__ import annotations
 
 import logging
-import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -92,14 +90,14 @@ def memory_freshness_warning(mtime: float) -> str:
 
 # ── Memory scanning ──────────────────────────────────────────────────────────
 
-def _parse_frontmatter(filepath: str, max_lines: int = MAX_FRONTMATTER_LINES) -> Dict[str, str]:
+def _parse_frontmatter(filepath: str, max_lines: int = MAX_FRONTMATTER_LINES) -> dict[str, str]:
     """Extract YAML frontmatter from a markdown file.
 
     Reads only the first max_lines lines to avoid loading large files.
     Returns empty dict if no valid frontmatter found.
     """
     try:
-        with open(filepath, "r", errors="replace") as f:
+        with open(filepath, errors="replace") as f:
             lines = []
             for i, line in enumerate(f):
                 if i >= max_lines:
@@ -120,7 +118,7 @@ def _parse_frontmatter(filepath: str, max_lines: int = MAX_FRONTMATTER_LINES) ->
         return {}
 
 
-def scan_memory_files(memory_dir: str | Path) -> List[MemoryHeader]:
+def scan_memory_files(memory_dir: str | Path) -> list[MemoryHeader]:
     """Scan a memory directory for .md files with frontmatter.
 
     Excludes MEMORY.md (the index file). Returns headers sorted by
@@ -157,7 +155,7 @@ def scan_memory_files(memory_dir: str | Path) -> List[MemoryHeader]:
     return headers[:MAX_MEMORY_FILES]
 
 
-def format_memory_manifest(headers: List[MemoryHeader]) -> str:
+def format_memory_manifest(headers: list[MemoryHeader]) -> str:
     """Format memory headers as a compact manifest string.
 
     Each line: - [type] filename (age): description
@@ -187,9 +185,9 @@ class MemoryRelevanceScorer:
                   If None, relevance scoring falls back to keyword matching.
         """
         self._embed_fn = embed_fn
-        self._cache: Dict[Tuple[str, float], List[float]] = {}
+        self._cache: dict[tuple[str, float], list[float]] = {}
 
-    def _get_embedding(self, text: str, filepath: str = "", mtime: float = 0.0) -> Optional[List[float]]:
+    def _get_embedding(self, text: str, filepath: str = "", mtime: float = 0.0) -> list[float] | None:
         """Get embedding for text, using cache if available."""
         if self._embed_fn is None:
             return None
@@ -220,7 +218,7 @@ class MemoryRelevanceScorer:
         overlap = len(query_words & target_words)
         return overlap / max(len(query_words), 1)
 
-    def score(self, query: str, headers: List[MemoryHeader]) -> List[ScoredMemory]:
+    def score(self, query: str, headers: list[MemoryHeader]) -> list[ScoredMemory]:
         """Score all memories against a query.
 
         Returns ScoredMemory list sorted by score descending.
@@ -260,10 +258,10 @@ class MemoryRelevanceScorer:
     def select_relevant(
         self,
         query: str,
-        headers: List[MemoryHeader],
+        headers: list[MemoryHeader],
         top_k: int = DEFAULT_TOP_K,
         threshold: float = 0.1,
-    ) -> List[ScoredMemory]:
+    ) -> list[ScoredMemory]:
         """Select the top-K most relevant memories above threshold.
 
         Returns scored memories with content loaded from disk.
@@ -290,7 +288,7 @@ class MemoryRelevanceScorer:
         return len(self._cache)
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     if len(a) != len(b) or not a:
         return 0.0

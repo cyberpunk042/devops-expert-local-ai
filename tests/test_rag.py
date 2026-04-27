@@ -1,12 +1,10 @@
 """Tests for aicp.core.rag — vector store and RAG pipeline."""
 
-import json
 import math
+
 import pytest
-from pathlib import Path
 
-from aicp.core.rag import VectorStore, RAGPipeline, _cosine_similarity
-
+from aicp.core.rag import RAGPipeline, VectorStore, _cosine_similarity
 
 # ── Vector math ──────────────────────────────────────────────────────────────
 

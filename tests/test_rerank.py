@@ -1,13 +1,11 @@
 """Tests for reranking (backend + MCP tool)."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from aicp.backends.localai import LocalAIBackend
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

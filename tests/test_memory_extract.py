@@ -1,22 +1,15 @@
 """Tests for aicp.core.memory_extract — auto-extraction of facts from task history."""
 
-import json
-import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 from aicp.core.memory_extract import (
     ExtractedFact,
     _classify_fact,
-    _split_sentences,
     _slugify,
+    _split_sentences,
     extract_facts_heuristic,
-    save_extracted_fact,
     run_extraction,
-    MAX_TASKS_PER_RUN,
-    MIN_TASKS_THRESHOLD,
+    save_extracted_fact,
 )
 
 

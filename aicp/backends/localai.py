@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, List, Optional
 
 import httpx
 
@@ -38,10 +38,10 @@ class LocalAIBackend(Backend):
         model: str = "default",
         max_tokens: int = 2048,
         api_key: str = "",
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-        top_k: Optional[int] = None,
-        repeat_penalty: Optional[float] = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        repeat_penalty: float | None = None,
         embedding_model: str = "",
         code_model: str = "",
         vision_model: str = "",
@@ -54,19 +54,19 @@ class LocalAIBackend(Backend):
         whisper_model: str = "",
         tts_model: str = "",
         # Advanced sampling (llama.cpp)
-        mirostat: Optional[int] = None,
-        mirostat_tau: Optional[float] = None,
-        mirostat_eta: Optional[float] = None,
-        typical_p: Optional[float] = None,
-        frequency_penalty: Optional[float] = None,
-        presence_penalty: Optional[float] = None,
+        mirostat: int | None = None,
+        mirostat_tau: float | None = None,
+        mirostat_eta: float | None = None,
+        typical_p: float | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
         # Mode-aware sampling profiles (overrides _MODE_SAMPLING defaults)
-        mode_profiles: Optional[dict] = None,
+        mode_profiles: dict | None = None,
         # Timeouts and retries (overridable via profile)
-        request_timeout: Optional[float] = None,
-        cold_start_timeout: Optional[float] = None,
-        cold_start_interval: Optional[float] = None,
-        max_retries: Optional[int] = None,
+        request_timeout: float | None = None,
+        cold_start_timeout: float | None = None,
+        cold_start_interval: float | None = None,
+        max_retries: int | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -96,7 +96,7 @@ class LocalAIBackend(Backend):
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
         # Session-wide seed for reproducible inference (None = random)
-        self.seed: Optional[int] = None
+        self.seed: int | None = None
         # Timeouts and retries (profile-configurable)
         self.request_timeout = request_timeout if request_timeout is not None else _REQUEST_TIMEOUT
         self.cold_start_timeout = cold_start_timeout if cold_start_timeout is not None else _COLD_START_TIMEOUT
@@ -234,7 +234,7 @@ class LocalAIBackend(Backend):
         self,
         text: str,
         embed_type: str = "query",
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[float]:
         """Generate a typed embedding (query vs document) for asymmetric search.
 
@@ -285,7 +285,7 @@ class LocalAIBackend(Backend):
         self,
         texts: list[str],
         embed_type: str = "document",
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[list[float]]:
         """Batch typed embeddings — typically for indexing documents.
 
@@ -333,7 +333,7 @@ class LocalAIBackend(Backend):
         self,
         text: str,
         dimensions: int,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[float]:
         """Generate a truncated embedding with a specific number of dimensions.
 
@@ -428,7 +428,7 @@ class LocalAIBackend(Backend):
     def embed_image(
         self,
         image_path: Path,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[float]:
         """Generate an embedding vector for an image (CLIP-style).
 
@@ -483,8 +483,8 @@ class LocalAIBackend(Backend):
 
     def _wait_for_model(
         self,
-        timeout: Optional[float] = None,
-        interval: Optional[float] = None,
+        timeout: float | None = None,
+        interval: float | None = None,
     ) -> bool:
         """Poll until the model appears in /v1/models or timeout is reached."""
         timeout = timeout if timeout is not None else self.cold_start_timeout
@@ -502,8 +502,8 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        stop: Optional[list[str]] = None,
-        seed: Optional[int] = None,
+        stop: list[str] | None = None,
+        seed: int | None = None,
     ) -> str:
         t_start = time.perf_counter()
         system = self._system_prompt(mode, project_path)
@@ -525,7 +525,7 @@ class LocalAIBackend(Backend):
         headers = self._headers()
         t_prep = time.perf_counter()
 
-        last_error: Optional[str] = None
+        last_error: str | None = None
         response = None
 
         for attempt in range(self.max_retries):
@@ -636,8 +636,8 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        stop: Optional[list[str]] = None,
-        seed: Optional[int] = None,
+        stop: list[str] | None = None,
+        seed: int | None = None,
     ) -> Iterator[str]:
         """Stream the response token-by-token using SSE.
 
@@ -779,7 +779,7 @@ class LocalAIBackend(Backend):
         images: list[dict],
         mode: Mode,
         project_path: Path,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> str:
         """Multi-turn chat with inline images in the message array.
 
@@ -926,7 +926,7 @@ class LocalAIBackend(Backend):
         audio_path: Path,
         model: str = "",
         language: str = "",
-        timestamp_granularities: Optional[list[str]] = None,
+        timestamp_granularities: list[str] | None = None,
         temperature: float = 0.0,
     ) -> dict:
         """Transcribe audio with verbose output including timestamps.
@@ -1143,7 +1143,7 @@ class LocalAIBackend(Backend):
         project_path: Path,
         whisper_model: str = "",
         tts_model: str = "",
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ) -> dict:
         """Full voice pipeline: audio in → transcribe → LLM → TTS → audio out.
 
@@ -1232,7 +1232,7 @@ class LocalAIBackend(Backend):
         output_path: Path,
         model: str = "",
         size: str = "512x512",
-        step: Optional[int] = None,
+        step: int | None = None,
     ) -> Path:
         """Generate an image from a text prompt using Stable Diffusion.
 
@@ -1305,7 +1305,7 @@ class LocalAIBackend(Backend):
         prompt: str,
         output_path: Path,
         model: str = "",
-        duration: Optional[float] = None,
+        duration: float | None = None,
     ) -> Path:
         """Generate sound/music from a text description.
 
@@ -1351,8 +1351,8 @@ class LocalAIBackend(Backend):
     def complete(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        stop: list[str] | None = None,
     ) -> str:
         """Raw text completion via /v1/completions (no chat template).
 
@@ -1408,8 +1408,8 @@ class LocalAIBackend(Backend):
     def complete_stream(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        stop: list[str] | None = None,
     ) -> Iterator[str]:
         """Streaming raw text completion via /v1/completions.
 
@@ -1460,9 +1460,9 @@ class LocalAIBackend(Backend):
     def complete_logprobs(
         self,
         prompt: str,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         top_logprobs: int = 5,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> dict:
         """Raw text completion with per-token log probabilities.
 
@@ -1538,8 +1538,8 @@ class LocalAIBackend(Backend):
         self,
         prompt: str,
         n: int = 3,
-        max_tokens: Optional[int] = None,
-        seed: Optional[int] = None,
+        max_tokens: int | None = None,
+        seed: int | None = None,
     ) -> list[dict]:
         """Generate N raw text completions for the same prompt.
 
@@ -1603,10 +1603,10 @@ class LocalAIBackend(Backend):
         self,
         prefix: str,
         suffix: str,
-        max_tokens: Optional[int] = None,
-        stop: Optional[list[str]] = None,
-        model: Optional[str] = None,
-        seed: Optional[int] = None,
+        max_tokens: int | None = None,
+        stop: list[str] | None = None,
+        model: str | None = None,
+        seed: int | None = None,
     ) -> str:
         """Fill-in-the-Middle (FIM) code completion.
 
@@ -1668,7 +1668,7 @@ class LocalAIBackend(Backend):
         except (KeyError, IndexError, TypeError):
             raise RuntimeError(f"Unexpected response: {str(data)[:200]}")
 
-    def tokenize_batch(self, texts: list[str], model: Optional[str] = None) -> list[dict]:
+    def tokenize_batch(self, texts: list[str], model: str | None = None) -> list[dict]:
         """Tokenize multiple texts in one batch.
 
         Args:
@@ -1683,7 +1683,7 @@ class LocalAIBackend(Backend):
             results.append(self.tokenize(text, model=model))
         return results
 
-    def detokenize(self, tokens: list[int], model: Optional[str] = None) -> str:
+    def detokenize(self, tokens: list[int], model: str | None = None) -> str:
         """Convert token IDs back to text via /v1/detokenize.
 
         Args:
@@ -1719,7 +1719,7 @@ class LocalAIBackend(Backend):
         }
         return data.get("content", data.get("text", ""))
 
-    def token_count(self, text: str, model: Optional[str] = None) -> int:
+    def token_count(self, text: str, model: str | None = None) -> int:
         """Quick token count without returning token IDs.
 
         Args:
@@ -1740,7 +1740,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         n: int = 3,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> list[dict]:
         """Generate multiple candidate responses for the same prompt.
 
@@ -1826,7 +1826,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         top_logprobs: int = 5,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> dict:
         """Execute a prompt and return the response with per-token log probabilities.
 
@@ -1919,8 +1919,8 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        schema: Optional[dict] = None,
-        seed: Optional[int] = None,
+        schema: dict | None = None,
+        seed: int | None = None,
     ) -> dict:
         """Execute a prompt with JSON mode — forces valid JSON output.
 
@@ -2004,7 +2004,7 @@ class LocalAIBackend(Backend):
         mode: Mode,
         project_path: Path,
         max_workers: int = 4,
-        stop: Optional[list[str]] = None,
+        stop: list[str] | None = None,
     ) -> list[dict]:
         """Execute multiple prompts concurrently and collect results.
 
@@ -2074,7 +2074,7 @@ class LocalAIBackend(Backend):
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        results: list[Optional[list[float]]] = [None] * len(texts)
+        results: list[list[float] | None] = [None] * len(texts)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {pool.submit(self.embed, t): i for i, t in enumerate(texts)}
             for future in as_completed(futures):
@@ -2202,7 +2202,7 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         max_rounds: int = 5,
     ) -> str:
         """Execute with function calling, running a tool loop.
@@ -2282,10 +2282,10 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         max_rounds: int = 5,
         tool_choice: str = "auto",
-        grammar: Optional[str] = None,
+        grammar: str | None = None,
     ) -> str:
         """Execute with OpenAI-compatible native function calling.
 
@@ -2393,7 +2393,7 @@ class LocalAIBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         max_rounds: int = 5,
         tool_choice: str = "auto",
     ) -> Iterator[str]:
@@ -2820,7 +2820,7 @@ class LocalAIBackend(Backend):
 
     # ── Tokenization ──────────────────────────────────────────────────────
 
-    def tokenize(self, text: str, model: Optional[str] = None) -> dict:
+    def tokenize(self, text: str, model: str | None = None) -> dict:
         """Tokenize text and return token IDs.
 
         Args:
@@ -2858,7 +2858,7 @@ class LocalAIBackend(Backend):
         self,
         input_text: str,
         instruction: str,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> str:
         """Edit text based on an instruction via /v1/edits.
 
@@ -2903,7 +2903,7 @@ class LocalAIBackend(Backend):
     def vad(
         self,
         audio_path: Path,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[dict]:
         """Detect voice segments in an audio file via /v1/audio/vad.
 
@@ -2943,7 +2943,7 @@ class LocalAIBackend(Backend):
     def detect(
         self,
         image_path: Path,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> list[dict]:
         """Detect objects in an image via /v1/detection.
 
@@ -3195,7 +3195,7 @@ class LocalAIBackend(Backend):
 
     # ── Model Warm-up & Preloading ─────────────────────────────────────────
 
-    def model_loaded(self, model_name: Optional[str] = None) -> bool:
+    def model_loaded(self, model_name: str | None = None) -> bool:
         """Check if a model is currently loaded in LocalAI.
 
         Queries /v1/models and checks if the model appears in the list.
@@ -3222,7 +3222,7 @@ class LocalAIBackend(Backend):
 
     def model_warmup(
         self,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
         timeout: float = 120.0,
     ) -> dict:
         """Warm up a model by triggering a minimal inference request.
@@ -3312,7 +3312,7 @@ class LocalAIBackend(Backend):
 
     # ── Model Configuration API ────────────────────────────────────────────
 
-    def model_config(self, model_name: Optional[str] = None) -> dict:
+    def model_config(self, model_name: str | None = None) -> dict:
         """Read the current runtime configuration for a model.
 
         Queries /models/<name> for context_size, gpu_layers, threads, etc.
@@ -3342,14 +3342,14 @@ class LocalAIBackend(Backend):
 
     def model_config_update(
         self,
-        model_name: Optional[str] = None,
+        model_name: str | None = None,
         *,
-        context_size: Optional[int] = None,
-        gpu_layers: Optional[int] = None,
-        threads: Optional[int] = None,
-        batch_size: Optional[int] = None,
-        f16: Optional[bool] = None,
-        mmap: Optional[bool] = None,
+        context_size: int | None = None,
+        gpu_layers: int | None = None,
+        threads: int | None = None,
+        batch_size: int | None = None,
+        f16: bool | None = None,
+        mmap: bool | None = None,
     ) -> dict:
         """Update runtime model parameters without restarting LocalAI.
 
@@ -3402,7 +3402,7 @@ class LocalAIBackend(Backend):
             raise RuntimeError(f"Model config update error ({resp.status_code}): {resp.text[:200]}")
         return resp.json()
 
-    def lora_list(self, model_name: Optional[str] = None) -> list[dict]:
+    def lora_list(self, model_name: str | None = None) -> list[dict]:
         """List models that have LoRA adapters configured.
 
         Checks model gallery/config for adapter presence.

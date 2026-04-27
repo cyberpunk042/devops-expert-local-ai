@@ -1,15 +1,12 @@
 """Tests for LocalAI backend API methods — execute, embed, audio, vision, tools, stores."""
 
 import base64
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from aicp.backends.localai import LocalAIBackend
 from aicp.core.modes import Mode
-
 
 # ---------------------------------------------------------------------------
 # Helpers

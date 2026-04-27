@@ -6,10 +6,10 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def _append_event_log(record: Dict[str, Any]) -> None:
+def _append_event_log(record: dict[str, Any]) -> None:
     """Append a JSON-line entry to AICP_LOG_FILE if the env var is set.
 
     Each line is a self-contained JSON object (newline-delimited JSON / JSONL),
@@ -59,12 +59,12 @@ def save_task(
     project: str,
     response: str,
     duration_seconds: float,
-    error: Optional[str] = None,
-    model: Optional[str] = None,
-    prompt_tokens: Optional[int] = None,
-    completion_tokens: Optional[int] = None,
-    estimated_cost_usd: Optional[float] = None,
-    route: Optional[str] = None,
+    error: str | None = None,
+    model: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    estimated_cost_usd: float | None = None,
+    route: str | None = None,
 ) -> str:
     """Save a task record to disk. Returns the record ID (filename stem)."""
     now = datetime.utcnow()
@@ -101,7 +101,7 @@ def save_task(
     return record_id
 
 
-def list_tasks(count: int = 20) -> List[Dict[str, Any]]:
+def list_tasks(count: int = 20) -> list[dict[str, Any]]:
     """List recent task records, newest first."""
     d = _history_dir()
     files = sorted(d.glob("*.json"), reverse=True)
@@ -116,7 +116,7 @@ def list_tasks(count: int = 20) -> List[Dict[str, Any]]:
     return records
 
 
-def get_task(record_id: str) -> Optional[Dict[str, Any]]:
+def get_task(record_id: str) -> dict[str, Any] | None:
     """Load a single task record by ID."""
     path = _history_dir() / f"{record_id}.json"
     if not path.exists():

@@ -1,14 +1,12 @@
 """Tests for voice pipeline (transcribe → LLM → TTS)."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from aicp.backends.localai import LocalAIBackend
 from aicp.core.modes import Mode
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

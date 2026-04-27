@@ -1,9 +1,8 @@
 """Tests for streaming tool calls & multi-turn tool execution (M76)."""
 
 import json
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

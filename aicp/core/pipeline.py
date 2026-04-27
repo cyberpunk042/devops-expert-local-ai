@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -46,7 +46,7 @@ from aicp.core.modes import Mode
 from aicp.core.router import classify_task
 
 
-def load_pipeline(path: Path) -> Dict[str, Any]:
+def load_pipeline(path: Path) -> dict[str, Any]:
     """Load a full pipeline definition from a YAML file.
 
     Returns the full pipeline dict (steps, budget, agents).
@@ -66,10 +66,10 @@ def load_pipeline(path: Path) -> Dict[str, Any]:
 
 def run_pipeline(
     steps_or_data,
-    backends: Dict[str, Backend],
+    backends: dict[str, Backend],
     project_path: Path,
-    config: Dict[str, Any] = None,
-) -> List[Dict[str, Any]]:
+    config: dict[str, Any] = None,
+) -> list[dict[str, Any]]:
     """Execute a pipeline, returning results for each step.
 
     Accepts either a list of steps (backward compat) or a full pipeline dict.

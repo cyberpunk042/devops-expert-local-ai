@@ -6,7 +6,7 @@ import base64
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -79,12 +79,12 @@ Slash commands:
 
 def _handle_slash(
     command: str,
-    messages: List[Dict[str, str]],
-    backend: Optional[LocalAIBackend],
+    messages: list[dict[str, str]],
+    backend: LocalAIBackend | None,
     config: dict,
     mode: Mode,
     project_path: Path,
-) -> Optional[str]:
+) -> str | None:
     """Handle a slash command. Returns a user-message string to inject, or None."""
     parts = command.split(maxsplit=1)
     cmd = parts[0].lower()
@@ -96,7 +96,7 @@ def _handle_slash(
 
     if cmd == "/fleet":
         try:
-            from aicp.core.cluster import load_fleet_config, check_cluster
+            from aicp.core.cluster import check_cluster, load_fleet_config
             nodes = load_fleet_config()
             if not nodes:
                 print("  No fleet configured. Run: make fleet-init", file=sys.stderr)
@@ -122,7 +122,12 @@ def _handle_slash(
             print("[error] Usage: /fleet-run <prompt>", file=sys.stderr)
             return None
         try:
-            from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node, execute_remote
+            from aicp.core.cluster import (
+                check_cluster,
+                execute_remote,
+                find_best_node,
+                load_fleet_config,
+            )
             nodes = load_fleet_config()
             if not nodes:
                 print("  No fleet configured. Run: make fleet-init", file=sys.stderr)
@@ -146,9 +151,10 @@ def _handle_slash(
 
     if cmd == "/fleet-route":
         try:
-            from aicp.core.cluster import load_fleet_config, check_cluster, find_best_node
-            from aicp.core.controller import _local_ips
             import socket as _sock
+
+            from aicp.core.cluster import check_cluster, find_best_node, load_fleet_config
+            from aicp.core.controller import _local_ips
 
             nodes = load_fleet_config()
             if not nodes:
@@ -198,11 +204,11 @@ def _handle_slash(
                 bar_list[target_pos] = "|"
             bar_str = "".join(bar_list)
 
-            print(f"\n  LocalAI Offload Dashboard")
-            print(f"  ========================")
+            print("\n  LocalAI Offload Dashboard")
+            print("  ========================")
             print(f"  [{bar_str}] {r['offload_pct']}% offloaded  {goal_icon}")
             print(f"                         {'          80% goal ^' :>40}")
-            print(f"")
+            print("")
             fleet_info = f" ({r['fleet_tasks']} fleet-routed)" if r.get('fleet_tasks') else ""
             failover_info = f" ({r['failover_tasks']} failovers)" if r.get('failover_tasks') else ""
             print(f"  Tasks:   {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total{fleet_info}{failover_info}")
@@ -533,8 +539,8 @@ def _handle_slash(
                 print("[error] KB search requires a LocalAI backend.", file=sys.stderr)
                 return None
             try:
-                from aicp.core.kb import KnowledgeBase
                 from aicp.config.loader import load_config
+                from aicp.core.kb import KnowledgeBase
                 kb_config = load_config()
                 kb = KnowledgeBase(backend, kb_config)
                 results = kb.search(subarg)
@@ -555,8 +561,8 @@ def _handle_slash(
 
         if subcmd == "status":
             try:
+                from aicp.config.loader import get_rag_config, load_config
                 from aicp.core.rag import VectorStore
-                from aicp.config.loader import load_config, get_rag_config
                 kb_config = load_config()
                 rag_cfg = get_rag_config(kb_config)
                 db_path = Path(rag_cfg["db_path"])
@@ -829,11 +835,10 @@ def _handle_slash(
             print("[error] Metrics require a LocalAI backend.", file=sys.stderr)
             return None
         try:
-            import json as _json
             status = backend.metrics()
             lai = status.get("localai", {})
             if not lai.get("available"):
-                print(f"  LocalAI not reachable", file=sys.stderr)
+                print("  LocalAI not reachable", file=sys.stderr)
                 return None
             print(f"  Goroutines:  {lai.get('goroutines', '?')}")
             mem = lai.get("memory_alloc_mb")
@@ -1346,8 +1351,8 @@ def run_interactive(
     project_path: Path,
     max_tokens: int = 2048,
     stream: bool = True,
-    backend: Optional[LocalAIBackend] = None,
-    config: Optional[dict] = None,
+    backend: LocalAIBackend | None = None,
+    config: dict | None = None,
 ) -> int:
     """Run an interactive chat session against LocalAI.
 
@@ -1362,7 +1367,7 @@ def run_interactive(
         config:       Full config dict for model names.
     """
     system = _build_system(mode, project_path)
-    messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     config = config or {}
 
     # Auto-RAG setup: augment prompts with KB context when enabled
@@ -1421,7 +1426,7 @@ def run_interactive(
         # Auto model selection: pick the best local model for this prompt
         turn_model = model
         if config.get("backends", {}).get("local", {}).get("auto_route", False):
-            from aicp.core.router import recommend_model, intercept_operation, categorize_operation
+            from aicp.core.router import categorize_operation, intercept_operation, recommend_model
             recommended = recommend_model(prompt)
             if recommended and recommended != model:
                 turn_model = recommended
@@ -1497,7 +1502,7 @@ def run_interactive(
 def _stream_turn(
     base_url: str,
     model: str,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     max_tokens: int,
 ) -> str | None:
     """Send a streaming chat request; print tokens as they arrive.
@@ -1550,7 +1555,7 @@ def _stream_turn(
 def _blocking_turn(
     base_url: str,
     model: str,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     max_tokens: int,
 ) -> str | None:
     """Send a blocking (non-streaming) chat request.

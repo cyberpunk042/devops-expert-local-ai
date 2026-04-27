@@ -1,9 +1,7 @@
 """Tests for aicp.core.chunking."""
 
-import pytest
-from pathlib import Path
 
-from aicp.core.chunking import chunk_text, chunk_file
+from aicp.core.chunking import chunk_file, chunk_text
 
 
 class TestChunkText:

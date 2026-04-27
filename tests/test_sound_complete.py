@@ -1,6 +1,5 @@
 """Tests for sound generation and raw text completions (M68)."""
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

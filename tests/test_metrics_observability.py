@@ -5,7 +5,6 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from rich.console import Console
 
 from aicp.backends.localai import LocalAIBackend

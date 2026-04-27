@@ -1,10 +1,9 @@
 """Tests for model management."""
 
-from pathlib import Path
 
 import yaml
 
-from aicp.core.models import list_models, get_model_info, get_model_config
+from aicp.core.models import get_model_config, get_model_info, list_models
 
 
 def _create_model(models_dir, name, gguf_name, size_mb=100):

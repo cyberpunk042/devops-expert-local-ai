@@ -1,8 +1,6 @@
 """Tests for Dead-Letter Queue (Stage 4 Phase 4)."""
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

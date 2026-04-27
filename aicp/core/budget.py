@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -20,7 +19,7 @@ class BudgetLimits:
     elapsed_seconds: float = 0.0
     completed_steps: int = 0
     file_changes: int = 0
-    _start_time: Optional[float] = field(default=None, repr=False)
+    _start_time: float | None = field(default=None, repr=False)
 
     def start(self) -> None:
         """Start tracking time."""
@@ -39,7 +38,7 @@ class BudgetLimits:
         if self._start_time:
             self.elapsed_seconds = time.time() - self._start_time
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         """Check if any limit is exceeded. Returns reason string or None."""
         if self._start_time:
             self.elapsed_seconds = time.time() - self._start_time

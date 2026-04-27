@@ -15,7 +15,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from aicp.backends.localai import LocalAIBackend
-from aicp.config.loader import load_config, get_backend_config
+from aicp.config.loader import get_backend_config, load_config
 from aicp.core.controller import Controller, Task
 from aicp.core.modes import Mode
 
@@ -297,8 +297,8 @@ def _get_coordinator():
     """Lazy-init the model coordinator for swap-aware image generation."""
     global _coordinator
     if _coordinator is None:
-        from aicp.core.model_coordinator import ModelCoordinator, SwapConfig
         from aicp.core.events import get_emitter
+        from aicp.core.model_coordinator import ModelCoordinator, SwapConfig
         backend = _get_backend()
         cfg = get_backend_config(_config, "local")
         swap_cfg_raw = _config.get("swap", {})
@@ -468,7 +468,7 @@ def aicp_system() -> str:
         "warning": "aicp_system MCP tool deprecated; use 'aicp --check' / 'aicp --models list' CLI. Removal next release.",
     }
     backend = _get_backend()
-    from aicp.core.observability import get_system_info, get_loaded_models
+    from aicp.core.observability import get_loaded_models, get_system_info
     sys_info = get_system_info(backend.base_url)
     models = get_loaded_models(backend.base_url)
     return json.dumps({
@@ -576,8 +576,9 @@ def aicp_kb_ingest(path: str) -> str:
         JSON summary with files_ingested, total_chunks, errors.
     """
     try:
-        from aicp.core.kb import KnowledgeBase
         from pathlib import Path as _P
+
+        from aicp.core.kb import KnowledgeBase
         backend = _get_backend()
         kb = KnowledgeBase(backend, _config)
         p = _P(path)
@@ -967,6 +968,7 @@ def aicp_tools_stream(prompt: str, mode: str = "think") -> str:
         The final text response after all tool rounds complete.
     """
     from pathlib import Path as _Path
+
     from aicp.core.modes import Mode as _Mode
     backend = _get_backend()
     chunks = list(backend.execute_with_tools_stream(
@@ -1075,6 +1077,7 @@ def aicp_batch(prompts: str, mode: str = "think", max_workers: int = 4) -> str:
         JSON array of results with prompt, response, error, and duration_ms.
     """
     from pathlib import Path as _Path
+
     from aicp.core.modes import Mode as _Mode
     prompt_list = json.loads(prompts)
     backend = _get_backend()
@@ -1696,7 +1699,7 @@ def aicp_fleet_status() -> str:
 
     Returns JSON with each node's health, GPU info, and loaded models.
     """
-    from aicp.core.cluster import load_fleet_config, check_cluster
+    from aicp.core.cluster import check_cluster, load_fleet_config
 
     nodes = load_fleet_config()
     if not nodes:
@@ -1932,7 +1935,7 @@ def aicp_task_status(task_id: str = "") -> str:
         "warning": "aicp_task_status MCP tool deprecated; use 'aicp --tasks' (runtime) / 'aicp --task-cmd show|list' (workflow). Removal next release.",
     }
     try:
-        from aicp.core.tasks import get_task_manager, TaskStatus
+        from aicp.core.tasks import get_task_manager
 
         mgr = get_task_manager()
 
@@ -1970,7 +1973,7 @@ def aicp_dlq_status(action: str = "list") -> str:
         "warning": "aicp_dlq_status MCP tool deprecated; use 'aicp --dlq-status' / 'aicp --retry-dlq' CLI. See .claude/skills/aicp-ops-dlq/SKILL.md. Removal next release.",
     }
     try:
-        from aicp.core.dlq import list_pending, retry_pending, count_pending
+        from aicp.core.dlq import count_pending, list_pending, retry_pending
 
         if action == "count":
             return json.dumps({**deprecation, "pending": count_pending()})

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -30,9 +30,9 @@ def _project_state_path(project_path: Path) -> Path:
 
 def register_project(
     project_path: Path,
-    name: Optional[str] = None,
+    name: str | None = None,
     description: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Register a project in the AICP global registry."""
     project_path = project_path.resolve()
     if name is None:
@@ -75,13 +75,13 @@ def unregister_project(project_path: Path) -> bool:
     return len(registry.get("projects", [])) < before
 
 
-def list_projects() -> List[Dict[str, Any]]:
+def list_projects() -> list[dict[str, Any]]:
     """List all registered projects."""
     registry = _load_registry()
     return registry.get("projects", [])
 
 
-def _load_registry() -> Dict[str, Any]:
+def _load_registry() -> dict[str, Any]:
     path = _global_registry_path()
     if path.exists():
         with open(path) as f:
@@ -90,7 +90,7 @@ def _load_registry() -> Dict[str, Any]:
     return {"projects": []}
 
 
-def _save_registry(data: Dict[str, Any]) -> None:
+def _save_registry(data: dict[str, Any]) -> None:
     path = _global_registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -103,7 +103,7 @@ def init_project_state(
     project_path: Path,
     name: str = "",
     description: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Initialize .aicp/state.yaml for a project."""
     state = {
         "name": name or project_path.name,
@@ -118,7 +118,7 @@ def init_project_state(
     return state
 
 
-def load_project_state(project_path: Path) -> Optional[Dict[str, Any]]:
+def load_project_state(project_path: Path) -> dict[str, Any] | None:
     """Load a project's .aicp/state.yaml."""
     path = _project_state_path(project_path)
     if not path.exists():
@@ -127,7 +127,7 @@ def load_project_state(project_path: Path) -> Optional[Dict[str, Any]]:
         return yaml.safe_load(f)
 
 
-def save_project_state(project_path: Path, state: Dict[str, Any]) -> None:
+def save_project_state(project_path: Path, state: dict[str, Any]) -> None:
     """Save project state to .aicp/state.yaml."""
     path = _project_state_path(project_path)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,14 +5,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
+from collections.abc import Generator
 from pathlib import Path
-from typing import Dict, Generator, List, Optional
 
 from aicp.backends.base import Backend
 from aicp.core.context import build_project_context
 from aicp.core.modes import Mode
-from aicp.core.result import TaskResult, TokenUsage
 
 
 class ClaudeCodeBackend(Backend):
@@ -22,9 +20,9 @@ class ClaudeCodeBackend(Backend):
         self,
         model: str = "opus",
         max_turns: int = 10,
-        max_budget_usd: Optional[float] = None,
+        max_budget_usd: float | None = None,
         timeout: int = 300,
-        effort: Optional[str] = None,
+        effort: str | None = None,
     ) -> None:
         self.model = model
         self.max_turns = max_turns
@@ -70,10 +68,10 @@ class ClaudeCodeBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        session_name: Optional[str] = None,
-        resume_session: Optional[str] = None,
-        effort: Optional[str] = None,
-        json_schema: Optional[str] = None,
+        session_name: str | None = None,
+        resume_session: str | None = None,
+        effort: str | None = None,
+        json_schema: str | None = None,
     ) -> str:
         if not shutil.which("claude"):
             raise RuntimeError(
@@ -163,7 +161,7 @@ class ClaudeCodeBackend(Backend):
         finally:
             proc.wait()
 
-    def list_sessions(self, project_path: Optional[Path] = None) -> List[Dict]:
+    def list_sessions(self, project_path: Path | None = None) -> list[dict]:
         """List available Claude Code sessions."""
         # Claude stores sessions in ~/.claude/ — we parse `claude --resume` picker
         # For now, return empty list as the session API isn't publicly exposed
@@ -193,12 +191,12 @@ class ClaudeCodeBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        session_name: Optional[str] = None,
-        resume_session: Optional[str] = None,
-        effort: Optional[str] = None,
-        json_schema: Optional[str] = None,
+        session_name: str | None = None,
+        resume_session: str | None = None,
+        effort: str | None = None,
+        json_schema: str | None = None,
         output_format: str = "json",
-    ) -> List[str]:
+    ) -> list[str]:
         cmd = ["claude", "-p", "--output-format", output_format]
 
         if self.model:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import yaml
@@ -46,7 +46,7 @@ class Navigator:
     def __init__(
         self,
         project_path: Path,
-        config: Optional[Dict] = None,
+        config: dict | None = None,
         base_url: str = "",
         collection: str = "aicp-kb",
         kb=None,  # legacy — ignored, kept for API compat
@@ -59,7 +59,7 @@ class Navigator:
         self._profiles = self._load_yaml(_PROFILES_FILE)
         self._intent_map = self._load_yaml(_INTENT_MAP_FILE)
 
-    def _load_yaml(self, relative_path: Path) -> Dict:
+    def _load_yaml(self, relative_path: Path) -> dict:
         """Load a YAML file relative to project root."""
         full_path = self.project_path / relative_path
         if not full_path.exists():
@@ -156,7 +156,7 @@ class Navigator:
         mode: Mode,
         model: str = "",
         context_window: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get the full injection specification for a prompt.
 
         Returns a dict describing what should be injected:
@@ -217,7 +217,7 @@ class Navigator:
             return prompt
 
         branches = spec.get("branches", {})
-        parts: List[str] = []
+        parts: list[str] = []
         total = 0
 
         # 1. System docs (based on intent + profile branch level)
@@ -274,7 +274,7 @@ class Navigator:
             f"Question: {prompt}"
         )
 
-    def _load_system_doc(self, name: str, level: str) -> Optional[str]:
+    def _load_system_doc(self, name: str, level: str) -> str | None:
         """Load a system manual at the requested detail level.
 
         Supports fuzzy matching: 'router' matches 'routing.md',
@@ -330,8 +330,8 @@ class Navigator:
         return None
 
     def _load_module_docs(
-        self, modules: List[str], level: str, max_chars: int,
-    ) -> Optional[str]:
+        self, modules: list[str], level: str, max_chars: int,
+    ) -> str | None:
         """Load module documentation at the requested detail level.
 
         Reads from docs/knowledge-map/module-manual.md and extracts
@@ -349,7 +349,7 @@ class Navigator:
             return text[:max_chars]
 
         # Extract sections matching module names
-        sections: List[str] = []
+        sections: list[str] = []
         current_section = ""
         current_name = ""
 
@@ -387,7 +387,7 @@ class Navigator:
 
         return "\n\n".join(matched) if matched else None
 
-    def _search_collection(self, query: str, top_k: int = 3) -> List[Dict]:
+    def _search_collection(self, query: str, top_k: int = 3) -> list[dict]:
         """Search the LocalAI collection for relevant content."""
         resp = httpx.post(
             f"{self.base_url}/api/agents/collections/{self.collection}/search",
@@ -417,10 +417,10 @@ class Navigator:
 
     def map_boost(
         self,
-        results: List[Dict],
+        results: list[dict],
         intent: str,
         boost_factor: float = 0.15,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Boost search result scores based on knowledge map cross-references.
 
         Results whose source file belongs to a system/module referenced by the
@@ -479,7 +479,7 @@ class Navigator:
         boosted.sort(key=lambda x: x["score"], reverse=True)
         return boosted
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return navigator status."""
         return {
             "profiles_loaded": bool(self._profiles),

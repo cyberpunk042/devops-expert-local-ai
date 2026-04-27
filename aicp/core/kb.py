@@ -7,9 +7,8 @@ and management.  Used by the MCP server, function-calling tools, and CLI.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
 
-from aicp.core.rag import RAGPipeline, VectorStore, build_rag_pipeline
+from aicp.core.rag import build_rag_pipeline
 
 
 class KnowledgeBase:
@@ -52,7 +51,7 @@ class KnowledgeBase:
     def ingest_directory(
         self,
         directory: Path,
-        extensions: Optional[List[str]] = None,
+        extensions: list[str] | None = None,
         recursive: bool = True,
     ) -> dict:
         """Ingest all matching files from a directory.
@@ -96,7 +95,7 @@ class KnowledgeBase:
 
     # ── Search ───────────────────────────────────────────────────────────────
 
-    def search(self, query: str, top_k: int = 5) -> List[dict]:
+    def search(self, query: str, top_k: int = 5) -> list[dict]:
         """Search the knowledge base with optional reranking.
 
         Step 1: Embedding-based retrieval (fast, broad recall).
@@ -161,7 +160,7 @@ class KnowledgeBase:
         if not results:
             return query
 
-        context_parts: List[str] = []
+        context_parts: list[str] = []
         total = 0
         for r in results:
             text = r["text"]
@@ -183,7 +182,7 @@ class KnowledgeBase:
 
     # ── Management ───────────────────────────────────────────────────────────
 
-    def list_sources(self) -> List[dict]:
+    def list_sources(self) -> list[dict]:
         """List all ingested sources with chunk counts."""
         return self._pipeline.list_sources()
 

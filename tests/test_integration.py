@@ -9,15 +9,13 @@ Tests are automatically skipped when the required backend is unavailable.
 """
 
 import shutil
-import subprocess
+from pathlib import Path
 
 import pytest
 
 from aicp.backends.claude_code import ClaudeCodeBackend
 from aicp.backends.localai import LocalAIBackend
 from aicp.core.modes import Mode
-from pathlib import Path
-
 
 has_claude = shutil.which("claude") is not None
 

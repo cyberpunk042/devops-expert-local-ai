@@ -1,9 +1,7 @@
 """Tests for project lifecycle operations."""
 
-from pathlib import Path
-from unittest.mock import MagicMock
 
-from aicp.cli.project_ops import _write_generated_files, _parse_and_add_milestones
+from aicp.cli.project_ops import _parse_and_add_milestones, _write_generated_files
 from aicp.core.projects import init_project_state, load_project_state
 
 

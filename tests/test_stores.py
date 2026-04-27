@@ -6,8 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from aicp.core.stores import LocalAIStore, EmbeddingStore
-
+from aicp.core.stores import EmbeddingStore, LocalAIStore
 
 # ── LocalAIStore low-level tests ─────────────────────────────────────────────
 
@@ -307,7 +306,7 @@ class TestStoreTools:
         assert "Error" in result
 
     def test_store_tools_in_tool_sets(self):
-        from aicp.core.tools import THINK_TOOLS, EDIT_TOOLS, ALL_TOOLS
+        from aicp.core.tools import ALL_TOOLS, EDIT_TOOLS, THINK_TOOLS
         names = lambda tools: [t["function"]["name"] for t in tools]
         # recall is read-only → in think
         assert "store_recall" in names(THINK_TOOLS)

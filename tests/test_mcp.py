@@ -1,11 +1,10 @@
 """Tests for the AICP MCP server tool handlers."""
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import json
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,8 +70,8 @@ class TestAicpChat:
         assert call_args[1]["seed"] == 42
 
     def test_chat_invalid_mode_defaults_to_think(self):
-        from aicp.mcp.server import aicp_chat
         from aicp.core.modes import Mode
+        from aicp.mcp.server import aicp_chat
         mock_ctrl = MagicMock()
         mock_ctrl.run.return_value = "ok"
         with patch("aicp.mcp.server._get_controller", return_value=mock_ctrl):

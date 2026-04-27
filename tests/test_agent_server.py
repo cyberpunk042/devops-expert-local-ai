@@ -2,13 +2,9 @@
 
 import io
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from aicp.agent.server import AgentHandler, save_away_summary, load_away_summary
-
+from aicp.agent.server import AgentHandler, load_away_summary, save_away_summary
 
 # ---------------------------------------------------------------------------
 # Helpers

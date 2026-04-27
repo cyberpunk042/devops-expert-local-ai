@@ -17,14 +17,12 @@ decide whether to trust and act on the output.
 from __future__ import annotations
 
 import re
-from typing import List
 
 from aicp.core.modes import Mode
 
-
 # Patterns that suggest shell command execution in a THINK-mode response.
 # Intentionally conservative — prefer false negatives over false positives.
-_SHELL_PATTERNS: List[re.Pattern] = [
+_SHELL_PATTERNS: list[re.Pattern] = [
     # Shell prompt lines: $ cmd, # cmd
     re.compile(r"^\s*[$#]\s+\S", re.MULTILINE),
     # Backtick command substitution: `cmd`
@@ -37,7 +35,7 @@ _SHELL_PATTERNS: List[re.Pattern] = [
 ]
 
 # Patterns that suggest file writes in a THINK-mode response.
-_WRITE_PATTERNS: List[re.Pattern] = [
+_WRITE_PATTERNS: list[re.Pattern] = [
     # Shell redirects: > /path or >> /path (with at least 4-char path)
     re.compile(r">\s*/\w{2,}"),
     # tee command writing to file
@@ -53,7 +51,7 @@ _WRITE_PATTERNS: List[re.Pattern] = [
 # The goal is to catch cases where a model reproduces secrets from context, not
 # to be a general-purpose secret scanner.
 
-_SECRET_PATTERNS: List[tuple[str, re.Pattern]] = [
+_SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     # AWS access key IDs: AKIA / ASIA / AROA / AIDA / ANPA / ANVA / AIPA prefix + 16 uppercase alphanum
     ("AWS access key", re.compile(r"\b(AKIA|ASIA|AROA|AIDA|ANPA|ANVA|AIPA)[A-Z0-9]{16}\b")),
     # Generic high-entropy API key: key=<32+ hex/base64 chars>
@@ -71,7 +69,7 @@ _SECRET_PATTERNS: List[tuple[str, re.Pattern]] = [
 ]
 
 
-def scan_response_secrets(response: str) -> List[str]:
+def scan_response_secrets(response: str) -> list[str]:
     """Scan a response for patterns that look like leaked secrets.
 
     Returns a list of warning strings describing what was found.
@@ -94,7 +92,7 @@ def scan_response_secrets(response: str) -> List[str]:
 
 # ── THINK-mode command/write patterns ────────────────────────────────────────
 
-def scan_think_mode(response: str, mode: Mode) -> List[str]:
+def scan_think_mode(response: str, mode: Mode) -> list[str]:
     """Scan a response for content that violates THINK-mode constraints.
 
     Returns a list of warning strings. Empty list means no violations detected.

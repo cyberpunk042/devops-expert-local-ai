@@ -5,10 +5,9 @@ from __future__ import annotations
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Optional
 
 
-def create_worktree(project_path: Path, name: Optional[str] = None) -> Path:
+def create_worktree(project_path: Path, name: str | None = None) -> Path:
     """Create a git worktree for isolated task execution.
 
     Returns the path to the worktree directory.
@@ -79,7 +78,7 @@ def worktree_diff(project_path: Path, worktree_dir: Path) -> str:
     return result.stdout
 
 
-def _get_worktree_branch(project_path: Path, worktree_dir: Path) -> Optional[str]:
+def _get_worktree_branch(project_path: Path, worktree_dir: Path) -> str | None:
     """Get the branch name for a worktree."""
     result = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],

@@ -3,7 +3,6 @@
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
-import pytest
 from rich.console import Console
 
 

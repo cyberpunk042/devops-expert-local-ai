@@ -1,17 +1,14 @@
 """Tests for skill model override and new frontmatter fields."""
 
-import pytest
 from pathlib import Path
 
 from aicp.core.skills import (
     Skill,
-    SkillParam,
     _load_skill_md,
     _load_skill_yaml,
     _parse_allowed_tools,
     discover_skills,
     generate_claude_skill,
-    get_skill,
 )
 
 

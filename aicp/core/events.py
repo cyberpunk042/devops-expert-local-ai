@@ -22,12 +22,13 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("aicp.events")
 
 # Type alias for event callbacks
-EventCallback = Callable[[str, Dict[str, Any]], None]
+EventCallback = Callable[[str, dict[str, Any]], None]
 
 # Maximum listeners per event to prevent memory leaks
 _MAX_LISTENERS = 50
@@ -41,7 +42,7 @@ class EventEmitter:
     """
 
     def __init__(self, max_listeners: int = _MAX_LISTENERS) -> None:
-        self._listeners: Dict[str, List[EventCallback]] = defaultdict(list)
+        self._listeners: dict[str, list[EventCallback]] = defaultdict(list)
         self._lock = threading.Lock()
         self._max_listeners = max_listeners
 
@@ -67,7 +68,7 @@ class EventEmitter:
             except ValueError:
                 pass
 
-    def emit(self, event: str, data: Optional[Dict[str, Any]] = None) -> int:
+    def emit(self, event: str, data: dict[str, Any] | None = None) -> int:
         """Emit an event, invoking all registered callbacks.
 
         Callbacks are invoked synchronously. Errors are logged but never
@@ -93,7 +94,7 @@ class EventEmitter:
 
     def once(self, event: str, callback: EventCallback) -> None:
         """Register a callback that fires only once, then auto-removes."""
-        def _wrapper(evt: str, data: Dict[str, Any]) -> None:
+        def _wrapper(evt: str, data: dict[str, Any]) -> None:
             self.off(event, _wrapper)
             callback(evt, data)
 
@@ -104,7 +105,7 @@ class EventEmitter:
         with self._lock:
             return len(self._listeners.get(event, []))
 
-    def clear(self, event: Optional[str] = None) -> None:
+    def clear(self, event: str | None = None) -> None:
         """Remove all listeners, or all listeners for a specific event."""
         with self._lock:
             if event is None:
@@ -113,14 +114,14 @@ class EventEmitter:
                 self._listeners.pop(event, None)
 
     @property
-    def events(self) -> List[str]:
+    def events(self) -> list[str]:
         """Return list of events that have registered listeners."""
         with self._lock:
             return [e for e, ls in self._listeners.items() if ls]
 
 
 # Module-level singleton for global event bus
-_global_emitter: Optional[EventEmitter] = None
+_global_emitter: EventEmitter | None = None
 _global_lock = threading.Lock()
 
 

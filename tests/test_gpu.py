@@ -1,9 +1,11 @@
 """Tests for GPU detection and auto-configuration."""
 
-from pathlib import Path
 
 from aicp.core.gpu import (
-    GpuInfo, calculate_optimal_config, estimate_model_vram_mb, generate_model_yaml,
+    GpuInfo,
+    calculate_optimal_config,
+    estimate_model_vram_mb,
+    generate_model_yaml,
 )
 
 

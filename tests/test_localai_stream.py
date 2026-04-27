@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -98,7 +98,6 @@ def test_execute_stream_skips_empty_lines():
 
 
 def test_execute_stream_raises_on_http_error():
-    import httpx as _httpx
     backend = LocalAIBackend(base_url="http://localhost:8090", model="hermes")
 
     with patch("httpx.stream", return_value=_FakeStreamResponse([], status_code=500)):

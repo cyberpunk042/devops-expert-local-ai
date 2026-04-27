@@ -6,13 +6,12 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import yaml
 
 from aicp.core.gpu import calculate_optimal_config, detect_gpus
-
 
 MODELS_DIR = Path(__file__).parent.parent.parent / "models"
 
@@ -32,7 +31,7 @@ class ModelInfo:
     config_path: Path
 
 
-def list_models(models_dir: Optional[Path] = None) -> List[ModelInfo]:
+def list_models(models_dir: Path | None = None) -> list[ModelInfo]:
     """List all configured models in the models directory."""
     d = models_dir or MODELS_DIR
     if not d.exists():
@@ -65,7 +64,7 @@ def list_models(models_dir: Optional[Path] = None) -> List[ModelInfo]:
     return models
 
 
-def get_model_info(name: str, models_dir: Optional[Path] = None) -> Optional[ModelInfo]:
+def get_model_info(name: str, models_dir: Path | None = None) -> ModelInfo | None:
     """Get info for a specific model by name."""
     for m in list_models(models_dir):
         if m.name == name:
@@ -73,7 +72,7 @@ def get_model_info(name: str, models_dir: Optional[Path] = None) -> Optional[Mod
     return None
 
 
-def get_model_config(name: str, models_dir: Optional[Path] = None) -> Optional[dict]:
+def get_model_config(name: str, models_dir: Path | None = None) -> dict | None:
     """Get the full YAML config for a model."""
     d = models_dir or MODELS_DIR
     for yaml_file in d.glob("*.yaml"):
@@ -89,8 +88,8 @@ def get_model_config(name: str, models_dir: Optional[Path] = None) -> Optional[d
 
 def download_model(
     url: str,
-    models_dir: Optional[Path] = None,
-    name: Optional[str] = None,
+    models_dir: Path | None = None,
+    name: str | None = None,
     progress_callback=None,
 ) -> Path:
     """Download a GGUF model file and generate a config.
@@ -159,7 +158,7 @@ def download_model(
     return dest
 
 
-def activate_model(name: str, config: Dict[str, Any], models_dir: Optional[Path] = None) -> None:
+def activate_model(name: str, config: dict[str, Any], models_dir: Path | None = None) -> None:
     """Set a model as the active local model in the AICP config."""
     config_path = Path(__file__).parent.parent.parent / "config" / "default.yaml"
     with open(config_path) as f:
@@ -175,7 +174,7 @@ def benchmark_model(
     name: str,
     base_url: str = "http://localhost:8090",
     prompt: str = "Explain what a linked list is in 2 sentences.",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a simple benchmark against a model.
 
     Returns: dict with tokens_per_second, latency, prompt_tokens, completion_tokens.

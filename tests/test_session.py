@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from aicp.core.session import (
-    load_session, load_session_with_state, save_session,
-    delete_session, list_sessions, _safe_name,
+    _safe_name,
+    delete_session,
+    list_sessions,
+    load_session,
+    load_session_with_state,
+    save_session,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

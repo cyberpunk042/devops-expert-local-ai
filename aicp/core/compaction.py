@@ -14,7 +14,7 @@ Strategy:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger("aicp.compaction")
 
@@ -22,18 +22,18 @@ logger = logging.getLogger("aicp.compaction")
 _CHARS_PER_TOKEN = 4
 
 
-def estimate_tokens(messages: List[Dict[str, str]]) -> int:
+def estimate_tokens(messages: list[dict[str, str]]) -> int:
     """Estimate token count for a message list."""
     total_chars = sum(len(m.get("content", "")) for m in messages)
     return total_chars // _CHARS_PER_TOKEN
 
 
 def compact_messages(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     max_tokens: int = 8192,
     keep_recent_turns: int = 4,
     summary_prefix: str = "Previous conversation summary",
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """Compact message history to fit within a token budget.
 
     Args:
@@ -89,7 +89,7 @@ def compact_messages(
     return compacted
 
 
-def _summarize_messages(messages: List[Dict[str, str]]) -> str:
+def _summarize_messages(messages: list[dict[str, str]]) -> str:
     """Create a text summary of older messages.
 
     This is a heuristic summarizer — extracts key points from each turn
@@ -114,7 +114,7 @@ def _summarize_messages(messages: List[Dict[str, str]]) -> str:
 
 
 def should_compact(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     model: str = "",
     context_window: int = 8192,
     threshold: float = 0.75,
@@ -177,10 +177,10 @@ _TIME_GAP_THRESHOLD = 3600  # 60 minutes
 
 
 def microcompact(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     keep_recent: int = _MICROCOMPACT_KEEP_RECENT,
-    compactable_tools: Optional[frozenset] = None,
-) -> Tuple[List[Dict[str, Any]], int]:
+    compactable_tools: frozenset | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     """Clear old tool results while keeping conversation structure.
 
     Unlike full compaction which summarizes, microcompaction replaces
@@ -234,10 +234,10 @@ def microcompact(
 
 
 def time_based_clear(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     gap_threshold: float = _TIME_GAP_THRESHOLD,
     keep_recent: int = _MICROCOMPACT_KEEP_RECENT,
-) -> Tuple[List[Dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """Clear old tool results when a time gap is detected.
 
     If the gap between the last two assistant messages exceeds the threshold,
@@ -270,7 +270,7 @@ def time_based_clear(
     return microcompact(messages, keep_recent=keep_recent)
 
 
-def strip_images(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def strip_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Replace image/document content with markers to reduce token usage.
 
     Handles both string content and list-of-blocks content format.
@@ -298,7 +298,7 @@ def strip_images(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def should_microcompact(
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     tool_result_threshold: int = 10,
 ) -> bool:
     """Check if microcompaction would be beneficial.

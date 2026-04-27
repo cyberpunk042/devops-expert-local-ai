@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger("aicp.model_coordinator")
 
@@ -58,7 +58,7 @@ class ModelCoordinator:
     def __init__(
         self,
         backend: Any,
-        config: Optional[SwapConfig] = None,
+        config: SwapConfig | None = None,
         metrics: Any = None,
         emitter: Any = None,
     ) -> None:
@@ -74,7 +74,7 @@ class ModelCoordinator:
         self._llm_ready.set()
 
         # Batch window
-        self._batch_timer: Optional[threading.Timer] = None
+        self._batch_timer: threading.Timer | None = None
         self._pending_image_count = 0
 
         # Metrics
@@ -91,7 +91,7 @@ class ModelCoordinator:
         return self._state
 
     @property
-    def swap_metrics(self) -> Dict[str, Any]:
+    def swap_metrics(self) -> dict[str, Any]:
         """Swap metrics for diagnostics / Prometheus."""
         return {
             "swap_count": self._swap_count,
@@ -107,7 +107,7 @@ class ModelCoordinator:
         output_path: Path,
         model: str = "",
         size: str = "512x512",
-        step: Optional[int] = None,
+        step: int | None = None,
     ) -> Path:
         """Generate an image with full swap lifecycle management.
 
@@ -145,7 +145,7 @@ class ModelCoordinator:
 
         return result
 
-    def ensure_llm(self, timeout: Optional[float] = None) -> None:
+    def ensure_llm(self, timeout: float | None = None) -> None:
         """Ensure LLM is loaded before text inference.
 
         - If LLM is loaded: returns immediately.
@@ -175,7 +175,7 @@ class ModelCoordinator:
                 f"swap in progress (state={self._state.value})"
             )
 
-    def wait_for_llm(self, timeout: Optional[float] = None) -> bool:
+    def wait_for_llm(self, timeout: float | None = None) -> bool:
         """Block until LLM is loaded. Returns True if ready, False on timeout."""
         return self._llm_ready.wait(
             timeout=timeout or self._config.swap_timeout_seconds,

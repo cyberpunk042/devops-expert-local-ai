@@ -1,11 +1,9 @@
 """Tests for Knowledge Map Navigator."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from aicp.core.modes import Mode
 from aicp.core.navigator import Navigator
-
 
 # Use the real project path so navigator loads actual YAML files
 _PROJECT_PATH = Path(__file__).parent.parent

@@ -12,15 +12,11 @@ Falls back to heuristic extraction when no LLM is available.
 from __future__ import annotations
 
 import logging
-import os
 import re
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import yaml
+from typing import Any
 
 logger = logging.getLogger("aicp.memory_extract")
 
@@ -98,7 +94,7 @@ def _classify_fact(text: str) -> tuple[str, str, float]:
     return "project", "pattern", 0.3
 
 
-def extract_facts_heuristic(tasks: List[Dict[str, Any]]) -> List[ExtractedFact]:
+def extract_facts_heuristic(tasks: list[dict[str, Any]]) -> list[ExtractedFact]:
     """Extract notable facts from task history using heuristics.
 
     This is the fallback extractor when no LLM is available.
@@ -152,7 +148,7 @@ def extract_facts_heuristic(tasks: List[Dict[str, Any]]) -> List[ExtractedFact]:
     return facts[:20]  # cap at 20 facts per run
 
 
-def _split_sentences(text: str) -> List[str]:
+def _split_sentences(text: str) -> list[str]:
     """Split text into sentences (simple heuristic)."""
     # Split on period followed by space and capital, or newline
     parts = re.split(r'(?<=[.!?])\s+(?=[A-Z])|(?:\n\s*\n)', text)
@@ -170,7 +166,7 @@ def save_extracted_fact(
     fact: ExtractedFact,
     memory_dir: Path,
     overwrite: bool = False,
-) -> Optional[Path]:
+) -> Path | None:
     """Save an extracted fact as a memory file.
 
     Returns the file path if saved, None if skipped (already exists).
@@ -214,7 +210,7 @@ def run_extraction(
     task_count: int = MAX_TASKS_PER_RUN,
     min_confidence: float = 0.5,
     dry_run: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Run the extraction pipeline on recent task history.
 
     Args:

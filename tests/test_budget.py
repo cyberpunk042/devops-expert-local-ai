@@ -1,6 +1,5 @@
 """Tests for budget limits."""
 
-import time
 
 from aicp.core.budget import BudgetLimits, load_budget_from_config
 

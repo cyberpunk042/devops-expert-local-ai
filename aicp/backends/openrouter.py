@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any
 
 import httpx
 
 from aicp.backends.base import Backend
 from aicp.core.context import build_project_context
 from aicp.core.modes import Mode
-
 
 # Free models that are generally available on OpenRouter (updated 2026-04)
 # These have $0 input and $0 output pricing.
@@ -115,7 +115,7 @@ class OpenRouterBackend(Backend):
         prompt: str,
         mode: Mode,
         project_path: Path,
-        model: Optional[str] = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> str:
         """Send a chat completion request to OpenRouter."""
@@ -135,7 +135,7 @@ class OpenRouterBackend(Backend):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": selected_model,
             "messages": messages,
             "max_tokens": self.max_tokens,
@@ -236,7 +236,7 @@ class OpenRouterBackend(Backend):
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             raise RuntimeError(f"OpenRouter stream error: {e}")
 
-    def list_free_models(self) -> list[Dict[str, Any]]:
+    def list_free_models(self) -> list[dict[str, Any]]:
         """Fetch the list of free models from OpenRouter."""
         try:
             resp = httpx.get(
@@ -262,7 +262,7 @@ class OpenRouterBackend(Backend):
         except Exception:
             return []
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -286,7 +286,7 @@ class OpenRouterBackend(Backend):
         return "\n".join(parts)
 
     @staticmethod
-    def _estimate_cost(usage: Dict, model: str) -> Optional[float]:
+    def _estimate_cost(usage: dict, model: str) -> float | None:
         """Rough cost estimate. Free models return 0."""
         if ":free" in model:
             return 0.0

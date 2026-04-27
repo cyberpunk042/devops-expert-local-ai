@@ -1,12 +1,10 @@
 """Tests for task pipelines."""
 
-from pathlib import Path
 
-import yaml
 import pytest
+import yaml
 
 from aicp.core.pipeline import load_pipeline, run_pipeline
-from aicp.core.modes import Mode
 
 
 class _MockBackend:

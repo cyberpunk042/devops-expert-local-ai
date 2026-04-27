@@ -1,19 +1,15 @@
 """Tests for microcompaction and time-based clearing in aicp.core.compaction."""
 
 import time
-import pytest
 
 from aicp.core.compaction import (
-    microcompact,
-    time_based_clear,
-    strip_images,
-    should_microcompact,
-    _COMPACTABLE_TOOLS,
     _CLEARED_MARKER,
-    _MICROCOMPACT_KEEP_RECENT,
-    _TIME_GAP_THRESHOLD,
+    _COMPACTABLE_TOOLS,
+    microcompact,
+    should_microcompact,
+    strip_images,
+    time_based_clear,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -24,7 +24,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _sessions_dir() -> Path:
@@ -34,7 +34,7 @@ def _sessions_dir() -> Path:
     return d
 
 
-def load_session(name: str) -> List[Dict[str, str]]:
+def load_session(name: str) -> list[dict[str, str]]:
     """Load message history for a named session.
 
     Returns an empty list if the session doesn't exist yet.
@@ -52,7 +52,7 @@ def load_session(name: str) -> List[Dict[str, str]]:
         return []
 
 
-def load_session_with_state(name: str) -> Dict[str, Any]:
+def load_session_with_state(name: str) -> dict[str, Any]:
     """Load full session data including navigator state (E-M36).
 
     Returns dict with keys: messages, navigator (may be empty).
@@ -75,8 +75,8 @@ def load_session_with_state(name: str) -> Dict[str, Any]:
 
 def save_session(
     name: str,
-    messages: List[Dict[str, str]],
-    navigator_state: Optional[Dict[str, Any]] = None,
+    messages: list[dict[str, str]],
+    navigator_state: dict[str, Any] | None = None,
 ) -> None:
     """Persist message history and navigator state for a named session.
 
@@ -108,7 +108,7 @@ def delete_session(name: str) -> bool:
     return False
 
 
-def list_sessions() -> List[Dict[str, Any]]:
+def list_sessions() -> list[dict[str, Any]]:
     """List all sessions, newest first."""
     sessions = []
     for p in sorted(_sessions_dir().glob("*.json"), reverse=True):

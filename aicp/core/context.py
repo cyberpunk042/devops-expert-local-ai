@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 # Files to read for project context (in priority order)
 _CONTEXT_FILES = ["README.md", "CLAUDE.md", "pyproject.toml", "package.json", "Cargo.toml"]

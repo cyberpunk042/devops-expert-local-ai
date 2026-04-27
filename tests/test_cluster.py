@@ -1,6 +1,6 @@
 """Tests for cluster management."""
 
-from aicp.core.cluster import load_cluster_config, NodeInfo, find_best_node
+from aicp.core.cluster import NodeInfo, find_best_node, load_cluster_config
 
 
 def test_load_cluster_config_empty():

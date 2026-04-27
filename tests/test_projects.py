@@ -1,11 +1,17 @@
 """Tests for project registry and state."""
 
-from pathlib import Path
 
 from aicp.core.projects import (
-    register_project, unregister_project, list_projects,
-    init_project_state, load_project_state, save_project_state,
-    add_milestone, update_milestone, add_decision, update_session,
+    add_decision,
+    add_milestone,
+    init_project_state,
+    list_projects,
+    load_project_state,
+    register_project,
+    save_project_state,
+    unregister_project,
+    update_milestone,
+    update_session,
 )
 
 

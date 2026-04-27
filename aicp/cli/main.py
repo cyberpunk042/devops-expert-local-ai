@@ -7,23 +7,28 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from aicp import __version__
 from aicp.backends.base import Backend
-from aicp.cli.display import (
-    console, print_check_header, print_error, print_history_entry,
-    print_response, print_status, print_warning, spinner,
-)
-from aicp.config.loader import load_config, validate_config, get_backend_config
-from aicp.core.history import list_tasks, get_task
-from aicp.core.modes import Mode
-from aicp.core.controller import Controller, Task
-from aicp.backends.localai import LocalAIBackend
 from aicp.backends.claude_code import ClaudeCodeBackend
 from aicp.backends.k2_6_local import K26LocalBackend
+from aicp.backends.localai import LocalAIBackend
 from aicp.backends.ollama_cloud import OllamaCloudBackend
 from aicp.backends.openrouter import OpenRouterBackend
+from aicp.cli.display import (
+    console,
+    print_check_header,
+    print_error,
+    print_history_entry,
+    print_response,
+    print_status,
+    print_warning,
+    spinner,
+)
+from aicp.config.loader import get_backend_config, load_config, validate_config
+from aicp.core.controller import Controller, Task
+from aicp.core.history import get_task, list_tasks
+from aicp.core.modes import Mode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -457,7 +462,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_backends(config: Dict) -> Dict[str, Backend]:
+def _build_backends(config: dict) -> dict[str, Backend]:
     """Instantiate backends from config."""
     local_cfg = get_backend_config(config, "local")
     claude_cfg = get_backend_config(config, "claude")
@@ -583,7 +588,7 @@ def _print_next(msg: str) -> None:
     print(f"NEXT: {msg}")
 
 
-def _run_model_cmd(cmd: str, model_arg: Optional[str]) -> int:
+def _run_model_cmd(cmd: str, model_arg: str | None) -> int:
     """Handle --model-cmd subcommands: unload, delete, status, update.
 
     Replaces deprecated aicp_model_unload/delete/status/config_update MCP tools per
@@ -701,7 +706,7 @@ def _run_model_cmd(cmd: str, model_arg: Optional[str]) -> int:
     return 1
 
 
-def _run_lora_cmd(cmd: str, model_arg: Optional[str], adapter_arg: Optional[str]) -> int:
+def _run_lora_cmd(cmd: str, model_arg: str | None, adapter_arg: str | None) -> int:
     """Handle --lora-cmd subcommands: list, load.
 
     Replaces deprecated aicp_lora_load and aicp_lora_list MCP tools per
@@ -753,8 +758,8 @@ def _run_lora_cmd(cmd: str, model_arg: Optional[str], adapter_arg: Optional[str]
 
 def _run_task_cmd(
     cmd: str,
-    task_arg: Optional[str],
-    stage_arg: Optional[str],
+    task_arg: str | None,
+    stage_arg: str | None,
     mode: str = "edit",
 ) -> int:
     """Handle --task-cmd subcommands: switch, show, list, clear.
@@ -783,7 +788,7 @@ def _run_task_cmd(
             print(f"{marker}{task['id']:<6} {task['stage']:<10} {task['status']:<12} {task['slug']}")
         if active_id:
             print(f"\nActive task: {active_id}")
-            _print_next(f"`aicp --task-cmd show` for details, or `aicp --task-cmd switch --task-arg <id>` to change")
+            _print_next("`aicp --task-cmd show` for details, or `aicp --task-cmd switch --task-arg <id>` to change")
         else:
             _print_next("`aicp --task-cmd switch --task-arg <id>` to activate one (Layer B hook then enforces stage gates)")
         return 0
@@ -864,7 +869,7 @@ def _run_task_cmd(
     return 1
 
 
-def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optional[str]) -> int:
+def _run_profile_cmd(cmd: str, profile_name: str | None, profile_arg: str | None) -> int:
     """Handle --profile-cmd subcommands."""
     from aicp.core.profiles import (
         PROFILES_DIR,
@@ -1022,7 +1027,7 @@ def _run_profile_cmd(cmd: str, profile_name: Optional[str], profile_arg: Optiona
     return 1
 
 
-def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
+def _run_check(config: dict, backends: dict[str, Backend]) -> int:
     """Validate config and check backend availability."""
     from aicp.core.gpu import detect_gpus
 
@@ -1092,14 +1097,14 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
         health = local_backend.health_check()
         ready = local_backend.is_ready()
         if health.get("healthy"):
-            console.print(f"  Health:  [green]healthy[/]")
+            console.print("  Health:  [green]healthy[/]")
         else:
             err = health.get("error", "unhealthy")
             console.print(f"  Health:  [red]{err}[/]")
         if ready:
-            console.print(f"  Ready:   [green]ready[/]")
+            console.print("  Ready:   [green]ready[/]")
         else:
-            console.print(f"  Ready:   [yellow]not ready (model may be loading)[/]")
+            console.print("  Ready:   [yellow]not ready (model may be loading)[/]")
 
     # Warn if configured LocalAI model is not actually loaded
     if local_backend and local_backend.is_available():
@@ -1123,7 +1128,7 @@ def _run_check(config: Dict, backends: Dict[str, Backend]) -> int:
             pass
 
     # Cluster nodes
-    from aicp.core.cluster import load_cluster_config, check_cluster
+    from aicp.core.cluster import check_cluster, load_cluster_config
     from aicp.core.controller import _local_ips
     nodes = load_cluster_config(config)
     if nodes:
@@ -1451,12 +1456,12 @@ def _run_self_test() -> int:
         if count < 30:
             raise RuntimeError(f"expected ≥30 MCP tools, found {count}")
         return count
-    _probe(f"MCP tool registry (≥30 tools)", _check_mcp_tools)
+    _probe("MCP tool registry (≥30 tools)", _check_mcp_tools)
 
     # 22. Fleet routing
     def _check_fleet_routing():
-        from aicp.core.router import classify_task_with_reason, recommend_model
         from aicp.core.modes import Mode as _Mode
+        from aicp.core.router import classify_task_with_reason, recommend_model
 
         # Use a minimal mock to avoid HTTP calls in the probe
         class _MockBe:
@@ -1475,7 +1480,7 @@ def _run_self_test() -> int:
 
     # 23. Fleet node connectivity
     def _check_fleet_nodes():
-        from aicp.core.cluster import load_fleet_config, check_cluster
+        from aicp.core.cluster import check_cluster, load_fleet_config
         nodes = load_fleet_config()
         if not nodes:
             return None  # no fleet configured
@@ -1515,7 +1520,6 @@ def _run_self_test() -> int:
 def _run_capabilities() -> int:
     """Show all AICP capabilities."""
     from rich.table import Table
-    from rich.panel import Panel
 
     console.print("[bold]AICP Capabilities Report[/]\n")
 
@@ -1663,7 +1667,7 @@ def _run_metrics() -> int:
     lai = status.get("localai", {})
     if not lai.get("available"):
         console.print(f"  [red]LocalAI not reachable at {local_url}[/]")
-        _print_next(f"`docker compose up -d localai` to start, or set LOCALAI_BASE_URL to a reachable instance")
+        _print_next("`docker compose up -d localai` to start, or set LOCALAI_BASE_URL to a reachable instance")
         return 1
 
     console.print(f"  URL:         {lai.get('url', local_url)}")
@@ -1729,9 +1733,9 @@ def _run_metrics() -> int:
 
 def _run_stats() -> int:
     """Show aggregated metrics with per-backend breakdown."""
-    from aicp.core.metrics import aggregate
     from rich.table import Table
-    from rich.panel import Panel
+
+    from aicp.core.metrics import aggregate
 
     m = aggregate(1000)
 
@@ -1868,9 +1872,10 @@ def _run_routing_report(window: str, as_json: bool) -> int:
 
 def _run_auto_config() -> int:
     """Auto-detect GPUs and generate optimal model configs."""
-    from aicp.core.gpu import detect_gpus, calculate_optimal_config, estimate_model_vram_mb
-    from aicp.core.models import list_models, MODELS_DIR
     from rich.table import Table
+
+    from aicp.core.gpu import calculate_optimal_config, detect_gpus, estimate_model_vram_mb
+    from aicp.core.models import MODELS_DIR, list_models
 
     gpus = detect_gpus()
     if not gpus:
@@ -1952,12 +1957,16 @@ def _apply_optimal_config(config_path: Path, optimal: dict) -> None:
 
 def _run_models(command: str, model_name: str = None) -> int:
     """Model management commands."""
-    from aicp.core.models import (
-        list_models, get_model_config, download_model, activate_model,
-        benchmark_model,
-    )
-    from rich.table import Table
     from rich.progress import Progress
+    from rich.table import Table
+
+    from aicp.core.models import (
+        activate_model,
+        benchmark_model,
+        download_model,
+        get_model_config,
+        list_models,
+    )
 
     if command == "list":
         models = list_models()
@@ -2118,11 +2127,11 @@ def _run_models(command: str, model_name: str = None) -> int:
 
             if status.get("error"):
                 print_error(f"Job failed: {status['error']}")
-                _print_next(f"`aicp --models install --models-arg <name>` to retry, or `aicp --models gallery` to verify name")
+                _print_next("`aicp --models install --models-arg <name>` to retry, or `aicp --models gallery` to verify name")
                 return 1
 
             if status.get("processed"):
-                console.print(f"[green]Download complete.[/]")
+                console.print("[green]Download complete.[/]")
                 _print_next("`aicp --models list` to verify the model is in the catalog, then `aicp --models activate --models-arg <name>`")
             else:
                 progress = status.get("progress", 0)
@@ -2194,11 +2203,14 @@ def _run_models(command: str, model_name: str = None) -> int:
 
 def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str = None) -> int:
     """Handle project management commands."""
+    from rich.table import Table
+
     from aicp.core.projects import (
-        register_project, list_projects, load_project_state,
+        list_projects,
+        load_project_state,
+        register_project,
         unregister_project,
     )
-    from rich.table import Table
 
     if cmd == "register":
         entry = register_project(project_path, name=name, description=desc or "")
@@ -2265,7 +2277,7 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
 
         milestones = state.get("milestones", [])
         if milestones:
-            console.print(f"\n  [bold]Milestones:[/]")
+            console.print("\n  [bold]Milestones:[/]")
             for m in milestones:
                 status = m.get("status", "pending")
                 color = "green" if status == "done" else "yellow" if status == "in_progress" else "dim"
@@ -2273,7 +2285,7 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
 
         decisions = state.get("decisions", [])
         if decisions:
-            console.print(f"\n  [bold]Recent decisions:[/]")
+            console.print("\n  [bold]Recent decisions:[/]")
             for d in decisions[-5:]:
                 console.print(f"    {d.get('timestamp', '')[:10]} {d['decision']}")
 
@@ -2295,15 +2307,22 @@ def _run_project_cmd(cmd: str, project_path: Path, name: str = None, desc: str =
 
 def _run_skill(
     cmd: str, project_path: Path, skill_name: str = None,
-    params: List[str] = None, backends: Dict = None, config: Dict = None,
+    params: list[str] = None, backends: dict = None, config: dict = None,
 ) -> int:
     """Handle skill commands."""
-    from aicp.core.skills import (
-        discover_skills, get_skill, resolve_params, apply_params,
-        create_skill, generate_claude_command, _global_skills_dir, _project_skills_dir,
-    )
-    from aicp.core.pipeline import run_pipeline
     from rich.table import Table
+
+    from aicp.core.pipeline import run_pipeline
+    from aicp.core.skills import (
+        _global_skills_dir,
+        _project_skills_dir,
+        apply_params,
+        create_skill,
+        discover_skills,
+        generate_claude_command,
+        get_skill,
+        resolve_params,
+    )
 
     if cmd == "list":
         skills = discover_skills(project_path)
@@ -2349,7 +2368,7 @@ def _run_skill(
             resolved = resolve_params(skill, provided)
         except ValueError as e:
             print_error(str(e))
-            _print_next(f"`aicp --skill list` then re-run with all required params via --param key=value")
+            _print_next("`aicp --skill list` then re-run with all required params via --param key=value")
             return 1
 
         steps = apply_params(skill.steps, resolved)
@@ -2487,14 +2506,14 @@ def _run_replay(record_id: str) -> int:
 
 def _run_kb(
     command: str,
-    arg: Optional[str],
+    arg: str | None,
     project_path: Path,
-    config: Dict,
-    backends: Dict[str, Backend],
+    config: dict,
+    backends: dict[str, Backend],
 ) -> int:
     """Handle --kb commands for knowledge base management."""
     from aicp.config.loader import get_rag_config
-    from aicp.core.rag import RAGPipeline, VectorStore, build_rag_pipeline
+    from aicp.core.rag import VectorStore, build_rag_pipeline
 
     rag_cfg = get_rag_config(config)
     db_path_str = rag_cfg["db_path"]
@@ -2507,7 +2526,7 @@ def _run_kb(
         vs = VectorStore(db_path)
         info = vs.stats(rag_cfg["store_name"])
         vs.close()
-        console.print(f"[bold]Knowledge Base Status[/]")
+        console.print("[bold]Knowledge Base Status[/]")
         console.print(f"  Store:    {info['store']}")
         console.print(f"  Sources:  {info['total_sources']}")
         console.print(f"  Chunks:   {info['total_chunks']}")
@@ -2563,7 +2582,7 @@ def _run_kb(
             print_error(f"Path not found: {target}")
             return 1
 
-        files: List[Path] = []
+        files: list[Path] = []
         if target.is_file():
             files = [target]
         else:
@@ -2648,7 +2667,7 @@ def _run_kb(
     return 1
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     # Bridge repo .env → os.environ so OPENROUTER_API_KEY etc. reach Python.
     # Shell `source .env` doesn't work (bare KEY=VALUE isn't exported).
     from aicp.config.loader import load_dotenv
@@ -2702,8 +2721,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --session-list (no config needed)
     if args.session_list:
-        from aicp.core.session import list_sessions
         from rich.table import Table
+
+        from aicp.core.session import list_sessions
         sessions = list_sessions()
         if not sessions:
             console.print("[dim]No saved sessions. Use --session NAME to start one.[/]")
@@ -2759,7 +2779,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if loaded:
                 console.print(f"  GPU active:  [bold green]{', '.join(loaded)}[/]")
             else:
-                console.print(f"  GPU active:  [dim]none (model loads on first request)[/]")
+                console.print("  GPU active:  [dim]none (model loads on first request)[/]")
             backends = lai.get("backends", [])
             if backends:
                 console.print(f"  Backends:    {', '.join(backends)}")
@@ -2771,7 +2791,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if stats.get("count", 0) > 0:
                     console.print(f"  API {method}:    {stats['count']} calls, avg {stats['avg_ms']:.0f}ms")
         else:
-            console.print(f"  LocalAI:     [red]OFFLINE[/]")
+            console.print("  LocalAI:     [red]OFFLINE[/]")
 
         # GPU
         console.print()
@@ -2789,7 +2809,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             p2p = p2p_backend.p2p_stats()
             if p2p.get("enabled"):
                 console.print()
-                console.print(f"  P2P:         [green]ENABLED[/]")
+                console.print("  P2P:         [green]ENABLED[/]")
                 for k, v in p2p.items():
                     if k not in ("enabled", "error"):
                         console.print(f"  {k}:  {v}")
@@ -2840,7 +2860,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         goal = "GOAL MET" if r["goal_met"] else "in progress"
         print(f"\nLocalAI Offload Dashboard ({goal})")
         print(f"[{bar_str}] {r['offload_pct']}% offloaded (target: 80%)")
-        print(f"")
+        print("")
         fleet_info = f" ({r['fleet_tasks']} fleet-routed)" if r.get('fleet_tasks') else ""
         failover_info = f" ({r['failover_tasks']} failovers)" if r.get('failover_tasks') else ""
         print(f"Tasks:    {r['local_tasks']} local / {r['claude_tasks']} claude / {r['total_tasks']} total{fleet_info}{failover_info}")
@@ -2890,9 +2910,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         # Fleet nodes
         try:
-            from aicp.core.cluster import load_fleet_config, check_cluster
-            from aicp.core.controller import _local_ips
             import socket as _sock
+
+            from aicp.core.cluster import check_cluster, load_fleet_config
+            from aicp.core.controller import _local_ips
             nodes = load_fleet_config()
             if nodes:
                 local_ips = _local_ips()
@@ -2931,7 +2952,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --health-report: generate health report
     if getattr(args, "health_report", False):
-        from aicp.core.health_report import generate_report, format_report, save_report
+        from aicp.core.health_report import format_report, generate_report, save_report
         from aicp.core.history import list_tasks as _list_history
         tasks = _list_history(count=100)
         report = generate_report(tasks)
@@ -2942,7 +2963,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --retry-dlq: retry pending DLQ entries
     if getattr(args, "retry_dlq", False):
-        from aicp.core.dlq import list_entries, retry_pending, count
+        from aicp.core.dlq import count, list_entries, retry_pending
         pending = count()
         if pending == 0:
             print("DLQ is empty — no entries to retry.")
@@ -2957,7 +2978,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --dlq-status: show DLQ status
     if getattr(args, "dlq_status", False):
-        from aicp.core.dlq import list_entries, count
+        from aicp.core.dlq import count, list_entries
         pending = count()
         print(f"Dead-Letter Queue: {pending} pending entries")
         if pending > 0:
@@ -3033,7 +3054,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # --bench: quick performance benchmark (no config needed)
     if getattr(args, "bench", False):
         from aicp.core.observability import (
-            measure_request, measure_embedding, measure_rerank, measure_grammar,
+            measure_embedding,
+            measure_grammar,
+            measure_request,
+            measure_rerank,
         )
         local_url = os.environ.get("LOCALAI_BASE_URL", "http://localhost:8090")
         console.print("[bold]AICP Performance Benchmark[/]\n")
@@ -3041,7 +3065,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # ── Chat (streaming, 3 runs) ──
         console.print("[cyan]Chat (hermes, streaming)[/]")
         for run in range(3):
-            label = "cold" if run == 0 else f"warm"
+            label = "cold" if run == 0 else "warm"
             with spinner(f"Run {run + 1}/3 ({label})..."):
                 result = measure_request(local_url, model="hermes")
             if result.get("error"):
@@ -3153,7 +3177,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Project commands that need backends (create, plan, assess)
     if args.project_cmd in ("create", "plan", "assess"):
-        from aicp.cli.project_ops import create_project, plan_project, assess_project
+        from aicp.cli.project_ops import assess_project, create_project, plan_project
         from aicp.core.router import classify_task
         # Pick best available backend
         backend_name = classify_task("project analysis", Mode.THINK, backends, config)
@@ -3271,8 +3295,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --router-debug: show routing decision table
     if args.router_debug:
-        from aicp.core.router import classify_task_with_reason, _COMPLEX_KEYWORDS, _SIMPLE_KEYWORDS
         from rich.table import Table as _Table
+
+        from aicp.core.router import _COMPLEX_KEYWORDS, _SIMPLE_KEYWORDS, classify_task_with_reason
         debug_backend, debug_reason = classify_task_with_reason(
             args.prompt, Mode(args.mode), backends, config
         )
@@ -3584,7 +3609,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             extra_kwargs["json_schema"] = schema_path.read_text()
 
     # --session: load conversation history for LocalAI single-shot continuity
-    session_messages: List = []
+    session_messages: list = []
     if args.session and actual_backend == "local":
         from aicp.core.session import load_session
         session_messages = load_session(args.session)
@@ -3600,8 +3625,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     _mc = None
     try:
         import atexit as _atexit
-        from aicp.core.prometheus import MetricsCollector, start_metrics_server
+
         from aicp.core.metrics import _default_snapshot_path
+        from aicp.core.prometheus import MetricsCollector, start_metrics_server
         _mc = MetricsCollector(snapshot_path=str(_default_snapshot_path()))
         start_metrics_server(_mc, port=9101)
         _atexit.register(_mc.save_snapshot)

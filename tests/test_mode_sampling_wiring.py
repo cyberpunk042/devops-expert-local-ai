@@ -1,10 +1,7 @@
 """Tests verifying mode-aware sampling is wired into all execution paths (M73)."""
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from aicp.backends.localai import LocalAIBackend
 from aicp.core.modes import Mode

@@ -1,13 +1,11 @@
 """Shared test fixtures for AICP test suite."""
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from aicp.backends.localai import LocalAIBackend
 from aicp.core.controller import Controller
-from aicp.core.modes import Mode
 
 
 @pytest.fixture
