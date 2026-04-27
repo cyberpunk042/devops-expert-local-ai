@@ -747,6 +747,9 @@ def _run_lora_cmd(cmd: str, model_arg: str | None, adapter_arg: str | None) -> i
             _print_next(f"`aicp --models list` to verify {model_arg} is a loaded base model")
             return 1
         print(f"LoRA adapter loaded: {model_arg} ← {adapter_arg}")
+        if result:
+            import json as _json
+            print(_json.dumps(result, indent=2))
         _print_next("`aicp --lora-cmd list` to verify, or `aicp \"<prompt>\"` to test the specialized model")
         return 0
 

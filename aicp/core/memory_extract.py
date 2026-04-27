@@ -107,7 +107,6 @@ def extract_facts_heuristic(tasks: list[dict[str, Any]]) -> list[ExtractedFact]:
     for task in tasks:
         task_id = task.get("id", "unknown")
         response = task.get("response", "")
-        prompt = task.get("prompt", "")
         error = task.get("error")
 
         # Extract from errors (always interesting)

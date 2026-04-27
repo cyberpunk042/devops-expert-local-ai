@@ -126,11 +126,9 @@ def _detect_trends(stats: dict[str, Any]) -> list[dict[str, str]]:
             "message": f"Average latency is {avg_dur}s (threshold: 30s)",
         })
 
-    # Check per-backend quality
+    # Check per-backend error rate (per-backend quality_sum aggregation deferred — see backend.get("quality_sum") path)
     for name, backend in stats.get("by_backend", {}).items():
-        tasks = backend.get("tasks", 0)
-        if tasks > 0:
-            quality = backend.get("quality_sum", 0) / tasks if "quality_sum" in backend else None
+        if backend.get("tasks", 0) > 0:
             err_rate = backend.get("error_rate", 0)
             if err_rate > 20:
                 trends.append({

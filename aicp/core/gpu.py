@@ -66,7 +66,6 @@ def estimate_kv_cache_mb(context_size: int, n_layers: int = 32, kv_quantized: bo
     Formula: 2 * n_layers * n_kv_heads * head_dim * context_size * bytes_per_element
     For 7-8B models: ~32 layers, 8 KV heads, 128 head_dim
     """
-    bytes_per_element = 0.5 if kv_quantized else 2.0  # q4_0 vs f16
     # Simplified: ~0.5MB per 1K context with q4_0, ~2MB with f16
     per_1k = 0.5 if kv_quantized else 2.0
     return int(context_size / 1000 * per_1k * (n_layers / 32))

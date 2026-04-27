@@ -39,7 +39,6 @@ def _generate_away_summary(config: dict) -> str:
         # Heuristic summary from recent tasks
         recent = tasks[:5]
         modes = [t.get("mode", "") for t in recent]
-        backends = [t.get("backend", "") for t in recent]
         errors = [t for t in recent if t.get("error")]
 
         summary_parts = []
