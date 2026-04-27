@@ -29,7 +29,7 @@ One of four projects in the fleet ecosystem:
 
 ## The Mission
 
-**Post-Anthropic self-autonomous AI stack** — functionally reached 2026-04-25. Kimi K2.6 via OpenRouter (audit-safe, pinned-provider) + Ollama Cloud Pro (personal/research, shared pool) replaces the prior Claude-Opus-as-default habit. Local K2.6 Q2 GGUF runs on operator hardware via llama.cpp as sovereignty fallback (slow, opt-in). Realistic monthly cost: ~$30-60 CAD blended vs prior ~$540 CAD baseline.
+**Post-Anthropic self-autonomous AI stack** — functionally reached 2026-04-25. Kimi K2.6 via OpenRouter (audit-safe, pinned-provider) + Ollama Cloud Pro (personal/research, shared pool) replaces the prior Claude-Opus-as-default habit. Local K2.6 Q2 GGUF runs on operator hardware via llama.cpp as sovereignty fallback only — not interactive (empirically 0.045-0.10 tok/s on Tier 0); reach for it when cloud is unreachable. Realistic monthly cost: ~$30-60 CAD blended vs prior ~$540 CAD baseline.
 
 > "I dont want to have to deal with Anthropic and Claude and Opus in the future......" (operator, 2026-04-22)
 
@@ -63,7 +63,7 @@ User → AICP Controller → Router → 5 backends → Project/Repo
 - **ollama_cloud** — Ollama Cloud Pro (~$27 CAD/mo flat). `personal` profile only — shared inference pool.
 - **openrouter** — Generic catalog (Opus 4.7 / GPT-5.4 / Gemini etc.). Premium fallback.
 - **claude** — Claude Code direct subprocess. Hard-gated last resort.
-- **k2_6_local** *(sovereignty-only, not in default routing)* — llama.cpp + Unsloth Q2 GGUF on `:8091`. Opt-in via `--backend k2_6_local`. Slow (0.045–0.10 tok/s on Tier 0).
+- **k2_6_local** *(sovereignty-only, not in default routing)* — llama.cpp + Unsloth Q2 GGUF on `:8091`. Opt-in via `--backend k2_6_local`. Not interactive: 0.045–0.10 tok/s on Tier 0 — reach for it when cloud is unreachable, not as a daily driver.
 
 Full LocalAI model inventory, per-profile routing tables, and infrastructure target: **[docs/architecture/localai-routing.md](docs/architecture/localai-routing.md)**.
 
