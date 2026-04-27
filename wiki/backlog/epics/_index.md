@@ -43,9 +43,16 @@ Related brain epics (NOT AICP-owned but AICP depends on):
 | Epic | Milestone | Status | Source |
 |------|-----------|--------|--------|
 | Second Brain Adoption (8-step + 4 epics) | Stage 3 | in-progress | Adoption plan started 2026-04-17 |
-| CLAUDE.md slim (660→<200 lines) | Stage 3 | planned | Surfaced from Claude Code Standards review |
-| 78 skills audit against Extension Standards | Stage 3 | planned | Surfaced from Extension Standards review |
-| AGENTS.md creation (cross-tool universal layer) | Stage 3 | planned | Surfaced from Claude Code Standards review |
-| backend-ai-platform-python domain profile | Stage 3 | planned | Surfaced from Methodology Standards review |
+| 84 skills audit against Extension Standards | Stage 3 | planned | Surfaced from Extension Standards review |
 | Empirical routing split measurement (Stage 3 hardware) | Stage 3 | planned | Open question on Local AI model in second brain |
 | Cluster peering (Alpha ↔ Bravo) | Stage 4 | planned | LocalAI cluster topology from CLAUDE.md |
+| MCP tool surface Phase 2b — hard removal | next milestone | planned | `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md` (Phase 2a soft-deprecation done 2026-04-25) |
+
+## Completed
+
+| Epic | Completed | Evidence |
+|------|-----------|----------|
+| AGENTS.md creation (cross-tool universal layer) | 2026-04 | [AGENTS.md](../../../AGENTS.md) (162 lines, gold-standard split with [CLAUDE.md](../../../CLAUDE.md) + [TOOLS.md](../../../TOOLS.md)) |
+| CLAUDE.md slim (gold-standard routing pattern) | 2026-04-25 | 307→184 lines; details extracted to [docs/architecture/](../../../docs/architecture/) (7 files, full data preserved with cross-references) |
+| backend-ai-platform-python domain profile | 2026-04 | [wiki/config/domain-profiles/backend-ai-platform-python.yaml](../../config/domain-profiles/backend-ai-platform-python.yaml) |
+| MCP tool surface Phase 2a — soft deprecation | 2026-04-25 | 21 of 22 migration-target tools annotated with stderr deprecation pointing at CLI/skill replacements; verified in `aicp/mcp/server.py` |

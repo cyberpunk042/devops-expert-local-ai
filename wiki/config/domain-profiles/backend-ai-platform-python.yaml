@@ -8,7 +8,7 @@
 # python-wiki.yaml (same language, different artifact spectrum).
 # AICP differs from python-wiki in: pytest over pipeline post, ruff over
 # custom validate, Docker as runtime (LocalAI + Prometheus + Grafana),
-# profiles as coordination bundles, 78 skills as primary extension.
+# profiles as coordination bundles, 84 skills as primary extension.
 
 domain: backend-ai-platform-python
 description: "Python backend platforms orchestrating AI inference (local + cloud) with CLI, MCP server, and skill libraries"
@@ -171,6 +171,6 @@ conventions:
 # ---------------------------------------------------------------------------
 # Document: docs/kb/research/* (router decision background, model evaluations, complexity scoring research)
 # Design:   wiki/decisions/<future>/4-tier-router-with-profiles.md (to author)
-# Scaffold: config/profiles/*.yaml (9 profiles), aicp/core/router.py types
+# Scaffold: config/profiles/*.yaml (11 profiles), aicp/core/router.py types
 # Implement: aicp/core/router.py (score → tier → backend), aicp/core/circuit_breaker.py, aicp/core/dlq.py
-# Test:     tests/test_router.py, tests/test_circuit_breaker.py, tests/test_dlq.py — part of 1,758-test suite
+# Test:     tests/test_router.py, tests/test_circuit_breaker.py, tests/test_dlq.py — part of 1,840-test suite
