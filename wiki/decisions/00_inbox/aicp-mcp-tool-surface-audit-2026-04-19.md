@@ -179,3 +179,20 @@ If reversed (rollback after partial migration):
 - DEPENDS ON: AICP's CLI dispatcher pattern (`--task-cmd switch/show/list/clear` precedent at `aicp/cli/main.py`) being extensible to Category D and E migrations
 - RELATES TO: [skills-as-primary-extension-pattern](../01_drafts/skills-as-primary-extension-pattern.md) (the migration strengthens this — every migrated tool gains a SKILL.md that's lazy-loaded vs eager-loaded)
 - RELATES TO: [pretooluse-hooks-layered-approach](../01_drafts/pretooluse-hooks-layered-approach.md) (CLI surface migration means hooks can also intercept these operations — improved safety surface)
+
+## Phase 2a status — soft-deprecation layer added 2026-04-25
+
+21 of 21 migration-target tools (12 Category D + 9 Category E; `aicp_route` excluded per the audit correction above) annotated with `_deprecation_warning(...)` call in `aicp/mcp/server.py`. Helper function defined near the top of the module.
+
+**Pattern**: tool function still responds normally (no consumer breakage), but emits a single stderr warning per session on first invocation pointing at the CLI/skill replacement. Idempotent via `_DEPRECATED_TOOLS_WARNED: set[str]` — log spam under fleet-agent traffic is bounded to one line per tool per process.
+
+**Tools annotated** (verified 2026-04-25 via `grep '_deprecation_warning(' aicp/mcp/server.py | grep -v 'def _deprecation' | wc -l` → 21):
+
+| Cat | Tools |
+|-----|-------|
+| D (operational, 12) | `aicp_models`, `aicp_system`, `aicp_health`, `aicp_backends_list`, `aicp_server_config`, `aicp_metrics`, `aicp_warmup`, `aicp_models_loaded`, `aicp_deep_health`, `aicp_profile`, `aicp_task_status`, `aicp_dlq_status` |
+| E (model lifecycle, 9) | `aicp_model_gallery`, `aicp_model_install`, `aicp_model_status`, `aicp_model_unload`, `aicp_model_delete`, `aicp_model_config`, `aicp_model_config_update`, `aicp_lora_load`, `aicp_lora_list` |
+
+**Phase 2b (hard removal)** — deferred to next milestone after consumers cut over to the CLI/skill replacements. The hard cutover removes the `@mcp.tool()` decorators and the function bodies, dropping the schema cost permanently.
+
+**Verification**: helper is one-shot (verified 2026-04-25 via direct invocation — first call emits to stderr, second is silent). All 21 tools still pass their existing test mocks (no behavior change beyond the stderr line).

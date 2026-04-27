@@ -122,6 +122,36 @@ mcp = FastMCP(
 )
 
 
+# ---------------------------------------------------------------------------
+# Deprecation surface (Phase 2 of MCP tool-surface audit, 2026-04-25)
+# ---------------------------------------------------------------------------
+# 22 operational + model-lifecycle tools migrate to CLI+Skills per
+# `wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md`.
+# Soft deprecation: tool still responds (no consumer breakage), but emits a
+# one-shot stderr warning per session pointing at the replacement. Hard
+# removal scheduled for the next milestone after consumers cut over.
+
+_DEPRECATED_TOOLS_WARNED: set[str] = set()
+
+
+def _deprecation_warning(tool_name: str, replacement: str) -> None:
+    """Emit a one-time stderr warning when a deprecated MCP tool is invoked.
+
+    Idempotent per-process: once warned for a tool, stays silent for the rest
+    of the session to avoid log spam under fleet-agent traffic.
+    """
+    if tool_name in _DEPRECATED_TOOLS_WARNED:
+        return
+    _DEPRECATED_TOOLS_WARNED.add(tool_name)
+    print(
+        f"[AICP MCP] DEPRECATED: {tool_name} → use {replacement}. "
+        f"Hard removal next milestone. See "
+        f"wiki/decisions/00_inbox/aicp-mcp-tool-surface-audit-2026-04-19.md.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 @mcp.tool()
 def aicp_chat(prompt: str, mode: str = "think", seed: int = -1) -> str:
     """Send a prompt to the local LLM with full controller routing and failover.
@@ -341,6 +371,7 @@ def aicp_models() -> str:
     Returns:
         JSON string with model IDs and status, plus deprecation warning.
     """
+    _deprecation_warning("aicp_models", "the `aicp-model-mgmt` skill or `aicp --models` CLI")
     deprecation = {
         "warning": "aicp_models MCP tool deprecated; use 'aicp --models list' CLI. Removal next release.",
     }
@@ -432,6 +463,7 @@ def aicp_system() -> str:
     Returns:
         JSON with loaded_models (in GPU), backends, and all configured models, plus deprecation warning.
     """
+    _deprecation_warning("aicp_system", "the `aicp-ops-runtime` skill or `aicp --status` CLI")
     deprecation = {
         "warning": "aicp_system MCP tool deprecated; use 'aicp --check' / 'aicp --models list' CLI. Removal next release.",
     }
@@ -708,6 +740,7 @@ def aicp_model_gallery(search: str = "") -> str:
     Returns:
         JSON array of available models with name, installed status, and tags, plus deprecation warning.
     """
+    _deprecation_warning("aicp_model_gallery", "the `aicp-model-mgmt` skill (`aicp --model-cmd gallery`)")
     deprecation = {
         "warning": "aicp_model_gallery MCP tool deprecated; use 'aicp --models gallery' CLI. Removal next release.",
     }
@@ -735,6 +768,7 @@ def aicp_model_install(model_id: str, name: str = "") -> str:
     Returns:
         JSON with job UUID for tracking progress, plus deprecation warning.
     """
+    _deprecation_warning("aicp_model_install", "the `aicp-model-mgmt` skill (`aicp --model-cmd install <id>`)")
     deprecation = {
         "warning": "aicp_model_install MCP tool deprecated; use 'aicp --models download' CLI. Removal next release.",
     }
@@ -762,6 +796,7 @@ def aicp_model_status(model_or_job: str) -> str:
     Returns:
         JSON with status information, plus deprecation warning.
     """
+    _deprecation_warning("aicp_model_status", "the `aicp-model-mgmt` skill (`aicp --model-cmd status <id>`)")
     deprecation = {
         "warning": "aicp_model_status MCP tool deprecated; CLI flag 'aicp --model-cmd status' pending. Removal after CLI ships.",
     }
@@ -795,6 +830,7 @@ def aicp_model_unload(model_name: str) -> str:
     Returns:
         JSON with success status and deprecation warning.
     """
+    _deprecation_warning("aicp_model_unload", "the `aicp-model-mgmt` skill (`aicp --model-cmd unload <name>`)")
     deprecation = {
         "warning": "aicp_model_unload MCP tool deprecated; CLI flag 'aicp --model-cmd unload' pending. Removal after CLI ships.",
     }
@@ -863,6 +899,7 @@ def aicp_health() -> str:
     Returns:
         JSON with healthy (bool), ready (bool), and status details, plus deprecation warning.
     """
+    _deprecation_warning("aicp_health", "the `aicp-ops-runtime` skill or `aicp --check` CLI")
     deprecation = {
         "warning": "aicp_health MCP tool deprecated; use 'aicp --check' CLI. Removal next release.",
     }
@@ -884,6 +921,7 @@ def aicp_backends_list() -> str:
     Returns:
         JSON array of installed backends, plus deprecation warning.
     """
+    _deprecation_warning("aicp_backends_list", "the `aicp-ops-runtime` skill or `aicp --check` CLI")
     deprecation = {
         "warning": "aicp_backends_list MCP tool deprecated; use 'aicp --check' CLI. Removal next release.",
     }
@@ -905,6 +943,7 @@ def aicp_server_config() -> str:
     Returns:
         JSON with health, readiness, loaded models, backends, and detected features, plus deprecation warning.
     """
+    _deprecation_warning("aicp_server_config", "the `aicp-ops-runtime` skill or `aicp --capabilities` CLI")
     deprecation = {
         "warning": "aicp_server_config MCP tool deprecated; use 'aicp --check' / 'aicp --capabilities' CLI. Removal next release.",
     }
@@ -972,6 +1011,7 @@ def aicp_lora_load(model_name: str, adapter_path: str) -> str:
     Returns:
         Server response as JSON, plus deprecation warning.
     """
+    _deprecation_warning("aicp_lora_load", "the `aicp-lora` skill")
     deprecation = {
         "warning": "aicp_lora_load MCP tool deprecated; CLI flag 'aicp --lora-cmd load' pending. Removal after CLI ships.",
     }
@@ -991,6 +1031,7 @@ def aicp_lora_list() -> str:
     Returns:
         JSON array of models that have LoRA adapters attached, plus deprecation warning.
     """
+    _deprecation_warning("aicp_lora_list", "the `aicp-lora` skill")
     deprecation = {
         "warning": "aicp_lora_list MCP tool deprecated; CLI flag 'aicp --lora-cmd list' pending. Removal after CLI ships.",
     }
@@ -1058,6 +1099,7 @@ def aicp_metrics() -> str:
     Returns:
         JSON object with localai and gpu sub-objects, plus a deprecation warning.
     """
+    _deprecation_warning("aicp_metrics", "the `aicp-ops-metrics` skill or `aicp --metrics` CLI")
     backend = _get_backend()
     status = backend.metrics()
     payload = {
@@ -1083,6 +1125,7 @@ def aicp_model_delete(model_name: str) -> str:
     Returns:
         JSON with success status and deprecation warning.
     """
+    _deprecation_warning("aicp_model_delete", "the `aicp-model-mgmt` skill (`aicp --model-cmd delete <name>`)")
     deprecation = {
         "warning": "aicp_model_delete MCP tool deprecated; CLI flag 'aicp --model-cmd delete' pending (with confirmation). Removal after CLI ships.",
     }
@@ -1109,6 +1152,7 @@ def aicp_warmup(model_name: str = "") -> str:
     Returns:
         JSON with loaded status, model name, and duration, plus deprecation warning.
     """
+    _deprecation_warning("aicp_warmup", "the `aicp-ops-runtime` skill or `aicp --warmup` CLI")
     deprecation = {
         "warning": "aicp_warmup MCP tool deprecated; warmup is operator-deliberate (config/profiles/<name>.yaml warmup.models). Removal next release.",
     }
@@ -1130,6 +1174,7 @@ def aicp_models_loaded() -> str:
     Returns:
         JSON array of loaded model ID strings, plus deprecation warning.
     """
+    _deprecation_warning("aicp_models_loaded", "the `aicp-ops-runtime` skill or `aicp --models` CLI")
     deprecation = {
         "warning": "aicp_models_loaded MCP tool deprecated; use 'aicp --check' / 'aicp --models list' CLI. Removal next release.",
     }
@@ -1357,6 +1402,7 @@ def aicp_model_config(model_name: str = "") -> str:
     Returns:
         JSON object with the model's configuration, plus deprecation warning.
     """
+    _deprecation_warning("aicp_model_config", "the `aicp-model-mgmt` skill (`aicp --model-cmd config <name>`)")
     deprecation = {
         "warning": "aicp_model_config MCP tool deprecated; use 'aicp --models info' CLI or read config/models/<name>.yaml directly. Removal next release.",
     }
@@ -1402,6 +1448,7 @@ def aicp_model_config_update(
     Returns:
         Server response as JSON, plus deprecation warning.
     """
+    _deprecation_warning("aicp_model_config_update", "the `aicp-model-mgmt` skill (`aicp --model-cmd config-update`)")
     deprecation = {
         "warning": "aicp_model_config_update MCP tool deprecated; edit config/models/<name>.yaml + restart LocalAI for durable changes. CLI flag 'aicp --model-cmd update' pending. Removal after CLI ships.",
     }
@@ -1754,6 +1801,7 @@ def aicp_deep_health() -> str:
     Returns backend availability, circuit breaker states, warming status,
     and active profile information.
     """
+    _deprecation_warning("aicp_deep_health", "the `aicp-ops-runtime` skill or `aicp --check` CLI")
     deprecation = {
         "warning": "aicp_deep_health MCP tool deprecated; use 'aicp --check' / 'aicp --health-report' CLI. Removal next release.",
     }
@@ -1810,6 +1858,7 @@ def aicp_profile(action: str = "show", profile_name: str = "") -> str:
             - active: Show the currently active profile name
         profile_name: Profile name (required for 'show' action).
     """
+    _deprecation_warning("aicp_profile", "the `aicp --profile-cmd` CLI")
     deprecation = {
         "warning": "aicp_profile MCP tool deprecated; use 'aicp --profile-cmd list/show/diff/validate/use' CLI. Removal next release.",
     }
@@ -1878,6 +1927,7 @@ def aicp_task_status(task_id: str = "") -> str:
     Args:
         task_id: Specific task ID to check. If empty, lists recent tasks.
     """
+    _deprecation_warning("aicp_task_status", "the `aicp-ops-tasks` skill or `aicp --tasks` / `aicp --task-cmd` CLI")
     deprecation = {
         "warning": "aicp_task_status MCP tool deprecated; use 'aicp --tasks' (runtime) / 'aicp --task-cmd show|list' (workflow). Removal next release.",
     }
@@ -1915,6 +1965,7 @@ def aicp_dlq_status(action: str = "list") -> str:
             - count: Show DLQ entry count
             - retry: Retry all pending entries
     """
+    _deprecation_warning("aicp_dlq_status", "the `aicp-ops-dlq` skill or `aicp --retry-dlq` CLI")
     deprecation = {
         "warning": "aicp_dlq_status MCP tool deprecated; use 'aicp --dlq-status' / 'aicp --retry-dlq' CLI. See .claude/skills/aicp-ops-dlq/SKILL.md. Removal next release.",
     }
