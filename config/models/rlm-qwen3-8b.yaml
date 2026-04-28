@@ -1,0 +1,71 @@
+name: rlm-qwen3-8b
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  # ── Q8_0 quant: ~8GB, fits on single RTX 2080 Ti (11GB) with comfortable headroom
+  # Source: cameronbergh/rlm-qwen3-8b-v0.1-gguf (community GGUF quant of mit-oasys/rlm-qwen3-8b-v0.1)
+  # Base model card: mit-oasys/rlm-qwen3-8b-v0.1 (MIT license, Qwen3-8B finetune, arXiv 2512.24601)
+  # Released 2026-01-15 by MIT OASYS lab (Zhang/Kraska/Khattab — paper authors)
+  model: rlm-qwen3-8b-v0.1-q8_0.gguf
+  temperature: 0.2
+  top_p: 0.85
+  repeat_penalty: 1.1
+threads: 2
+
+# ── 8B post-trained for Recursive Language Model (RLM) paradigm
+# Approaches GPT-5 quality on 3 of 4 long-context tasks per RLM paper Table 1
+# Native context: 32K (Qwen3-8B base) — effective context via REPL-recursion: ~3.2M+
+# Brain references:
+#   ~/devops-solutions-information-hub/wiki/sources/tools-integration/src-rlm-recursive-language-models-mit-oasys.md
+#   ~/devops-solutions-information-hub/wiki/sources/tools-integration/src-rlm-paper-deep-dive-table-1-training-recipe-six-observations.md
+#   ~/devops-solutions-information-hub/wiki/comparisons/rlm-qwen3-8b-vs-qwen3-6-27b-tier-0-long-context-candidate.md
+
+# ── Single-GPU offload (q8_0 ~8GB fits comfortably on RTX 2080 Ti 11GB) ──
+gpu_layers: 99   # offload all layers; 8B fits
+
+# ── If using dual-GPU split (uncomment): proportional 0.42/0.58 across 8GB/11GB ──
+# tensor_split: "0.42,0.58"
+
+# ── KV cache (modest savings on 8B; can skip quantization if VRAM has headroom) ──
+cache_type_k: q8_0
+cache_type_v: q8_0
+flash_attention: true
+
+# ── Function calling (inherited from Qwen3-8B base) ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: rlm-qwen3-8b-cache
+prompt_cache_all: true
+
+# ── Context: native 32K from Qwen3-8B base ──
+# RLM paradigm extends EFFECTIVE context via REPL-recursion in the SDK layer
+# (the model itself stays at 32K; the SDK chunks + recurses)
+context_size: 32768
+mmap: true
+mmlock: true
+
+# ── STATUS: STUB — not yet downloaded ──
+# Authoring this config does NOT trigger a download.
+# Operator authorization required before:
+#   1. `huggingface-cli download cameronbergh/rlm-qwen3-8b-v0.1-gguf rlm-qwen3-8b-v0.1-q8_0.gguf` (~8GB)
+#       Target mount: TBD — operator picks per storage-tiers rule (NEVER WSL VDisk root)
+#   2. Adding `rlm-qwen3-8b` to LocalAI's loaded model set in docker-compose
+#   3. Adding `rlm-qwen3-8b` to the routing tier_map in config/default.yaml
+# Per `feedback_never_unauthorized_large_disk_writes.md` (>100MB threshold rule).
+#
+# ── Architectural note: this config makes the FINE-TUNED MODEL available locally.
+# The full RLM PARADIGM (REPL-recursion, ~3.2M+ effective context) requires the
+# RLM SDK as a separate orchestration layer between AICP and this backend:
+#   pip install rlms   (alexzhang13/rlm)
+# Without the SDK, you get the fine-tuned Qwen3-8B as a regular backend (still useful,
+# but loses the recursive long-context capability the model was post-trained for).
+# Operator decision needed: deploy fine-tuned model as plain backend (Phase 1)
+# vs add RLM SDK orchestration (Phase 2, full RLM paradigm).

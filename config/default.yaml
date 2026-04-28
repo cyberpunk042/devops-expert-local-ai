@@ -56,6 +56,21 @@ backends:
     max_tokens: 8192
     timeout: 1800             # cold mmap can take 60+ min on this hardware
     enabled: false
+  rlm_local:
+    # RLM-Qwen3-8B (mit-oasys/rlm-qwen3-8b-v0.1) GGUF q8_0 served by llama.cpp on port 8092.
+    # 8B Qwen3-8B finetune post-trained for the Recursive Language Model paradigm (arXiv 2512.24601).
+    # Empirically measured 2026-04-27 on Tier 0 (RTX 2080 Ti, GPU offload -ngl 99, 32K ctx):
+    # decode ~28.7 tok/s, prompt eval ~79 tok/s — interactive-grade.
+    # VRAM footprint: 10.8/11.3 GB on the 2080 Ti (model + 32K KV cache + 8GB prompt cache).
+    # Plain backend (this stanza) gives the fine-tuned model directly via OpenAI-compat.
+    # Full RLM paradigm (REPL-recursion → ~3.2M+ effective context) requires the RLM SDK
+    # (`pip install rlms`, alexzhang13/rlm) layered on top — not yet wired.
+    # Out of default tier_map — opt-in via `--backend rlm_local` for long-context / recursive work.
+    base_url: http://localhost:8092
+    model: rlm-qwen3-8b
+    max_tokens: 8192
+    timeout: 300              # generous for cold model load + normal generation
+    enabled: true
   ollama_cloud:
     # Ollama Cloud — subscription-flat agentic tier. Pro $20/mo USD (~30M tokens/mo effective,
     # 5hr session / 7d weekly caps), Max $100/mo USD (5× Pro). Bearer auth via OLLAMA_API_KEY.
@@ -85,6 +100,9 @@ circuit_breaker:
       recovery_timeout: 10
     k2_6_local:
       failure_threshold: 3        # llama.cpp cold-start can appear to fail; retry before opening
+      recovery_timeout: 15
+    rlm_local:
+      failure_threshold: 3        # llama.cpp restarts; allow some hiccup tolerance
       recovery_timeout: 15
     k2_6_openrouter:
       failure_threshold: 3        # transient network / OpenRouter hiccups are common

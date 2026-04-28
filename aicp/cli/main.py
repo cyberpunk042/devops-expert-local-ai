@@ -45,12 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend", "-b",
-        choices=["local", "claude", "openrouter", "k2_6_openrouter", "k2_6_local", "ollama_cloud", "auto"],
+        choices=["local", "claude", "openrouter", "k2_6_openrouter", "k2_6_local", "ollama_cloud", "rlm_local", "auto"],
         default=os.environ.get("AICP_DEFAULT_BACKEND", "local"),
         help="AI backend (default: local, auto=smart routing, env: AICP_DEFAULT_BACKEND). "
              "k2_6_openrouter routes to Kimi K2.6 via OpenRouter (E011-m002); "
              "k2_6_local routes to llama.cpp-served K2.6 on localhost (E011-m003); "
-             "ollama_cloud routes to Ollama Cloud subscription-flat agentic tier.",
+             "ollama_cloud routes to Ollama Cloud subscription-flat agentic tier; "
+             "rlm_local routes to llama.cpp-served RLM-Qwen3-8B (mit-oasys/rlm-qwen3-8b-v0.1) on localhost.",
     )
     parser.add_argument(
         "--project", "-d",
@@ -558,6 +559,25 @@ def _build_backends(config: dict) -> dict[str, Backend]:
             model=k2l_cfg.get("model", "kimi-k2.6-q2"),
             max_tokens=k2l_cfg.get("max_tokens", 8192),
             timeout=k2l_cfg.get("timeout", 600),
+        )
+
+    # RLM-Qwen3-8B local — llama.cpp-served OpenAI-compat endpoint (mit-oasys/rlm-qwen3-8b-v0.1).
+    # 8B Qwen3-8B finetune for the Recursive Language Model paradigm (arXiv 2512.24601).
+    # Reuses K26LocalBackend (same OpenAI-compat HTTP shape, no API key, local llama-server).
+    # Empirically interactive on Tier 0 (RTX 2080 Ti, q8_0 GGUF, GPU offload): ~28.7 tok/s decode.
+    # Plain backend gives the fine-tuned model directly; full RLM paradigm (REPL-recursion) requires
+    # the RLM SDK (`pip install rlms`, alexzhang13/rlm) layered on top — not yet wired.
+    try:
+        rlm_cfg = get_backend_config(config, "rlm_local")
+    except ValueError:
+        rlm_cfg = {}
+    if rlm_cfg.get("enabled", False):
+        backends["rlm_local"] = K26LocalBackend(
+            base_url=rlm_cfg.get("base_url", "http://localhost:8092"),
+            model=rlm_cfg.get("model", "rlm-qwen3-8b"),
+            max_tokens=rlm_cfg.get("max_tokens", 8192),
+            timeout=rlm_cfg.get("timeout", 300),
+            name="rlm_local",
         )
 
     # Ollama Cloud — subscription-flat agentic tier (Pro ~$20/mo USD, Max ~$100/mo USD).

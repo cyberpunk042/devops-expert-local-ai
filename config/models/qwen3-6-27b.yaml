@@ -1,0 +1,66 @@
+name: qwen3-6-27b
+backend: cuda12-llama-cpp
+parameters:
+  batch: 2048
+  seed: 42
+  max_tokens: 4096
+  mirostat: 0
+  min_p: 0.05
+  top_k: 40
+  # ── Default to Unsloth UD-IQ2 GGUF (~14-16GB) per brain comparison
+  # Tier 0 hardware: dual-GPU 19GB total (RTX 2080 Ti 11GB + 2080 8GB).
+  # UD-IQ2 retains 26-tool-call agentic capability per Unsloth discussion.
+  # Pull from: unsloth/Qwen3.6-27B-GGUF (636k downloads, Apache 2.0)
+  # Filename convention: Qwen3.6-27B-UD-IQ2_XXS.gguf or similar UD-IQ2 variant
+  model: Qwen3.6-27B-UD-IQ2_XXS.gguf
+  temperature: 0.2
+  top_p: 0.85
+  repeat_penalty: 1.1
+threads: 2
+
+# ── Dense 27B model: hybrid Gated-DeltaNet (75%) + Attention (25%)
+# Apache 2.0; SWE-bench Pro 53.5 (beats some 397B MoE on agentic coding)
+# Released ~2026-04-22 by Alibaba Qwen team
+# Native multimodal; bilingual (English + Chinese)
+# Brain reference:
+#   ~/devops-solutions-information-hub/wiki/comparisons/rlm-qwen3-8b-vs-qwen3-6-27b-tier-0-long-context-candidate.md
+#   ~/devops-solutions-information-hub/wiki/sources/tools-integration/src-qwen3-6-27b-dense-beats-397b-moe-agentic-coding.md
+#   ~/devops-solutions-information-hub/wiki/sources/tools-integration/src-qwen3-6-27b-2-bit-26-tool-calls-unsloth-discussion.md
+
+# ── Dual GPU offload (UD-IQ2 14-16GB fits 19GB total VRAM with headroom) ──
+# Conservative starting point; tune up after smoke-test
+gpu_layers: 64
+
+# ── Tensor split for dual GPU (8GB / 11GB) ──
+# Proportional: 8/(8+11) = 0.42, 11/(8+11) = 0.58
+# Uncomment when dual GPU is available:
+# tensor_split: "0.42,0.58"
+
+# ── KV cache quantization (saves VRAM on a 27B dense) ──
+cache_type_k: q4_0
+cache_type_v: q2_K
+flash_attention: true
+
+# ── Function calling — best-in-class for tier-0 size per brain comparison ──
+function:
+  parallel_calls: true
+  mixed_mode: false
+
+# ── Prompt caching ──
+prompt_cache_path: qwen3-6-27b-cache
+prompt_cache_all: true
+
+# ── Context: dense 27B at UD-IQ2 — 16K is realistic on 19GB VRAM ──
+# For long-context >32K tasks, consider RLM-Qwen3-8B as paradigm-routed alternative
+# (see brain operations plan for RLM-Qwen3.6-27B composition path, P1 optional)
+context_size: 16384
+mmap: true
+mmlock: true
+
+# ── STATUS: STUB — not yet downloaded ──
+# Authoring this config does NOT trigger a download.
+# Operator authorization required before:
+#   1. `huggingface-cli download unsloth/Qwen3.6-27B-GGUF --include "*UD-IQ2*"` (~14-16GB)
+#   2. Adding `qwen3-6-27b` to LocalAI's loaded model set in docker-compose
+#   3. Adding `qwen3-6-27b` to the routing tier_map in config/default.yaml
+# Per `feedback_never_unauthorized_large_disk_writes.md` (>100MB threshold rule).
